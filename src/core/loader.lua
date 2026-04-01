@@ -3,15 +3,12 @@ local Registry = loadfile("src/core/registry.lua")()
 local Loader = {}
 
 function Loader.resolveGameKey()
-	local placeId = game.PlaceId
-	local gameId = game.GameId
-
-	if Registry.Places[placeId] then
-		return Registry.Places[placeId]
+	if Registry.Places[game.PlaceId] then
+		return Registry.Places[game.PlaceId]
 	end
 
-	if Registry.GameIds[gameId] then
-		return Registry.GameIds[gameId]
+	if Registry.GameIds[game.GameId] then
+		return Registry.GameIds[game.GameId]
 	end
 
 	return Registry.DefaultGame
@@ -23,12 +20,12 @@ function Loader.loadGameModule()
 
 	local chunk, loadError = loadfile(path)
 	if not chunk then
-		error(("Failed to load game module '%s' from %s: %s"):format(gameKey, path, tostring(loadError)))
+		error(("Failed to load %s: %s"):format(path, tostring(loadError)))
 	end
 
 	local ok, result = pcall(chunk)
 	if not ok then
-		error(("Game module '%s' errored during load: %s"):format(gameKey, tostring(result)))
+		error(("Error while loading %s: %s"):format(path, tostring(result)))
 	end
 
 	return gameKey, result
