@@ -1,7 +1,14 @@
 return {
-    Places = {
-        -- [1234567890] = "mashle_academy",
-    },
+	Places = {
+		-- Replace these with real PlaceIds
+		 [13901460084] = "mashle_academy",
+		-- [9876543210] = "deepwoken",
+	},
 
-    DefaultGame = "universal",
+	GameIds = {
+		-- Optional fallback mappings by GameId
+		-- [1111111111] = "mashle_academy",
+	},
+
+	DefaultGame = "universal",
 }
