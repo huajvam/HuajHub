@@ -1,46 +1,40 @@
 return function()
-    local Registry = loadfile("src/core/registry.lua")()
-    local Utils = loadfile("src/core/utils.lua")()
+	local Loader = loadfile("src/core/loader.lua")()
 
-    local Bootstrap = {}
+	local Bootstrap = {}
 
-    local function requireModule(path)
-        return loadfile(path)()
-    end
+	local function requireModule(path)
+		local chunk, loadError = loadfile(path)
+		if not chunk then
+			error(("Failed to load module %s: %s"):format(path, tostring(loadError)))
+		end
 
-    local function resolveGameKey()
-        return Registry.Places[Utils.getPlaceId()] or Registry.DefaultGame
-    end
+		local ok, result = pcall(chunk)
+		if not ok then
+			error(("Module %s errored: %s"):format(path, tostring(result)))
+		end
 
-    function Bootstrap.start()
-        local gameKey = resolveGameKey()
+		return result
+	end
 
-        local SharedUI = requireModule("src/shared/ui.lua")
-        local Notifications = requireModule("src/shared/notifications.lua")
+	function Bootstrap.start()
+		local gameKey, GameModule = Loader.loadGameModule()
 
-        local AutoParry = requireModule("src/features/autoparry/init.lua")
-        local ESP = requireModule("src/features/esp/init.lua")
-        local Movement = requireModule("src/features/movement/init.lua")
+		local context = {
+			gameKey = gameKey,
+			features = {
+				movement = requireModule("src/features/movement/init.lua"),
+				esp = requireModule("src/features/esp/init.lua"),
+				autoparry = requireModule("src/features/autoparry/init.lua"),
+			},
+		}
 
-        local GameModule = requireModule(("src/games/%s/init.lua"):format(gameKey))
+		if type(GameModule.init) == "function" then
+			GameModule.init(context)
+		else
+			warn(("HuajHub game module '%s' has no init(context) function"):format(gameKey))
+		end
+	end
 
-        local context = {
-            gameKey = gameKey,
-            ui = SharedUI,
-            notify = Notifications,
-            features = {
-                autoparry = AutoParry,
-                esp = ESP,
-                movement = Movement,
-            },
-        }
-
-        if type(GameModule.init) == "function" then
-            GameModule.init(context)
-        end
-
-        Notifications.info("Loaded game module: " .. gameKey)
-    end
-
-    return Bootstrap
+	return Bootstrap
 end
