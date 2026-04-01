@@ -4683,7 +4683,7 @@ SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 
 ThemeManager:SetFolder("HuajHub")
-SaveManager:SetFolder("HuajHub/deepwoken")
+SaveManager:SetFolder("HuajHub/mashle_academy")
 
 SaveManager:BuildConfigSection(Tabs["Settings"])
 ThemeManager:ApplyToTab(Tabs["Settings"])

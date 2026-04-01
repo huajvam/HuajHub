@@ -1,15 +1,26 @@
 # HuajHub
 
-Multi-game Roblox hub with shared systems and per-game modules.
+Multi-game Roblox hub.
 
-## Layout
+## Structure
 
-- `loader/init.lua`: entry script
-- `src/core`: bootstrap and shared runtime
-- `src/shared`: shared UI/helpers
-- `src/features`: reusable features
-- `src/games`: game-specific modules
+- `loader/init.lua`: entry script users execute
+- `src/core/registry.lua`: maps `PlaceId` and `GameId` to a game key
+- `src/core/loader.lua`: resolves the current game and loads its module
+- `src/core/bootstrap.lua`: starts the resolved game module
+- `src/games/<game_name>/init.lua`: self-contained script for that game
+
+Each game script owns its own features.
+That includes movement, ESP, auto parry, remotes, UI, and config paths.
+
+## Current games
+
+- `universal`
+- `mashle_academy`
+- `deepwoken` placeholder
 
 ## Adding a game
 
-Create `src/games/<game_name>/init.lua` and register its `PlaceId` in `src/core/registry.lua`.
+1. Create `src/games/<game_name>/init.lua`
+2. Add its `PlaceId` or `GameId` to `src/core/registry.lua`
+3. Keep that game's logic inside its own script instead of shared feature folders
