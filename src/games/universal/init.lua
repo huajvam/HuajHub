@@ -1,7 +1,7 @@
 local Universal = {}
 
 function Universal.init(context)
-    context.notify.info("Universal module loaded")
+	warn("HuajHub loaded: Universal")
 end
 
 return Universal
