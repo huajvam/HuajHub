@@ -1,11 +1,19 @@
 local MashleAcademy = {}
 
 function MashleAcademy.init(context)
-    context.notify.info("Mashle Academy module loaded")
+	warn("HuajHub loaded: Mashle Academy")
 
-    context.features.autoparry.init(context, MashleAcademy)
-    context.features.esp.init(context, MashleAcademy)
-    context.features.movement.init(context, MashleAcademy)
+	if context.features.movement and type(context.features.movement.init) == "function" then
+		context.features.movement.init(context, MashleAcademy)
+	end
+
+	if context.features.esp and type(context.features.esp.init) == "function" then
+		context.features.esp.init(context, MashleAcademy)
+	end
+
+	if context.features.autoparry and type(context.features.autoparry.init) == "function" then
+		context.features.autoparry.init(context, MashleAcademy)
+	end
 end
 
 return MashleAcademy
