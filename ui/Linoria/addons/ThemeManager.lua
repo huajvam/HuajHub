@@ -17,10 +17,9 @@ local ThemeManager = {} do
 		['Ubuntu'] 			= { 7, decodeTheme('{"FontColor":"ffffff","MainColor":"3e3e3e","AccentColor":"e2581e","BackgroundColor":"323232","OutlineColor":"191919"}') },
 		['Quartz'] 			= { 8, decodeTheme('{"FontColor":"ffffff","MainColor":"232330","AccentColor":"426e87","BackgroundColor":"1d1b26","OutlineColor":"27232f"}') },
 		['HuajHub Blue'] 	= { 9, decodeTheme('{"FontColor":"f5f9ff","MainColor":"111722","AccentColor":"2f7cff","BackgroundColor":"0b1018","OutlineColor":"223047"}') },
-		['Aztup Blue'] 		= { 10, decodeTheme('{"FontColor":"f1f6ff","MainColor":"121923","AccentColor":"127ffd","BackgroundColor":"0d131d","OutlineColor":"2a3c57"}') },
-		['Crimson'] 		= { 11, decodeTheme('{"FontColor":"fff4f5","MainColor":"211215","AccentColor":"d63a59","BackgroundColor":"140b0d","OutlineColor":"4a2028"}') },
-		['Forest'] 			= { 12, decodeTheme('{"FontColor":"f3fff8","MainColor":"132019","AccentColor":"35b26f","BackgroundColor":"0c1410","OutlineColor":"274636"}') },
-		['Mono'] 			= { 13, decodeTheme('{"FontColor":"f2f2f2","MainColor":"181818","AccentColor":"bfbfbf","BackgroundColor":"101010","OutlineColor":"343434"}') },
+		['Crimson'] 		= { 10, decodeTheme('{"FontColor":"fff4f5","MainColor":"211215","AccentColor":"d63a59","BackgroundColor":"140b0d","OutlineColor":"4a2028"}') },
+		['Forest'] 			= { 11, decodeTheme('{"FontColor":"f3fff8","MainColor":"132019","AccentColor":"35b26f","BackgroundColor":"0c1410","OutlineColor":"274636"}') },
+		['Mono'] 			= { 12, decodeTheme('{"FontColor":"f2f2f2","MainColor":"181818","AccentColor":"bfbfbf","BackgroundColor":"101010","OutlineColor":"343434"}') },
 	}
 
 	function ThemeManager:ApplyTheme(theme)

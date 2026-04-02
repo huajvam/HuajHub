@@ -35,6 +35,11 @@ local Library = {
     AccentColor = Color3.fromRGB(0, 85, 255);
     OutlineColor = Color3.fromRGB(50, 50, 50);
     RiskColor = Color3.fromRGB(255, 50, 50),
+    BackgroundImage = '';
+    BackgroundImageColor = Color3.fromRGB(255, 255, 255);
+    BackgroundImageTransparency = 0.82;
+    BackgroundOverlayColor = Color3.fromRGB(0, 0, 0);
+    BackgroundOverlayTransparency = 0.35;
 
     Black = Color3.new(0, 0, 0);
     Font = Enum.Font.Code,
@@ -44,6 +49,7 @@ local Library = {
 
     Signals = {};
     ScreenGui = ScreenGui;
+    WindowBackgrounds = {};
 };
 
 local RainbowStep = 0
@@ -131,6 +137,65 @@ function Library:Create(Class, Properties)
 
     return _Instance;
 end;
+
+function Library:UpdateWindowBackgrounds()
+    for index = #Library.WindowBackgrounds, 1, -1 do
+        local entry = Library.WindowBackgrounds[index]
+        local image = entry.Image
+        local overlay = entry.Overlay
+
+        if (not image or image.Parent == nil) and (not overlay or overlay.Parent == nil) then
+            table.remove(Library.WindowBackgrounds, index)
+        else
+
+            if image then
+                image.Image = Library.BackgroundImage or ''
+                image.ImageColor3 = Library.BackgroundImageColor or Color3.new(1, 1, 1)
+                image.ImageTransparency = Library.BackgroundImageTransparency or 0
+                image.Visible = type(Library.BackgroundImage) == 'string' and Library.BackgroundImage ~= ''
+            end
+
+            if overlay then
+                overlay.BackgroundColor3 = Library.BackgroundOverlayColor or Color3.new()
+                overlay.BackgroundTransparency = Library.BackgroundOverlayTransparency or 0
+                overlay.Visible = image and image.Visible or false
+            end
+        end
+    end
+end
+
+function Library:SetBackgroundImage(image, imageTransparency, overlayTransparency)
+    Library.BackgroundImage = type(image) == 'string' and image or ''
+
+    if type(imageTransparency) == 'number' then
+        Library.BackgroundImageTransparency = math.clamp(imageTransparency, 0, 1)
+    end
+
+    if type(overlayTransparency) == 'number' then
+        Library.BackgroundOverlayTransparency = math.clamp(overlayTransparency, 0, 1)
+    end
+
+    Library:UpdateWindowBackgrounds()
+end
+
+function Library:SetBackgroundImageColor(color)
+    if typeof(color) == 'Color3' then
+        Library.BackgroundImageColor = color
+        Library:UpdateWindowBackgrounds()
+    end
+end
+
+function Library:SetBackgroundOverlay(color, transparency)
+    if typeof(color) == 'Color3' then
+        Library.BackgroundOverlayColor = color
+    end
+
+    if type(transparency) == 'number' then
+        Library.BackgroundOverlayTransparency = math.clamp(transparency, 0, 1)
+    end
+
+    Library:UpdateWindowBackgrounds()
+end
 
 function Library:ApplyTextStroke(Inst)
     Inst.TextStrokeTransparency = 1;
@@ -2985,6 +3050,33 @@ function Library:CreateWindow(...)
     Library:AddToRegistry(Inner, {
         BackgroundColor3 = 'MainColor';
         BorderColor3 = 'AccentColor';
+    });
+
+    local WindowBackgroundImage = Library:Create('ImageLabel', {
+        BackgroundTransparency = 1;
+        Image = Library.BackgroundImage;
+        ImageColor3 = Library.BackgroundImageColor;
+        ImageTransparency = Library.BackgroundImageTransparency;
+        ScaleType = Enum.ScaleType.Crop;
+        Size = UDim2.new(1, 0, 1, 0);
+        ZIndex = 0;
+        Visible = type(Library.BackgroundImage) == 'string' and Library.BackgroundImage ~= '';
+        Parent = Inner;
+    });
+
+    local WindowBackgroundOverlay = Library:Create('Frame', {
+        BackgroundColor3 = Library.BackgroundOverlayColor;
+        BackgroundTransparency = Library.BackgroundOverlayTransparency;
+        BorderSizePixel = 0;
+        Size = UDim2.new(1, 0, 1, 0);
+        ZIndex = 0;
+        Visible = WindowBackgroundImage.Visible;
+        Parent = Inner;
+    });
+
+    table.insert(Library.WindowBackgrounds, {
+        Image = WindowBackgroundImage;
+        Overlay = WindowBackgroundOverlay;
     });
 
     local WindowLabel = Library:CreateLabel({
