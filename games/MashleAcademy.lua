@@ -837,6 +837,46 @@ local function setupLocalCheatsTab()
 		return Players:FindFirstChild(selection)
 	end
 
+	local function getTeleportTargetCharacter(player)
+		if not player then
+			return nil
+		end
+
+		if player.Character and player.Character.Parent then
+			return player.Character
+		end
+
+		local liveFolder = workspace:FindFirstChild("Live")
+		if liveFolder then
+			local liveCharacter = liveFolder:FindFirstChild(player.Name)
+			if liveCharacter and liveCharacter:IsA("Model") then
+				return liveCharacter
+			end
+		end
+
+		return nil
+	end
+
+	local function getTeleportTargetCFrame(character)
+		if not character then
+			return nil
+		end
+
+		local root = getCharacterRoot(character)
+		if root then
+			return root.CFrame
+		end
+
+		local ok, pivot = pcall(function()
+			return character:GetPivot()
+		end)
+		if ok and typeof(pivot) == "CFrame" then
+			return pivot
+		end
+
+		return nil
+	end
+
 	local function teleportToSelectedDestination()
 		local character = LocalPlayer and LocalPlayer.Character
 		local root = getCharacterRoot(character)
@@ -850,14 +890,13 @@ local function setupLocalCheatsTab()
 
 		local selectedPlayer = getSelectedTeleportPlayer()
 		if selectedPlayer then
-			local targetCharacter = selectedPlayer.Character
-			local targetRoot = getCharacterRoot(targetCharacter)
-			if not targetRoot then
+			local targetCharacter = getTeleportTargetCharacter(selectedPlayer)
+			targetCFrame = getTeleportTargetCFrame(targetCharacter)
+			if not targetCFrame then
 				Library:Notify("Selected player is unavailable.", 2)
 				return
 			end
 
-			targetCFrame = targetRoot.CFrame
 			targetLabel = selectedPlayer.Name
 		else
 			local selection = Options.TeleportDestination.Value
