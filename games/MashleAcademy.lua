@@ -618,6 +618,25 @@ local function isAutoParryEnabled()
 	return Toggles and Toggles.AutoParryEnabled and Toggles.AutoParryEnabled.Value == true
 end
 
+local function getToggleValue(name, default)
+	if Toggles and Toggles[name] then
+		return Toggles[name].Value == true
+	end
+
+	return default == true
+end
+
+local function getOptionValue(name, default)
+	if Options and Options[name] then
+		local value = Options[name].Value
+		if value ~= nil then
+			return value
+		end
+	end
+
+	return default
+end
+
 local function beginFallDebugWindow(reason, duration)
 	if not isFallDebugEnabled() then
 		return
@@ -4234,7 +4253,7 @@ local function setupAutoParryTab()
 		local now = os.clock()
 		cleanupHandledAttackTracks()
 
-		if Toggles.AutoParryAdaptiveTiming.Value and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
+		if getToggleValue("AutoParryAdaptiveTiming", false) and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
 			autoParryState.lastAdaptiveTimingUpdateAt = now
 			updateAdaptiveTimingOffset(false)
 		end
@@ -4250,13 +4269,13 @@ local function setupAutoParryTab()
 
 		if autoParryState.pendingParryFailCheck and now >= autoParryState.pendingParryFailCheck.checkAt then
 			local targetCharacter = autoParryState.pendingParryFailCheck.target
-			local maxDistance = autoParryState.pendingParryFailCheck.distance or (Options.AutoParryDistance.Value or 18)
+			local maxDistance = autoParryState.pendingParryFailCheck.distance or (tonumber(getOptionValue("AutoParryDistance", 18)) or 18)
 			local localCharacter = LocalPlayer and LocalPlayer.Character
 			local localRoot = getCharacterRoot(localCharacter)
 			local targetRoot = getCharacterRoot(targetCharacter)
 			local humanoid = getCharacterHumanoid(targetCharacter)
 
-			if Toggles.AutoParryDashOnFail.Value
+			if getToggleValue("AutoParryDashOnFail", false)
 				and localRoot
 				and targetRoot
 				and humanoid
