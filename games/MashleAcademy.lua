@@ -7,7 +7,10 @@ local Maid = sharedRequire("@utils/Maid.lua")
 local AnimationInfo = sharedRequire("@utils/AnimationInfo.lua")
 local CharacterUtils = sharedRequire("@utils/CharacterUtils.lua")
 local AnimatorUtils = sharedRequire("@utils/AnimatorUtils.lua")
+local AutoParryConfigUtils = sharedRequire("@utils/AutoParryConfigUtils.lua")
+local AdaptiveTimingUtils = sharedRequire("@utils/AdaptiveTimingUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
+local TrackedAnimatorRegistry = sharedRequire("classes/TrackedAnimatorRegistry.lua")
 
 local Players, ContextActionService, HttpService, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
 	"Players",
@@ -59,6 +62,9 @@ local getHorizontalEdgeDistance = CharacterUtils.getHorizontalEdgeDistance
 local getEspLiveFolder = CharacterUtils.getLiveFolder
 local getTargetAnimator = AnimatorUtils.getPrimaryAnimator
 local getTargetAnimators = AnimatorUtils.getAllAnimators
+local getConfigActionType = AutoParryConfigUtils.getConfigActionType
+local buildRuntimeMoveConfig = AutoParryConfigUtils.buildRuntimeMoveConfig
+local resolveConfiguredTiming = AutoParryConfigUtils.resolveConfiguredTiming
 local unloadCallbacks = {}
 
 local function registerLibraryUnloadCallback(callback)
@@ -1395,14 +1401,6 @@ local function setupEspTab()
 		return model.Name
 	end
 
-	local function setDrawingVisible(objects, visible)
-		for _, object in ipairs(objects or {}) do
-			if object then
-				object.Visible = visible
-			end
-		end
-	end
-
 	local function destroyDrawingObject(object)
 		if not object then
 			return
@@ -1434,25 +1432,8 @@ local function setupEspTab()
 		end
 
 		entry.destroyed = true
-		setDrawingVisible(entry.boxLines, false)
-		setDrawingVisible(entry.skeletonLines, false)
-		if entry.healthBarOutline then
-			entry.healthBarOutline.Visible = false
-		end
-		if entry.healthBarFill then
-			entry.healthBarFill.Visible = false
-		end
-		if entry.nameText then
-			entry.nameText.Visible = false
-		end
-		if entry.distanceText then
-			entry.distanceText.Visible = false
-		end
-		if entry.healthText then
-			entry.healthText.Visible = false
-		end
-		if entry.tracerLine then
-			entry.tracerLine.Visible = false
+		if type(entry.hide) == "function" then
+			entry:hide()
 		end
 		for _, object in ipairs(entry.objects or {}) do
 			destroyDrawingObject(object)
@@ -1695,20 +1676,11 @@ local function setupEspTab()
 			end
 		end
 
-		for index = lineIndex, #entry.skeletonLines do
-			entry.skeletonLines[index].Visible = false
-		end
+		entry:hideSkeletonFrom(lineIndex)
 	end
 
 	local function hideEspEntry(entry)
-		setDrawingVisible(entry.boxLines, false)
-		setDrawingVisible(entry.skeletonLines, false)
-		entry.healthBarOutline.Visible = false
-		entry.healthBarFill.Visible = false
-		entry.nameText.Visible = false
-		entry.distanceText.Visible = false
-		entry.healthText.Visible = false
-		entry.tracerLine.Visible = false
+		entry:hide()
 	end
 
 	local function updateEspEntry(entry, model, targetType, accentColor)
@@ -1730,18 +1702,12 @@ local function setupEspTab()
 		local tracerEnd = Vector2.new(box.left + (box.width * 0.5), box.bottom)
 
 		local showBox = Toggles.EspShowBox.Value
-		for index, points in ipairs({
+		entry:setBox({
 			{topLeft, topRight},
 			{topRight, bottomRight},
 			{bottomRight, bottomLeft},
 			{bottomLeft, topLeft},
-		}) do
-			local line = entry.boxLines[index]
-			line.From = points[1]
-			line.To = points[2]
-			line.Color = accentColor
-			line.Visible = showBox
-		end
+		}, accentColor, showBox)
 
 		local health = humanoid and math.max(humanoid.Health, 0) or 0
 		local maxHealth = humanoid and math.max(humanoid.MaxHealth, 1) or 100
@@ -1750,40 +1716,46 @@ local function setupEspTab()
 		local barHeight = math.max(box.height, 4)
 		local barWidth = 4
 		local barX = box.left - 7
-		entry.healthBarOutline.Position = Vector2.new(barX, box.top)
-		entry.healthBarOutline.Size = Vector2.new(barWidth, barHeight)
-		entry.healthBarOutline.Visible = Toggles.EspShowHealthBar.Value and humanoid ~= nil
-
-		entry.healthBarFill.Position = Vector2.new(barX + 1, box.bottom - ((barHeight - 2) * healthRatio) - 1)
-		entry.healthBarFill.Size = Vector2.new(barWidth - 2, math.max((barHeight - 2) * healthRatio, 1))
-		entry.healthBarFill.Color = Color3.fromRGB(
+		entry:setHealthBar(
+			Vector2.new(barX, box.top),
+			Vector2.new(barWidth, barHeight),
+			Vector2.new(barX + 1, box.bottom - ((barHeight - 2) * healthRatio) - 1),
+			Vector2.new(barWidth - 2, math.max((barHeight - 2) * healthRatio, 1)),
+			Color3.fromRGB(
 			math.floor(255 * (1 - healthRatio)),
 			math.floor(255 * healthRatio),
 			90
+			),
+			Toggles.EspShowHealthBar.Value and humanoid ~= nil
 		)
-		entry.healthBarFill.Visible = Toggles.EspShowHealthBar.Value and humanoid ~= nil
 
-		entry.nameText.Text = getEspDisplayName(model, targetType)
-		entry.nameText.Position = Vector2.new(box.left + (box.width * 0.5), box.top - 16)
-		entry.nameText.Visible = Toggles.EspShowNames.Value
+		entry:setText(
+			entry.nameText,
+			getEspDisplayName(model, targetType),
+			Vector2.new(box.left + (box.width * 0.5), box.top - 16),
+			Toggles.EspShowNames.Value
+		)
 
-		entry.distanceText.Text = string.format("%.0f studs", distance)
-		entry.distanceText.Position = Vector2.new(box.left + (box.width * 0.5), box.bottom + 2)
-		entry.distanceText.Visible = Toggles.EspShowDistance.Value
+		entry:setText(
+			entry.distanceText,
+			string.format("%.0f studs", distance),
+			Vector2.new(box.left + (box.width * 0.5), box.bottom + 2),
+			Toggles.EspShowDistance.Value
+		)
 
-		entry.healthText.Text = string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5))
-		entry.healthText.Position = Vector2.new(box.left + (box.width * 0.5), box.top - 30)
-		entry.healthText.Visible = Toggles.EspShowHealthText.Value and humanoid ~= nil
+		entry:setText(
+			entry.healthText,
+			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
+			Vector2.new(box.left + (box.width * 0.5), box.top - 30),
+			Toggles.EspShowHealthText.Value and humanoid ~= nil
+		)
 
-		entry.tracerLine.From = tracerStart
-		entry.tracerLine.To = tracerEnd
-		entry.tracerLine.Color = accentColor
-		entry.tracerLine.Visible = Toggles.EspShowTracers.Value
+		entry:setTracer(tracerStart, tracerEnd, accentColor, Toggles.EspShowTracers.Value)
 
 		if Toggles.EspShowSkeleton.Value then
 			updateEspSkeleton(entry, model, accentColor)
 		else
-			setDrawingVisible(entry.skeletonLines, false)
+			entry:hideSkeletonFrom(1)
 		end
 	end
 
@@ -2596,55 +2568,30 @@ local function setupAutoParryTab()
 		return nil
 	end
 
-	local function getAdaptiveAnimationKey(sourceKey, animationId, actionType)
-		return string.format("%s:%s:%s", tostring(sourceKey or "?"), tostring(normalizeBuilderAnimationId(animationId) or animationId or "?"), tostring(actionType or "Parry"))
-	end
-
 	local function updateLearnedAdaptiveOffset(sourceKey, animationId, actionType, deltaMs, weight)
-		local key = getAdaptiveAnimationKey(sourceKey, animationId, actionType)
-		local previous = tonumber(autoParryState.adaptiveTiming.learnedOffsets[key]) or 0
-		local appliedWeight = math.clamp(tonumber(weight) or 0.25, 0.05, 1)
-		local clampedDeltaMs = math.clamp(tonumber(deltaMs) or 0, -120, 120)
-		autoParryState.adaptiveTiming.learnedOffsets[key] = math.clamp(previous + ((clampedDeltaMs - previous) * appliedWeight), -120, 120)
+		AdaptiveTimingUtils.updateLearnedOffset(
+			autoParryState.adaptiveTiming.learnedOffsets,
+			normalizeBuilderAnimationId,
+			sourceKey,
+			animationId,
+			actionType,
+			deltaMs,
+			weight
+		)
 	end
 
 	local function getAdaptiveTimingOffsetMs(sourceKey, animationId, moveConfig, distance)
-		local manualOffsetMs = tonumber(Options.AutoParryTimingOffset.Value) or 0
-		if not Toggles.AutoParryAdaptiveTiming.Value then
-			return math.clamp(manualOffsetMs, -120, 250)
-		end
-
 		local actionType = (moveConfig and moveConfig.actionType) or "Parry"
-		local pingCorrectionMs = tonumber(autoParryState.adaptiveTiming.lastComputedOffsetMs) or 0
-		local actionBiasMs = tonumber(autoParryState.adaptiveTiming.actionBiasMs[actionType]) or 0
-		local learnedOffsetMs = tonumber(autoParryState.adaptiveTiming.learnedOffsets[getAdaptiveAnimationKey(sourceKey, animationId, actionType)]) or 0
-		local distanceBiasMs = math.clamp(((tonumber(distance) or 0) - 8) * 1.5, -8, 18)
-
-		return math.clamp(manualOffsetMs + pingCorrectionMs + actionBiasMs + learnedOffsetMs + distanceBiasMs, -120, 250)
-	end
-
-	local function getConfigActionType(configData)
-		if type(configData) ~= "table" then
-			return "Parry"
-		end
-
-		if configData.actionType == "Dash" or configData.actionType == "Block" or configData.actionType == "Parry" or configData.actionType == "Jump" then
-			return configData.actionType
-		end
-
-		if configData.block == true then
-			return "Block"
-		end
-
-		if configData.jump == true then
-			return "Jump"
-		end
-
-		if configData.roll == true or configData.dash == true then
-			return "Dash"
-		end
-
-		return "Parry"
+		local key = AdaptiveTimingUtils.getAdaptiveAnimationKey(normalizeBuilderAnimationId, sourceKey, animationId, actionType)
+		return AdaptiveTimingUtils.getTimingOffsetMs({
+			manualOffsetMs = tonumber(Options.AutoParryTimingOffset.Value) or 0,
+			adaptiveEnabled = Toggles.AutoParryAdaptiveTiming.Value == true,
+			actionType = actionType,
+			pingCorrectionMs = tonumber(autoParryState.adaptiveTiming.lastComputedOffsetMs) or 0,
+			actionBiasMs = tonumber(autoParryState.adaptiveTiming.actionBiasMs[actionType]) or 0,
+			learnedOffsetMs = tonumber(autoParryState.adaptiveTiming.learnedOffsets[key]) or 0,
+			distance = distance,
+		})
 	end
 
 	local function getBuilderConfigData()
@@ -2687,24 +2634,6 @@ local function setupAutoParryTab()
 		Options.AutoParryMakerDelay:SetValue(configData.delay and "On" or "Off")
 		Options.AutoParryMakerDelayRange:SetValue(tostring(configData.delayRange or 0))
 		Options.AutoParryMakerRange:SetValue(tonumber(configData.range) or 16)
-	end
-
-	local function buildRuntimeMoveConfig(configData)
-		local actionType = getConfigActionType(configData)
-
-		return {
-			timing = tonumber(configData.wait) or 0,
-			dash = actionType == "Dash",
-			block = actionType == "Block",
-			jump = actionType == "Jump",
-			repeatAmount = math.max(1, math.floor(tonumber(configData.repeatAmount) or 1)),
-			repeatDelay = tonumber(configData.repeatDelay) or 0,
-			delay = configData.delay == true,
-			delayRange = tonumber(configData.delayRange) or 0,
-			range = tonumber(configData.range) or 16,
-			nickname = configData.nickname or "",
-			actionType = actionType,
-		}
 	end
 
 	local normalizeMoveConfig
@@ -3208,69 +3137,7 @@ local function setupAutoParryTab()
 	end
 
 	normalizeMoveConfig = function(moveConfig, candidateDistance)
-		if type(moveConfig) == "number" then
-			return {
-				timing = moveConfig,
-				dash = false,
-				block = false,
-				handler = nil,
-				repeatAmount = 1,
-				repeatDelay = 0,
-				delay = false,
-				delayRange = 0,
-				range = nil,
-			}
-		end
-
-		if type(moveConfig) == "function" then
-			return {
-				timing = nil,
-				dash = false,
-				block = false,
-				handler = moveConfig,
-				repeatAmount = 1,
-				repeatDelay = 0,
-				delay = false,
-				delayRange = 0,
-				range = nil,
-			}
-		end
-
-		if type(moveConfig) == "table" then
-			if type(moveConfig.entries) == "table" then
-				return selectBestMoveConfig(moveConfig.entries, tonumber(candidateDistance) or math.huge)
-			end
-
-			return {
-				timing = moveConfig.timing,
-				dash = moveConfig.dash == true,
-				block = moveConfig.block == true,
-				jump = moveConfig.jump == true,
-				handler = type(moveConfig.handler) == "function" and moveConfig.handler or nil,
-				repeatAmount = math.max(1, math.floor(tonumber(moveConfig.repeatAmount) or 1)),
-				repeatDelay = tonumber(moveConfig.repeatDelay) or 0,
-				delay = moveConfig.delay == true,
-				delayRange = tonumber(moveConfig.delayRange) or 0,
-				range = tonumber(moveConfig.range) or nil,
-				nickname = moveConfig.nickname or "",
-				actionType = moveConfig.actionType,
-			}
-		end
-
-		return nil
-	end
-
-	local function resolveConfiguredTiming(moveConfig)
-		local numericTiming = tonumber(moveConfig and moveConfig.timing)
-		if not numericTiming then
-			return nil
-		end
-
-		if numericTiming > 10 then
-			return numericTiming / 1000
-		end
-
-		return numericTiming
+		return AutoParryConfigUtils.normalizeMoveConfig(moveConfig, candidateDistance, selectBestMoveConfig)
 	end
 
 	local getTrackPriorityScore
@@ -3333,39 +3200,15 @@ local function setupAutoParryTab()
 	end
 
 	local function getMoveConfigRange(moveConfig)
-		local configRange = tonumber(moveConfig and moveConfig.range)
-		if configRange and configRange > 0 then
-			return configRange
-		end
-
-		return Options.AutoParryDistance.Value or 18
+		return AutoParryConfigUtils.getMoveConfigRange(moveConfig, Options.AutoParryDistance.Value or 18)
 	end
 
 	local function getMoveConfigDelaySeconds(moveConfig)
-		local shouldDelay = moveConfig and moveConfig.delay == true
-		if not shouldDelay then
-			return 0
-		end
-
-		local delayRange = math.max(tonumber(moveConfig.delayRange) or 0, 0)
-		if delayRange <= 0 then
-			return 0
-		end
-
-		if delayRange > 10 then
-			delayRange = delayRange / 1000
-		end
-
-		return math.random() * delayRange
+		return AutoParryConfigUtils.getMoveConfigDelaySeconds(moveConfig)
 	end
 
 	local function getMoveConfigRepeatDelaySeconds(moveConfig)
-		local repeatDelay = math.max(tonumber(moveConfig and moveConfig.repeatDelay) or 0, 0)
-		if repeatDelay > 10 then
-			return repeatDelay / 1000
-		end
-
-		return repeatDelay
+		return AutoParryConfigUtils.getMoveConfigRepeatDelaySeconds(moveConfig)
 	end
 
 	local function formatAutoParryTrackingText(action, distance, now)
@@ -4251,76 +4094,35 @@ local function setupAutoParryTab()
 		end)
 	end
 
-	function autoParryRuntime.disconnectTrackedAutoParryTarget(model)
-		local trackedTarget = autoParryState.trackedTargets[model]
-		if not trackedTarget then
-			return
-		end
-
-		for _, connection in ipairs(trackedTarget.connections) do
-			connection:Disconnect()
-		end
-
-		autoParryState.trackedTargets[model] = nil
-	end
-
-	function autoParryRuntime.ensureTrackedAnimator(model, animator)
-		local trackedTarget = autoParryState.trackedTargets[model]
-		if not trackedTarget or not animator or trackedTarget.animators[animator] then
-			return
-		end
-
-		trackedTarget.animators[animator] = true
-		table.insert(trackedTarget.connections, animator.AnimationPlayed:Connect(function(track)
+	local trackedAnimatorRegistry = TrackedAnimatorRegistry.new({
+		getAnimators = getTargetAnimators,
+		shouldTrackModel = function(model)
+			return Players:GetPlayerFromCharacter(model) ~= LocalPlayer
+		end,
+		onAnimatorTrack = function(model, _, track)
 			if not isAutoParryEnabled() then
 				return
 			end
 
 			queueAutoParryTrack(model, track)
-		end))
+		end,
+		onAnimatorReady = function(model, animator)
+			scanAnimatorTracksForAutoParry(model, animator)
+		end,
+	})
 
-		scanAnimatorTracksForAutoParry(model, animator)
+	autoParryState.trackedTargets = trackedAnimatorRegistry.targets
+
+	function autoParryRuntime.disconnectTrackedAutoParryTarget(model)
+		trackedAnimatorRegistry:disconnectTarget(model)
+	end
+
+	function autoParryRuntime.ensureTrackedAnimator(model, animator)
+		trackedAnimatorRegistry:ensureAnimator(model, animator)
 	end
 
 	function autoParryRuntime.trackAutoParryTarget(model)
-		if not model or not model:IsA("Model") or autoParryState.trackedTargets[model] then
-			return
-		end
-
-		if Players:GetPlayerFromCharacter(model) == LocalPlayer then
-			return
-		end
-
-		local trackedTarget = {
-			model = model,
-			animators = {},
-			connections = {},
-		}
-
-		autoParryState.trackedTargets[model] = trackedTarget
-
-		for _, animator in ipairs(getTargetAnimators(model)) do
-			autoParryRuntime.ensureTrackedAnimator(model, animator)
-		end
-
-		table.insert(trackedTarget.connections, model.DescendantAdded:Connect(function(descendant)
-			if descendant:IsA("Animator") then
-				autoParryRuntime.ensureTrackedAnimator(model, descendant)
-				return
-			end
-
-			if descendant:IsA("AnimationController") or descendant:IsA("Humanoid") then
-				for _, animator in ipairs(getTargetAnimators(model)) do
-					autoParryRuntime.ensureTrackedAnimator(model, animator)
-				end
-			end
-		end))
-
-		table.insert(trackedTarget.connections, model.AncestryChanged:Connect(function(_, parent)
-			if parent == nil then
-				autoParryRuntime.disconnectTrackedAutoParryTarget(model)
-			end
-		end))
+		trackedAnimatorRegistry:trackTarget(model)
 	end
 
 	autoParryRuntime.refreshTrackedAutoParryTargets = function()
@@ -4329,11 +4131,7 @@ local function setupAutoParryTab()
 			return nil
 		end
 
-		for _, model in ipairs(liveFolder:GetChildren()) do
-			autoParryRuntime.trackAutoParryTarget(model)
-		end
-
-		return liveFolder
+		return trackedAnimatorRegistry:refresh(liveFolder)
 	end
 
 	function autoParryRuntime.setAutoParryInputBlocking(active)
@@ -4530,9 +4328,7 @@ local function setupAutoParryTab()
 		maid:DoCleaning()
 		table.clear(autoParryState.queuedMoveActions)
 		table.clear(autoParryState.queuedTracks)
-		for model in pairs(autoParryState.trackedTargets) do
-			autoParryRuntime.disconnectTrackedAutoParryTarget(model)
-		end
+		trackedAnimatorRegistry:destroy()
 		if autoParryState.visualizer.part then
 			autoParryState.visualizer.part:Destroy()
 			autoParryState.visualizer.part = nil

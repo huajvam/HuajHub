@@ -53,7 +53,7 @@ local function normalizeModulePath(path)
 
 	local normalized = path:gsub("\\", "/")
 	if normalized:sub(1, 1) == "@" then
-		normalized = "utils/" .. normalized:sub(2)
+		normalized = normalized:sub(2)
 	end
 
 	return normalized

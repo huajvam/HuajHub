@@ -145,17 +145,75 @@ function EntityESP:setAccentColor(accentColor)
 	end
 end
 
+function EntityESP:setGroupVisible(objects, visible)
+	for _, object in ipairs(objects or {}) do
+		if object then
+			object.Visible = visible
+		end
+	end
+end
+
+function EntityESP:hideSkeletonFrom(startIndex)
+	for index = startIndex or 1, #self.skeletonLines do
+		local line = self.skeletonLines[index]
+		if line then
+			line.Visible = false
+		end
+	end
+end
+
+function EntityESP:setBox(points, color, visible)
+	local boxVisible = visible == true
+	for index, pair in ipairs(points or {}) do
+		local line = self.boxLines[index]
+		if line then
+			line.From = pair[1]
+			line.To = pair[2]
+			line.Color = color or line.Color
+			line.Visible = boxVisible
+		end
+	end
+end
+
+function EntityESP:setHealthBar(position, size, fillPosition, fillSize, fillColor, visible)
+	if self.healthBarOutline then
+		self.healthBarOutline.Position = position
+		self.healthBarOutline.Size = size
+		self.healthBarOutline.Visible = visible == true
+	end
+
+	if self.healthBarFill then
+		self.healthBarFill.Position = fillPosition
+		self.healthBarFill.Size = fillSize
+		self.healthBarFill.Color = fillColor or self.healthBarFill.Color
+		self.healthBarFill.Visible = visible == true
+	end
+end
+
+function EntityESP:setText(textObject, text, position, visible)
+	if not textObject then
+		return
+	end
+
+	textObject.Text = text or ""
+	textObject.Position = position or Vector2.zero
+	textObject.Visible = visible == true
+end
+
+function EntityESP:setTracer(fromPoint, toPoint, color, visible)
+	if not self.tracerLine then
+		return
+	end
+
+	self.tracerLine.From = fromPoint
+	self.tracerLine.To = toPoint
+	self.tracerLine.Color = color or self.tracerLine.Color
+	self.tracerLine.Visible = visible == true
+end
+
 function EntityESP:hide()
-	for _, line in ipairs(self.boxLines) do
-		if line then
-			line.Visible = false
-		end
-	end
-	for _, line in ipairs(self.skeletonLines) do
-		if line then
-			line.Visible = false
-		end
-	end
+	self:setGroupVisible(self.boxLines, false)
+	self:setGroupVisible(self.skeletonLines, false)
 	if self.healthBarOutline then
 		self.healthBarOutline.Visible = false
 	end
