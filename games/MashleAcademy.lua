@@ -698,6 +698,9 @@ local function setupLocalCheatsTab()
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
 	local antiFallCharacterConnection = nil
+	local noStunHeartbeatConnection = nil
+	local noStunCharacterConnection = nil
+	local noStunStateAddedConnection = nil
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
@@ -712,6 +715,12 @@ local function setupLocalCheatsTab()
 	local triggerAntiFallBypass
 	local ensureAntiFallState
 	local applyTeleportAntiFallProtection
+	local NO_STUN_STATE_NAMES = {
+		NoMove = true,
+		NoRoate = true,
+		NoRotate = true,
+		NoJump = true,
+	}
 
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
@@ -852,6 +861,43 @@ local function setupLocalCheatsTab()
 		end
 	end
 
+	local function isNoStunActive()
+		return Toggles and Toggles.NoStunEnabled and Toggles.NoStunEnabled.Value == true
+	end
+
+	local function clearNoStunValue(valueObject)
+		if not valueObject or not valueObject.Parent then
+			return
+		end
+
+		if not valueObject:IsA("BoolValue") then
+			return
+		end
+
+		if not NO_STUN_STATE_NAMES[valueObject.Name] then
+			return
+		end
+
+		pcall(function()
+			valueObject:Destroy()
+		end)
+	end
+
+	local function stopNoStun()
+		if noStunHeartbeatConnection then
+			noStunHeartbeatConnection:Disconnect()
+			noStunHeartbeatConnection = nil
+		end
+		if noStunCharacterConnection then
+			noStunCharacterConnection:Disconnect()
+			noStunCharacterConnection = nil
+		end
+		if noStunStateAddedConnection then
+			noStunStateAddedConnection:Disconnect()
+			noStunStateAddedConnection = nil
+		end
+	end
+
 	local function isAntiFallActive()
 		return Toggles and Toggles.AntiFallDamageEnabled and Toggles.AntiFallDamageEnabled.Value == true
 	end
@@ -904,6 +950,19 @@ local function setupLocalCheatsTab()
 		end
 
 		return nil
+	end
+
+	local function clearCharacterNoStunStates(character)
+		local characterState = getCharacterStateFolder(character)
+		if not characterState then
+			return nil
+		end
+
+		for _, child in ipairs(characterState:GetChildren()) do
+			clearNoStunValue(child)
+		end
+
+		return characterState
 	end
 
 	local function removeAntiFallState()
@@ -1274,6 +1333,52 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
+	local function startNoStun()
+		stopNoStun()
+
+		local function hookCharacter(character)
+			if noStunStateAddedConnection then
+				noStunStateAddedConnection:Disconnect()
+				noStunStateAddedConnection = nil
+			end
+
+			local characterState = clearCharacterNoStunStates(character)
+			if not characterState then
+				return
+			end
+
+			noStunStateAddedConnection = characterState.ChildAdded:Connect(function(child)
+				if not isNoStunActive() then
+					return
+				end
+
+				clearNoStunValue(child)
+			end)
+		end
+
+		local currentCharacter = LocalPlayer and LocalPlayer.Character
+		if currentCharacter then
+			hookCharacter(currentCharacter)
+		end
+
+		noStunCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+			task.defer(function()
+				if isNoStunActive() then
+					hookCharacter(character)
+				end
+			end)
+		end)
+
+		noStunHeartbeatConnection = RunService.Heartbeat:Connect(function()
+			if not isNoStunActive() then
+				return
+			end
+
+			local character = LocalPlayer and LocalPlayer.Character
+			clearCharacterNoStunStates(character)
+		end)
+	end
+
 	combatGroup:AddToggle("SpeedHackEnabled", {
 		Text = "Speedhack",
 		Default = false,
@@ -1325,6 +1430,11 @@ local function setupLocalCheatsTab()
 
 	combatGroup:AddToggle("AntiFallDamageEnabled", {
 		Text = "Anti Fall Damage",
+		Default = false,
+	})
+
+	combatGroup:AddToggle("NoStunEnabled", {
+		Text = "No Stun",
 		Default = false,
 	})
 
@@ -1383,6 +1493,14 @@ local function setupLocalCheatsTab()
 			startAntiFall()
 		else
 			stopAntiFall()
+		end
+	end)
+
+	Toggles.NoStunEnabled:OnChanged(function()
+		if Toggles.NoStunEnabled.Value then
+			startNoStun()
+		else
+			stopNoStun()
 		end
 	end)
 
@@ -1607,6 +1725,7 @@ local function setupLocalCheatsTab()
 		stopFly()
 		stopNoclip()
 		stopAntiFall()
+		stopNoStun()
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
@@ -1615,6 +1734,7 @@ local function setupLocalCheatsTab()
 	stopFly()
 	stopNoclip()
 	stopAntiFall()
+	stopNoStun()
 	stopKnockedOwnership()
 end
 setupLocalCheatsTab()
