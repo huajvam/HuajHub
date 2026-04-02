@@ -2769,6 +2769,8 @@ local function setupAutoParryTab()
 		lastState = {
 			remoteMissing = false,
 		},
+		lastHeartbeatErrorMessage = nil,
+		lastHeartbeatErrorAt = 0,
 		visualizer = {
 			part = nil,
 		},
@@ -2879,7 +2881,7 @@ local function setupAutoParryTab()
 	end
 
 	Toggles.AutoParryAdaptiveTiming:OnChanged(function()
-		if Toggles.AutoParryAdaptiveTiming.Value then
+		if getToggleValue("AutoParryAdaptiveTiming", false) then
 			autoParryState.lastAdaptiveTimingUpdateAt = 0
 			updateAdaptiveTimingOffset(true)
 		end
@@ -3737,7 +3739,7 @@ local function setupAutoParryTab()
 		local visualizerToggle = Toggles.AutoParryVisualizer
 		local distanceOption = Options.AutoParryDistance
 
-		if not visualizerToggle or not visualizerToggle.Value or not root then
+		if not getToggleValue("AutoParryVisualizer", false) or not root then
 			if part then
 				part.Transparency = 1
 			end
@@ -3745,7 +3747,7 @@ local function setupAutoParryTab()
 		end
 
 		part = ensureAutoParryVisualizer()
-		local distance = (distanceOption and distanceOption.Value) or 18
+		local distance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local diameter = math.max(distance * 2, 1)
 		part.Transparency = 0.72
 		part.Size = Vector3.new(diameter, diameter, diameter)
@@ -4771,7 +4773,7 @@ local function setupAutoParryTab()
 	end)
 
 	Toggles.AutoParryBlockInputs:OnChanged(function()
-		if not Toggles.AutoParryBlockInputs.Value then
+		if not getToggleValue("AutoParryBlockInputs", false) then
 			autoParryState.inputBlockUntil = 0
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
@@ -4785,8 +4787,9 @@ local function setupAutoParryTab()
 		local values = getOtherPlayerNames()
 		local currentSelection = {}
 
-		if Options.AutoParryWhitelist and type(Options.AutoParryWhitelist.Value) == "table" then
-			for playerName, selected in pairs(Options.AutoParryWhitelist.Value) do
+		local whitelistSelection = getOptionValue("AutoParryWhitelist", {})
+		if type(whitelistSelection) == "table" then
+			for playerName, selected in pairs(whitelistSelection) do
 				if selected then
 					currentSelection[playerName] = true
 				end
@@ -4904,7 +4907,20 @@ local function setupAutoParryTab()
 		end
 	end))
 
-	maid:GiveTask(RunService.Heartbeat:Connect(autoParryRuntime.processAutoParryHeartbeat))
+	maid:GiveTask(RunService.Heartbeat:Connect(function()
+		local ok, err = pcall(autoParryRuntime.processAutoParryHeartbeat)
+		if ok then
+			return
+		end
+
+		local errorMessage = tostring(err)
+		local now = os.clock()
+		if errorMessage ~= autoParryState.lastHeartbeatErrorMessage or (now - autoParryState.lastHeartbeatErrorAt) >= 2 then
+			autoParryState.lastHeartbeatErrorMessage = errorMessage
+			autoParryState.lastHeartbeatErrorAt = now
+			warn("[HuajHub] Auto Parry heartbeat error: " .. errorMessage)
+		end
+	end))
 
 	registerLibraryUnloadCallback(function()
 		autoParryRuntime.setAutoParryInputBlocking(false)
