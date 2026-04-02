@@ -1,10 +1,6 @@
 return {
 	Places = {
-		-- Mashle Academy:
-		-- [1234567890] = "mashle_academy",
-		--
-		-- Deepwoken:
-		-- [9876543210] = "deepwoken",
+		[13901460084] = "mashle_academy",
 	},
 
 	GameIds = {
