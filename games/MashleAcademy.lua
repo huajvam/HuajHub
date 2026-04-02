@@ -734,6 +734,8 @@ local function setupLocalCheatsTab()
 	local noStunWalkSpeed = 16
 	local noStunJumpPower = 50
 	local noStunJumpHeight = 7.2
+	local lastCastLockScanAt = 0
+	local cachedCastLockProjectiles = {}
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
 	local triggerAntiFallBypass
@@ -764,6 +766,16 @@ local function setupLocalCheatsTab()
 		end
 
 		return matches
+	end
+
+	local function getCachedCastLockProjectiles()
+		local now = os.clock()
+		if now - lastCastLockScanAt >= 0.5 then
+			lastCastLockScanAt = now
+			cachedCastLockProjectiles = getNilInstancesByNameClass("Tornado", "Part")
+		end
+
+		return cachedCastLockProjectiles
 	end
 
 	local function setTeleportDropdownValues(selectedLabel)
@@ -1232,17 +1244,20 @@ local function setupLocalCheatsTab()
 		end
 
 		castLockOnConnection = RunService.Heartbeat:Connect(function()
-			local projectiles = getNilInstancesByNameClass("Tornado", "Part")
+			local projectiles = getCachedCastLockProjectiles()
 			if #projectiles == 0 then
 				return
 			end
 
-			for _, projectile in ipairs(projectiles) do
-				if projectile then
+			for index = #projectiles, 1, -1 do
+				local projectile = projectiles[index]
+				if projectile and typeof(projectile) == "Instance" and projectile.ClassName == "Part" then
 					local targetRoot = getNearestCastLockTarget(projectile.Position)
 					if targetRoot then
 						steerCastLockProjectile(projectile, targetRoot)
 					end
+				else
+					table.remove(projectiles, index)
 				end
 			end
 		end)
@@ -2176,15 +2191,15 @@ local function setupEspTab()
 			return false
 		end
 
-		if targetType == "player" and not Toggles.PlayerEspEnabled.Value then
+		if targetType == "player" and not getToggleValue("PlayerEspEnabled", false) then
 			return false
 		end
 
-		if targetType == "mob" and not Toggles.MobEspEnabled.Value then
+		if targetType == "mob" and not getToggleValue("MobEspEnabled", false) then
 			return false
 		end
 
-		local maxDistance = Options.EspRenderDistance.Value or 150
+		local maxDistance = tonumber(getOptionValue("EspRenderDistance", 150)) or 150
 		return getEspDistance(model) <= maxDistance
 	end
 
@@ -2356,7 +2371,7 @@ local function setupEspTab()
 		local tracerStart = Vector2.new(viewportSize.X * 0.5, viewportSize.Y - 2)
 		local tracerEnd = Vector2.new(box.left + (box.width * 0.5), box.bottom)
 
-		local showBox = Toggles.EspShowBox.Value
+		local showBox = getToggleValue("EspShowBox", true)
 		entry:setBox({
 			{topLeft, topRight},
 			{topRight, bottomRight},
@@ -2381,33 +2396,33 @@ local function setupEspTab()
 			math.floor(255 * healthRatio),
 			90
 			),
-			Toggles.EspShowHealthBar.Value and humanoid ~= nil
+			getToggleValue("EspShowHealthBar", true) and humanoid ~= nil
 		)
 
 		entry:setText(
 			entry.nameText,
 			getEspDisplayName(model, targetType),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 14),
-			Toggles.EspShowNames.Value
+			getToggleValue("EspShowNames", true)
 		)
 
 		entry:setText(
 			entry.distanceText,
 			string.format("%.0f studs", distance),
 			Vector2.new(box.left + (box.width * 0.5), box.bottom + 1),
-			Toggles.EspShowDistance.Value
+			getToggleValue("EspShowDistance", true)
 		)
 
 		entry:setText(
 			entry.healthText,
 			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 27),
-			Toggles.EspShowHealthText.Value and humanoid ~= nil
+			getToggleValue("EspShowHealthText", false) and humanoid ~= nil
 		)
 
-		entry:setTracer(tracerStart, tracerEnd, accentColor, Toggles.EspShowTracers.Value)
+		entry:setTracer(tracerStart, tracerEnd, accentColor, getToggleValue("EspShowTracers", true))
 
-		if Toggles.EspShowSkeleton.Value then
+		if getToggleValue("EspShowSkeleton", false) then
 			updateEspSkeleton(entry, model, accentColor)
 		else
 			entry:hideSkeletonFrom(1)
@@ -2420,7 +2435,7 @@ local function setupEspTab()
 			return
 		end
 
-		if not Toggles.PlayerEspEnabled.Value then
+		if not getToggleValue("PlayerEspEnabled", false) then
 			clearEspCache(playerEspEntries)
 			return
 		end
@@ -2453,7 +2468,7 @@ local function setupEspTab()
 			return
 		end
 
-		if not Toggles.MobEspEnabled.Value then
+		if not getToggleValue("MobEspEnabled", false) then
 			clearEspCache(mobEspEntries)
 			return
 		end
@@ -2495,8 +2510,8 @@ local function setupEspTab()
 	end
 
 	local function isAnyEspEnabled()
-		return (Toggles.PlayerEspEnabled and Toggles.PlayerEspEnabled.Value)
-			or (Toggles.MobEspEnabled and Toggles.MobEspEnabled.Value)
+		return getToggleValue("PlayerEspEnabled", false)
+			or getToggleValue("MobEspEnabled", false)
 	end
 
 	local function scheduleEspRefresh()
@@ -2572,7 +2587,7 @@ local function setupEspTab()
 	})
 
 	Toggles.PlayerEspEnabled:OnChanged(function()
-		if not Toggles.PlayerEspEnabled.Value and not Toggles.MobEspEnabled.Value then
+		if not getToggleValue("PlayerEspEnabled", false) and not getToggleValue("MobEspEnabled", false) then
 			forceClearEsp()
 			return
 		end
@@ -2580,7 +2595,7 @@ local function setupEspTab()
 	end)
 
 	Toggles.MobEspEnabled:OnChanged(function()
-		if not Toggles.PlayerEspEnabled.Value and not Toggles.MobEspEnabled.Value then
+		if not getToggleValue("PlayerEspEnabled", false) and not getToggleValue("MobEspEnabled", false) then
 			forceClearEsp()
 			return
 		end
