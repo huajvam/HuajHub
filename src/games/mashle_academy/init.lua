@@ -2572,7 +2572,29 @@ local function setupAutoParryTab()
 	end
 
 	local function formatDetectedAnimationLabel(entry)
-		return string.format("%s | %s | %s", entry.sourceKey, entry.targetName or "Unknown", entry.animationId)
+		return string.format(
+			"%s | %s | %s",
+			entry.sourceKey,
+			entry.animationName or entry.targetName or "Unknown",
+			entry.animationId
+		)
+	end
+
+	local function getTrackAnimationName(track)
+		if not track then
+			return nil
+		end
+
+		local animation = track.Animation
+		if animation and type(animation.Name) == "string" and animation.Name ~= "" and animation.Name ~= "Animation" then
+			return animation.Name
+		end
+
+		if type(track.Name) == "string" and track.Name ~= "" and track.Name ~= "Animation" then
+			return track.Name
+		end
+
+		return nil
 	end
 
 	local function buildSavedConfigLabel(sourceKey, animationId, configData)
@@ -2968,12 +2990,12 @@ local function setupAutoParryTab()
 		autoParryState.currentBuilderConfigId = nil
 		Options.AutoParryMakerSource:SetValue(detectedEntry.sourceKey)
 		Options.AutoParryMakerAnimationId:SetValue(detectedEntry.animationId)
-		Options.AutoParryMakerNickname:SetValue(detectedEntry.targetName or "")
+		Options.AutoParryMakerNickname:SetValue(detectedEntry.animationName or detectedEntry.targetName or "")
 		Options.AutoParryMakerWait:SetValue(string.format("%.2f", detectedEntry.timePosition or 0))
 		Options.AutoParryMakerRange:SetValue(math.max(1, math.floor(detectedEntry.distance or 16)))
 	end
 
-	local function registerDetectedAnimation(targetType, targetName, animationId, timePosition, distance)
+	local function registerDetectedAnimation(targetType, targetName, animationId, timePosition, distance, animationName)
 		local sourceKey = getMakerSourceKey(targetType)
 		local normalizedAnimationId = normalizeBuilderAnimationId(animationId)
 		if not normalizedAnimationId or normalizedAnimationId == "" then
@@ -2986,6 +3008,7 @@ local function setupAutoParryTab()
 		}
 
 		entry.targetName = targetName or entry.targetName or "Unknown"
+		entry.animationName = animationName or entry.animationName or targetName or "Unknown"
 		entry.timePosition = tonumber(timePosition) or entry.timePosition or 0
 		entry.distance = tonumber(distance) or entry.distance or 16
 		entry.updatedAt = os.clock()
@@ -3627,7 +3650,14 @@ local function setupAutoParryTab()
 			return false
 		end
 
-		registerDetectedAnimation(candidate.targetType, targetCharacter.Name, normalizedAnimationId, currentTrackTimePosition, candidate.distance)
+		registerDetectedAnimation(
+			candidate.targetType,
+			targetCharacter.Name,
+			normalizedAnimationId,
+			currentTrackTimePosition,
+			candidate.distance,
+			getTrackAnimationName(track)
+		)
 
 		autoParryState.queuedTracks[track] = true
 		table.insert(autoParryState.queuedMoveActions, {
@@ -4092,6 +4122,7 @@ local function setupAutoParryTab()
 						local rawTimePosition = getTrackTimePosition(track) or 0
 						local candidateTrack = {
 							animationId = normalizeAnimationId(animationId),
+							animationName = getTrackAnimationName(track),
 							timePosition = math.max(rawTimePosition - captureCompensation, 0),
 							matched = getAnimationConfig(targetType, animationId) ~= nil,
 							priorityScore = getTrackPriorityScore(track),
@@ -4105,7 +4136,7 @@ local function setupAutoParryTab()
 		end
 
 		if bestTrack then
-			return bestTrack.animationId, bestTrack.matched, bestTrack.timePosition, bestTrack.priorityScore
+			return bestTrack.animationId, bestTrack.animationName, bestTrack.matched, bestTrack.timePosition, bestTrack.priorityScore
 		end
 	end
 
@@ -4149,12 +4180,13 @@ local function setupAutoParryTab()
 		for _, model in ipairs(liveFolder:GetChildren()) do
 			local candidate = classifyParryTarget(model, maxDistance)
 			if candidate then
-				local animationId, isMatched, timePosition, priorityScore = getManualDebugTrackForTarget(candidate.character, candidate.targetType, captureRequestedAt)
+				local animationId, animationName, isMatched, timePosition, priorityScore = getManualDebugTrackForTarget(candidate.character, candidate.targetType, captureRequestedAt)
 				if animationId then
 					local candidateInfo = {
 						targetName = candidate.character.Name,
 						targetType = candidate.targetType,
 						animationId = animationId,
+						animationName = animationName,
 						timePosition = timePosition or 0,
 						priorityScore = priorityScore or 0,
 						distance = candidate.distance,
@@ -4189,14 +4221,14 @@ local function setupAutoParryTab()
 			return
 		end
 
-		registerDetectedAnimation(candidate.targetType, candidate.targetName, candidate.animationId, candidate.timePosition, candidate.distance)
+		registerDetectedAnimation(candidate.targetType, candidate.targetName, candidate.animationId, candidate.timePosition, candidate.distance, candidate.animationName)
 		setLastAnimationId(candidate.animationId)
 		local latestCapture = {
 			actionKind = actionKind,
 			sourceKey = getMakerSourceKey(candidate.targetType),
 			animationId = candidate.animationId,
 			wait = candidate.timePosition or 0,
-			nickname = candidate.targetName,
+			nickname = candidate.animationName or candidate.targetName,
 			range = math.max(1, math.floor(candidate.distance or 16)),
 			capturedAt = os.clock(),
 		}
