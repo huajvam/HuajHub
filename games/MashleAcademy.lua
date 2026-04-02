@@ -34,6 +34,7 @@ local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fi
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY = "__huaj_hub_fall_damage_block_callback_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY = "__huaj_hub_fall_damage_block_hook_v1"
 local HUAJ_HUB_DASH_MULTIPLIER_CALLBACK_KEY = "__huaj_hub_dash_multiplier_callback_v1"
+local HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY = "__huaj_hub_dash_multiplier_suppress_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
@@ -725,7 +726,6 @@ local function setupLocalCheatsTab()
 	local speedHackConnection = nil
 	local flyConnection = nil
 	local noclipConnection = nil
-	local dashMultiplierConnection = nil
 	local noclipPartStates = {}
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
@@ -743,8 +743,6 @@ local function setupLocalCheatsTab()
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local dashMultiplierWindowUntil = 0
-	local dashMultiplierDirection = nil
-	local dashMultiplierRemainingDistance = 0
 	local knockedOwnershipLoopToken = 0
 	local noStunWalkSpeed = 16
 	local noStunJumpPower = 50
@@ -900,14 +898,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function stopDashMultiplier()
-		if dashMultiplierConnection then
-			dashMultiplierConnection:Disconnect()
-			dashMultiplierConnection = nil
-		end
-
 		dashMultiplierWindowUntil = 0
-		dashMultiplierDirection = nil
-		dashMultiplierRemainingDistance = 0
 	end
 
 	local function stopKnockedOwnership()
@@ -1378,32 +1369,18 @@ local function setupLocalCheatsTab()
 		dashMultiplierWindowUntil = math.max(dashMultiplierWindowUntil, os.clock() + math.max(duration or 0.35, 0.1))
 	end
 
-	local function getDashDirectionVector(rootPart, dashDirection)
-		if not rootPart then
-			return nil
+	local function withSuppressedDashMultiplier(callback)
+		GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY] = (tonumber(GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY]) or 0) + 1
+
+		local ok, result = pcall(callback)
+
+		GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY] = math.max((tonumber(GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY]) or 1) - 1, 0)
+
+		if not ok then
+			return false, result
 		end
 
-		local lookVector = Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z)
-		local rightVector = Vector3.new(rootPart.CFrame.RightVector.X, 0, rootPart.CFrame.RightVector.Z)
-
-		if lookVector.Magnitude > 0 then
-			lookVector = lookVector.Unit
-		end
-		if rightVector.Magnitude > 0 then
-			rightVector = rightVector.Unit
-		end
-
-		if dashDirection == "GroundForward" then
-			return lookVector
-		elseif dashDirection == "GroundBack" then
-			return -lookVector
-		elseif dashDirection == "GroundRight" then
-			return rightVector
-		elseif dashDirection == "GroundLeft" then
-			return -rightVector
-		end
-
-		return nil
+		return true, result
 	end
 
 	local function shouldApplyDashMultiplierRequest(instance, args)
@@ -1433,11 +1410,27 @@ local function setupLocalCheatsTab()
 			or dashDirection == "GroundLeft"
 			or dashDirection == "GroundForward"
 			or dashDirection == "GroundBack" then
+			if (tonumber(GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_SUPPRESS_KEY]) or 0) > 0 then
+				return true
+			end
+
 			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
-			if multiplier > 1.001 then
-				dashMultiplierDirection = dashDirection
-				dashMultiplierRemainingDistance = math.max(0, 18 * (multiplier - 1))
-				beginDashMultiplierWindow(0.14)
+			local extraDashes = math.max(math.floor(multiplier) - 1, 0)
+			local requestModule = getRequestModuleRemote()
+
+			if extraDashes > 0 and requestModule then
+				beginDashMultiplierWindow(0.2)
+
+				task.spawn(function()
+					for index = 1, extraDashes do
+						task.wait(0.04 * index)
+						withSuppressedDashMultiplier(function()
+							requestModule:FireServer("Misc", "Dash", dashDirection, {
+								DashCooldown = 2,
+							})
+						end)
+					end
+				end)
 			end
 			return true
 		end
@@ -1447,41 +1440,6 @@ local function setupLocalCheatsTab()
 
 	local function startDashMultiplier()
 		stopDashMultiplier()
-
-		dashMultiplierConnection = RunService.Heartbeat:Connect(function(deltaTime)
-			if not shouldUseDashMultiplier() then
-				dashMultiplierDirection = nil
-				dashMultiplierRemainingDistance = 0
-				return
-			end
-
-			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
-			if multiplier <= 1.001 then
-				dashMultiplierDirection = nil
-				dashMultiplierRemainingDistance = 0
-				return
-			end
-
-			local character = LocalPlayer and LocalPlayer.Character
-			local rootPart = getCharacterRoot(character)
-			if not rootPart or not dashMultiplierDirection or dashMultiplierRemainingDistance <= 0 then
-				return
-			end
-
-			local directionVector = getDashDirectionVector(rootPart, dashMultiplierDirection)
-			if not directionVector or directionVector.Magnitude <= 0 then
-				return
-			end
-
-			local pushRate = 18 * math.max(multiplier - 1, 0) / 0.14
-			local stepDistance = math.min(dashMultiplierRemainingDistance, pushRate * math.max(deltaTime or 0, 0))
-			if stepDistance <= 0 then
-				return
-			end
-
-			rootPart.CFrame = rootPart.CFrame + (directionVector * stepDistance)
-			dashMultiplierRemainingDistance -= stepDistance
-		end)
 	end
 
 	triggerAntiFallBypass = function(character, duration, preserveRemoteBypass)
