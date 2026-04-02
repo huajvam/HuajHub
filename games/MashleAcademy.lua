@@ -163,6 +163,10 @@ local MASHLE_TELEPORT_LOCATIONS = {
 		name = "Sand trainer",
 		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
 	},
+	{
+		name = "Sand trainer",
+		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
+	},
 	-- {
 	-- 	name = "Arena",
 	-- 	cframe = CFrame.new(100, 15, -250),
@@ -2301,6 +2305,9 @@ local function setupAutoParryTab()
 	local onCreateMakerConfig
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
+	pcall(function()
+		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
+	end)
 	local AUTO_PARRY_MAKER_FOLDER = "huajhub/" .. GAME_KEY
 	local AUTO_PARRY_MAKER_FILE = AUTO_PARRY_MAKER_FOLDER .. "/AutoParryConfig"
 	local AUTO_PARRY_MAKER_OLD_SHARED_FILE = "huajhub/AutoParryConfig"
