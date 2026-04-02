@@ -618,25 +618,6 @@ local function isAutoParryEnabled()
 	return Toggles and Toggles.AutoParryEnabled and Toggles.AutoParryEnabled.Value == true
 end
 
-local function getToggleValue(name, default)
-	if Toggles and Toggles[name] then
-		return Toggles[name].Value == true
-	end
-
-	return default == true
-end
-
-local function getOptionValue(name, default)
-	if Options and Options[name] then
-		local value = Options[name].Value
-		if value ~= nil then
-			return value
-		end
-	end
-
-	return default
-end
-
 local function beginFallDebugWindow(reason, duration)
 	if not isFallDebugEnabled() then
 		return
@@ -2616,8 +2597,6 @@ local function setupAutoParryTab()
 		lastState = {
 			remoteMissing = false,
 		},
-		lastHeartbeatErrorMessage = nil,
-		lastHeartbeatErrorAt = 0,
 		visualizer = {
 			part = nil,
 		},
@@ -2728,7 +2707,7 @@ local function setupAutoParryTab()
 	end
 
 	Toggles.AutoParryAdaptiveTiming:OnChanged(function()
-		if getToggleValue("AutoParryAdaptiveTiming", false) then
+		if Toggles.AutoParryAdaptiveTiming.Value then
 			autoParryState.lastAdaptiveTimingUpdateAt = 0
 			updateAdaptiveTimingOffset(true)
 		end
@@ -3099,8 +3078,8 @@ local function setupAutoParryTab()
 		local actionType = (moveConfig and moveConfig.actionType) or "Parry"
 		local key = AdaptiveTimingUtils.getAdaptiveAnimationKey(normalizeBuilderAnimationId, sourceKey, animationId, actionType)
 		return AdaptiveTimingUtils.getTimingOffsetMs({
-			manualOffsetMs = tonumber(getOptionValue("AutoParryTimingOffset", 0)) or 0,
-			adaptiveEnabled = getToggleValue("AutoParryAdaptiveTiming", false),
+			manualOffsetMs = tonumber(Options.AutoParryTimingOffset.Value) or 0,
+			adaptiveEnabled = Toggles.AutoParryAdaptiveTiming.Value == true,
 			actionType = actionType,
 			pingCorrectionMs = tonumber(autoParryState.adaptiveTiming.lastComputedOffsetMs) or 0,
 			actionBiasMs = tonumber(autoParryState.adaptiveTiming.actionBiasMs[actionType]) or 0,
@@ -3110,9 +3089,9 @@ local function setupAutoParryTab()
 	end
 
 	local function getBuilderConfigData()
-		local animationId = normalizeBuilderAnimationId(getOptionValue("AutoParryMakerAnimationId", ""))
-		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
-		local actionType = getOptionValue("AutoParryMakerActionType", "Parry") or "Parry"
+		local animationId = normalizeBuilderAnimationId(Options.AutoParryMakerAnimationId.Value)
+		local sourceKey = Options.AutoParryMakerSource.Value or "Players"
+		local actionType = Options.AutoParryMakerActionType.Value or "Parry"
 
 		if not animationId or animationId == "" then
 			return nil
@@ -3122,14 +3101,14 @@ local function setupAutoParryTab()
 			configId = autoParryState.currentBuilderConfigId,
 			sourceKey = sourceKey,
 			animationId = animationId,
-			nickname = tostring(getOptionValue("AutoParryMakerNickname", "") or ""),
-			wait = tonumber(getOptionValue("AutoParryMakerWait", 0)) or 0,
-			repeatAmount = math.max(1, math.floor(tonumber(getOptionValue("AutoParryMakerRepeatAmount", 1)) or 1)),
-			repeatDelay = tonumber(getOptionValue("AutoParryMakerRepeatDelay", 0)) or 0,
+			nickname = tostring(Options.AutoParryMakerNickname.Value or ""),
+			wait = tonumber(Options.AutoParryMakerWait.Value) or 0,
+			repeatAmount = math.max(1, math.floor(tonumber(Options.AutoParryMakerRepeatAmount.Value) or 1)),
+			repeatDelay = tonumber(Options.AutoParryMakerRepeatDelay.Value) or 0,
 			actionType = actionType,
-			delay = getOptionValue("AutoParryMakerDelay", "Off") == "On",
-			delayRange = tonumber(getOptionValue("AutoParryMakerDelayRange", 0)) or 0,
-			range = tonumber(getOptionValue("AutoParryMakerRange", 16)) or 16,
+			delay = Options.AutoParryMakerDelay.Value == "On",
+			delayRange = tonumber(Options.AutoParryMakerDelayRange.Value) or 0,
+			range = tonumber(Options.AutoParryMakerRange.Value) or 16,
 		}
 	end
 
@@ -3586,7 +3565,7 @@ local function setupAutoParryTab()
 		local visualizerToggle = Toggles.AutoParryVisualizer
 		local distanceOption = Options.AutoParryDistance
 
-		if not getToggleValue("AutoParryVisualizer", false) or not root then
+		if not visualizerToggle or not visualizerToggle.Value or not root then
 			if part then
 				part.Transparency = 1
 			end
@@ -3594,7 +3573,7 @@ local function setupAutoParryTab()
 		end
 
 		part = ensureAutoParryVisualizer()
-		local distance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
+		local distance = (distanceOption and distanceOption.Value) or 18
 		local diameter = math.max(distance * 2, 1)
 		part.Transparency = 0.72
 		part.Size = Vector3.new(diameter, diameter, diameter)
@@ -3613,10 +3592,10 @@ local function setupAutoParryTab()
 			return nil
 		end
 
-		local mode = getOptionValue("AutoParryMode", "Mobs+Players") or "Mobs+Players"
+		local mode = Options.AutoParryMode.Value or "Mobs+Players"
 		local allowPlayers = mode == "Mobs+Players" or mode == "Players"
 		local allowMobs = mode == "Mobs+Players" or mode == "Mobs"
-		local whitelist = getOptionValue("AutoParryWhitelist", nil)
+		local whitelist = Options.AutoParryWhitelist.Value
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
 		local targetType = resolveAutoParryTargetType(model)
@@ -3733,7 +3712,7 @@ local function setupAutoParryTab()
 	end
 
 	local function getMoveConfigRange(moveConfig)
-		return AutoParryConfigUtils.getMoveConfigRange(moveConfig, tonumber(getOptionValue("AutoParryDistance", 18)) or 18)
+		return AutoParryConfigUtils.getMoveConfigRange(moveConfig, Options.AutoParryDistance.Value or 18)
 	end
 
 	local function getMoveConfigDelaySeconds(moveConfig)
@@ -3805,7 +3784,7 @@ local function setupAutoParryTab()
 		local normalizedAnimationId = normalizeAnimationId(animationId)
 		local debugType = getAutoParryTargetDebugType(targetCharacter)
 
-		local baseDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
+		local baseDistance = Options.AutoParryDistance.Value or 18
 		local candidate = classifyParryTarget(targetCharacter, baseDistance)
 		if not candidate then
 			setAutoParryDebugText(string.format("%s %s anim %s skipped by range/filter.", debugType, targetCharacter.Name, normalizedAnimationId))
@@ -3982,7 +3961,7 @@ local function setupAutoParryTab()
 				})
 			end)
 
-			if getToggleValue("AutoParryBlockInputs", false) then
+			if Toggles.AutoParryBlockInputs.Value then
 				autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 				autoParryRuntime.setAutoParryInputBlocking(true)
 			end
@@ -3999,10 +3978,10 @@ local function setupAutoParryTab()
 
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
-			and not (getToggleValue("AutoParryDontBlatantDashPlayers", false) and targetType == "player")
+			and not (Toggles.AutoParryDontBlatantDashPlayers.Value and targetType == "player")
 			and now - autoParryState.lastBlatantDashAt >= blatantDashCooldown then
 			autoParryState.lastBlatantDashAt = now
-			if getToggleValue("AutoParryBlatantDash", false) then
+			if Toggles.AutoParryBlatantDash.Value then
 				usedDash = autoParryRuntime.fireAutoParryDashRemote(remote) == true
 			else
 				autoParryRuntime.pressDashKey()
@@ -4064,7 +4043,7 @@ local function setupAutoParryTab()
 			))
 			autoParryState.handledTracks[animationTrack] = true
 
-			if getToggleValue("AutoParryDashOnFail", false) then
+			if Toggles.AutoParryDashOnFail.Value then
 				autoParryState.pendingParryFailCheck = {
 					target = targetCharacter,
 					distance = actionRange,
@@ -4080,7 +4059,7 @@ local function setupAutoParryTab()
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		end
 
-		if getToggleValue("AutoParryBlockInputs", false) then
+		if Toggles.AutoParryBlockInputs.Value then
 			autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 			autoParryRuntime.setAutoParryInputBlocking(true)
 		end
@@ -4102,7 +4081,7 @@ local function setupAutoParryTab()
 		local now = os.clock()
 		cleanupHandledAttackTracks()
 
-		if getToggleValue("AutoParryAdaptiveTiming", false) and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
+		if Toggles.AutoParryAdaptiveTiming.Value and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
 			autoParryState.lastAdaptiveTimingUpdateAt = now
 			updateAdaptiveTimingOffset(false)
 		end
@@ -4118,13 +4097,13 @@ local function setupAutoParryTab()
 
 		if autoParryState.pendingParryFailCheck and now >= autoParryState.pendingParryFailCheck.checkAt then
 			local targetCharacter = autoParryState.pendingParryFailCheck.target
-			local maxDistance = autoParryState.pendingParryFailCheck.distance or (tonumber(getOptionValue("AutoParryDistance", 18)) or 18)
+			local maxDistance = autoParryState.pendingParryFailCheck.distance or (Options.AutoParryDistance.Value or 18)
 			local localCharacter = LocalPlayer and LocalPlayer.Character
 			local localRoot = getCharacterRoot(localCharacter)
 			local targetRoot = getCharacterRoot(targetCharacter)
 			local humanoid = getCharacterHumanoid(targetCharacter)
 
-			if getToggleValue("AutoParryDashOnFail", false)
+			if Toggles.AutoParryDashOnFail.Value
 				and localRoot
 				and targetRoot
 				and humanoid
@@ -4404,7 +4383,7 @@ local function setupAutoParryTab()
 	end
 
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
-		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
+		local maxDistance = Options.AutoParryDistance.Value or 18
 		local candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
@@ -4620,7 +4599,7 @@ local function setupAutoParryTab()
 	end)
 
 	Toggles.AutoParryBlockInputs:OnChanged(function()
-		if not getToggleValue("AutoParryBlockInputs", false) then
+		if not Toggles.AutoParryBlockInputs.Value then
 			autoParryState.inputBlockUntil = 0
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
@@ -4634,9 +4613,8 @@ local function setupAutoParryTab()
 		local values = getOtherPlayerNames()
 		local currentSelection = {}
 
-		local whitelistSelection = getOptionValue("AutoParryWhitelist", {})
-		if type(whitelistSelection) == "table" then
-			for playerName, selected in pairs(whitelistSelection) do
+		if Options.AutoParryWhitelist and type(Options.AutoParryWhitelist.Value) == "table" then
+			for playerName, selected in pairs(Options.AutoParryWhitelist.Value) do
 				if selected then
 					currentSelection[playerName] = true
 				end
@@ -4754,20 +4732,7 @@ local function setupAutoParryTab()
 		end
 	end))
 
-	maid:GiveTask(RunService.Heartbeat:Connect(function()
-		local ok, err = pcall(autoParryRuntime.processAutoParryHeartbeat)
-		if ok then
-			return
-		end
-
-		local errorMessage = tostring(err)
-		local now = os.clock()
-		if errorMessage ~= autoParryState.lastHeartbeatErrorMessage or (now - autoParryState.lastHeartbeatErrorAt) >= 2 then
-			autoParryState.lastHeartbeatErrorMessage = errorMessage
-			autoParryState.lastHeartbeatErrorAt = now
-			warn("[HuajHub] Auto Parry heartbeat error: " .. errorMessage)
-		end
-	end))
+	maid:GiveTask(RunService.Heartbeat:Connect(autoParryRuntime.processAutoParryHeartbeat))
 
 	registerLibraryUnloadCallback(function()
 		autoParryRuntime.setAutoParryInputBlocking(false)
