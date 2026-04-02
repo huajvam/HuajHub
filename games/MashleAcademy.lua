@@ -163,6 +163,10 @@ local MASHLE_TELEPORT_LOCATIONS = {
 		name = "Sand trainer",
 		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
 	},
+	{
+		name = "Sand trainer",
+		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
+	},
 	-- {
 	-- 	name = "Arena",
 	-- 	cframe = CFrame.new(100, 15, -250),
@@ -1540,6 +1544,12 @@ local function setupLocalCheatsTab()
 		stopAntiFall()
 		stopKnockedOwnership()
 	end)
+
+	stopSpeedHack()
+	stopFly()
+	stopNoclip()
+	stopAntiFall()
+	stopKnockedOwnership()
 end
 setupLocalCheatsTab()
 
@@ -4465,6 +4475,7 @@ local function setupAutoParryTab()
 
 	registerLibraryUnloadCallback(function()
 		autoParryRuntime.setAutoParryInputBlocking(false)
+		fireBlockingStateRemote(false)
 		autoParryState.pendingParryFailCheck = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = nil
@@ -4533,12 +4544,17 @@ SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 
-	ThemeManager:SetFolder("HuajHub")
-	SaveManager:SetFolder("HuajHub/" .. GAME_KEY)
+ThemeManager:SetFolder("HuajHub")
+SaveManager:SetFolder("HuajHub/" .. GAME_KEY)
 
 SaveManager:BuildConfigSection(Tabs["Settings"])
 ThemeManager:ApplyToTab(Tabs["Settings"])
-SaveManager:LoadAutoloadConfig()
+pcall(function()
+	ContextActionService:UnbindAction("HuajHubAutoParryInputBlock")
+end)
+pcall(function()
+	fireBlockingStateRemote(false)
+end)
 
 task.defer(function()
 	local holder = Window and Window.Holder
