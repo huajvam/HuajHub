@@ -1,8 +1,6 @@
 local MashleAcademy = {}
-
-function MashleAcademy.init(context)
-	local repo = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
-	local GAME_KEY = "mashle_academy"
+local REPO_BASE = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
+local GAME_KEY = "mashle_academy"
 
 local Players = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
@@ -13,6 +11,7 @@ local RunService = game:GetService("RunService")
 local Stats = game:GetService("Stats")
 local UserInputService = game:GetService("UserInputService")
 local VirtualInputManager = game:GetService("VirtualInputManager")
+
 local GLOBAL_ENV = getgenv and getgenv() or _G
 local ANIM_LOGGER_RUNTIME_KEY = "__anim_logger_v254_runtime"
 local ANIM_LOGGER_OPTIONS_KEY = "__anim_logger_v254_options"
@@ -21,22 +20,31 @@ local HUAJ_HUB_MANUAL_ACTION_HOOK_KEY = "__huaj_hub_manual_action_hook_v1"
 local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v1"
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
-	local ANIM_LOGGER_FILE_CANDIDATES = {
-		"AnimLogger.lua",
-		".\\AnimLogger.lua",
-		"./AnimLogger.lua",
-		".\\legacy\\AnimLogger.lua",
-		"./legacy/AnimLogger.lua",
-		".\\scripts\\AnimLogger.lua",
-		"./scripts/AnimLogger.lua",
-		"scripts/AnimLogger.lua",
-		".\\src\\games\\mashle_academy\\AnimLogger.lua",
-		"./src/games/mashle_academy/AnimLogger.lua",
-	}
+local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 
-local Library = loadstring(game:HttpGet(repo .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(repo .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(repo .. "addons/SaveManager.lua"))()
+local ANIM_LOGGER_FILE_CANDIDATES = {
+	"AnimLogger.lua",
+	".\\AnimLogger.lua",
+	"./AnimLogger.lua",
+	".\\legacy\\AnimLogger.lua",
+	"./legacy/AnimLogger.lua",
+	".\\scripts\\AnimLogger.lua",
+	"./scripts/AnimLogger.lua",
+	"scripts/AnimLogger.lua",
+	".\\src\\games\\mashle_academy\\AnimLogger.lua",
+	"./src/games/mashle_academy/AnimLogger.lua",
+}
+
+local Library = loadstring(game:HttpGet(REPO_BASE .. "Library.lua"))()
+local ThemeManager = loadstring(game:HttpGet(REPO_BASE .. "addons/ThemeManager.lua"))()
+local SaveManager = loadstring(game:HttpGet(REPO_BASE .. "addons/SaveManager.lua"))()
+
+function MashleAcademy.init(_context)
+	if GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] then
+		return
+	end
+
+	GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = true
 
 local function getGameTabName()
 	local ok, info = pcall(function()
@@ -516,7 +524,7 @@ for _, tab in ipairs(tabDefinitions) do
 	end
 end
 
-do
+local function setupLocalCheatsTab()
 	local mainTab = Tabs["Local Cheats"]
 	local combatGroup = mainTab:AddLeftGroupbox("Local Cheats")
 	local speedHackConnection = nil
@@ -1295,8 +1303,9 @@ do
 		stopKnockedOwnership()
 	end)
 end
+setupLocalCheatsTab()
 
-do
+local function setupEspTab()
 	local espTab = Tabs["Player Mods"]
 	local espGroup = espTab:AddLeftGroupbox("ESP")
 	local espVisualGroup = espTab:AddRightGroupbox("ESP Visuals")
@@ -2148,8 +2157,9 @@ do
 		task.delay(0.5, forceClearEsp)
 	end)
 end
+setupEspTab()
 
-do
+local function setupAutoParryTab()
 	local autoParryTab = Tabs["Auto Parry"]
 	local autoParryGroup = autoParryTab:AddLeftGroupbox("Auto Parry")
 	local autoParryMakerGroup = autoParryTab:AddRightGroupbox("Auto Parry Maker")
@@ -2182,40 +2192,12 @@ do
 		Enum.PlayerActions.CharacterRight,
 		Enum.PlayerActions.CharacterJump,
 	}
-	local autoParryLastState = {
-		remoteMissing = false,
-	}
-	local autoParryVisualizer = {
-		part = nil,
-	}
-	local manualActionRequestRemote = getRequestModuleRemote()
-	local trackedAutoParryTargets = {}
-	local handledAttackTracks = {}
-	local queuedAttackTracks = {}
 	local autoParryCooldown = 0.18
 	local autoParryBlockHoldDuration = 0.35
-	local autoParryInputBlockUntil = 0
-	local autoParryInputBlockActive = false
 	local blatantDashCooldown = 2
 	local dashOnFailCooldown = 0.5
 	local adaptiveTimingUpdateInterval = 1
 	local autoParryTrackSweepInterval = 0.2
-	local lastParryAt = 0
-	local lastBlatantDashAt = 0
-	local lastDashOnFailAt = 0
-	local lastAdaptiveTimingUpdateAt = 0
-	local lastAutoParryTrackSweepAt = 0
-	local manualDashInputSuppressUntil = 0
-	local manualParryInputSuppressUntil = 0
-	local lastManualParryAnimationId = nil
-	local lastManualParryAssetUrl = nil
-	local lastManualDashAnimationId = nil
-	local lastManualDashAssetUrl = nil
-	local pendingParryFailCheck = nil
-	local pendingManualParryDebugMessage = nil
-	local pendingManualDashDebugMessage = nil
-	local queuedMoveActions = {}
-	local pendingBlockReleaseAt = 0
 	local onCreateMakerConfig
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
@@ -2237,18 +2219,48 @@ do
 	local lastManualParryCapture = nil
 	local lastManualDashCapture = nil
 	local lastManualJumpCapture = nil
-	local currentBuilderConfigId = nil
-	local adaptiveTimingState = {
-		pingSamples = {},
-		smoothedPingMs = 0,
-		lastComputedOffsetMs = 0,
-		actionBiasMs = {
-			Parry = 0,
-			Dash = 14,
-			Jump = 20,
-			Block = 6,
+	local autoParryState = {
+		lastState = {
+			remoteMissing = false,
 		},
-		learnedOffsets = {},
+		visualizer = {
+			part = nil,
+		},
+		manualActionRequestRemote = getRequestModuleRemote(),
+		trackedTargets = {},
+		handledTracks = {},
+		queuedTracks = {},
+		inputBlockUntil = 0,
+		inputBlockActive = false,
+		lastParryAt = 0,
+		lastBlatantDashAt = 0,
+		lastDashOnFailAt = 0,
+		lastAdaptiveTimingUpdateAt = 0,
+		lastTrackSweepAt = 0,
+		manualDashInputSuppressUntil = 0,
+		manualParryInputSuppressUntil = 0,
+		lastManualParryAnimationId = nil,
+		lastManualParryAssetUrl = nil,
+		lastManualDashAnimationId = nil,
+		lastManualDashAssetUrl = nil,
+		pendingParryFailCheck = nil,
+		pendingManualParryDebugMessage = nil,
+		pendingManualDashDebugMessage = nil,
+		queuedMoveActions = {},
+		pendingBlockReleaseAt = 0,
+		currentBuilderConfigId = nil,
+		adaptiveTiming = {
+			pingSamples = {},
+			smoothedPingMs = 0,
+			lastComputedOffsetMs = 0,
+			actionBiasMs = {
+				Parry = 0,
+				Dash = 14,
+				Jump = 20,
+				Block = 6,
+			},
+			learnedOffsets = {},
+		},
 	}
 
 	GLOBAL_ENV.HuajHubAutoParryMakerConfigs = autoParryMakerConfigs
@@ -2298,23 +2310,23 @@ do
 			return false
 		end
 
-		table.insert(adaptiveTimingState.pingSamples, pingMs)
-		while #adaptiveTimingState.pingSamples > 8 do
-			table.remove(adaptiveTimingState.pingSamples, 1)
+		table.insert(autoParryState.adaptiveTiming.pingSamples, pingMs)
+		while #autoParryState.adaptiveTiming.pingSamples > 8 do
+			table.remove(autoParryState.adaptiveTiming.pingSamples, 1)
 		end
 
 		local totalPing = 0
-		for _, sample in ipairs(adaptiveTimingState.pingSamples) do
+		for _, sample in ipairs(autoParryState.adaptiveTiming.pingSamples) do
 			totalPing = totalPing + sample
 		end
 
-		adaptiveTimingState.smoothedPingMs = totalPing / math.max(#adaptiveTimingState.pingSamples, 1)
-		adaptiveTimingState.lastComputedOffsetMs = math.clamp(math.floor((adaptiveTimingState.smoothedPingMs * 0.35) + 0.5), -60, 120)
+		autoParryState.adaptiveTiming.smoothedPingMs = totalPing / math.max(#autoParryState.adaptiveTiming.pingSamples, 1)
+		autoParryState.adaptiveTiming.lastComputedOffsetMs = math.clamp(math.floor((autoParryState.adaptiveTiming.smoothedPingMs * 0.35) + 0.5), -60, 120)
 		if showNotification then
 			Library:Notify(string.format(
 				"Adaptive Timing active. Base slider is preserved; live ping correction is %d ms from %.0f ms smoothed ping.",
-				adaptiveTimingState.lastComputedOffsetMs,
-				adaptiveTimingState.smoothedPingMs
+				autoParryState.adaptiveTiming.lastComputedOffsetMs,
+				autoParryState.adaptiveTiming.smoothedPingMs
 			), 3)
 		end
 		return true
@@ -2322,7 +2334,7 @@ do
 
 	Toggles.AutoParryAdaptiveTiming:OnChanged(function()
 		if Toggles.AutoParryAdaptiveTiming.Value then
-			lastAdaptiveTimingUpdateAt = 0
+			autoParryState.lastAdaptiveTimingUpdateAt = 0
 			updateAdaptiveTimingOffset(true)
 		end
 	end)
@@ -2377,14 +2389,14 @@ do
 
 	local manualParryTimingLabel = autoParryMakerGroup:AddLabel("Manual Parry Timing: parry manually to capture timing.", true)
 	autoParryMakerGroup:AddButton("Copy Last Parry ID", function()
-		if not lastManualParryAnimationId or not lastManualParryAssetUrl then
+		if not autoParryState.lastManualParryAnimationId or not autoParryState.lastManualParryAssetUrl then
 			Library:Notify("No manual parry animation has been captured yet.", 2)
 			return
 		end
 
 		if type(setclipboard) == "function" then
-			pcall(setclipboard, lastManualParryAssetUrl)
-			Library:Notify("Copied parry rbxassetid for " .. lastManualParryAnimationId .. ".", 2)
+			pcall(setclipboard, autoParryState.lastManualParryAssetUrl)
+			Library:Notify("Copied parry rbxassetid for " .. autoParryState.lastManualParryAnimationId .. ".", 2)
 		else
 			Library:Notify("Clipboard is unavailable in this executor.", 2)
 		end
@@ -2392,14 +2404,14 @@ do
 	autoParryMakerGroup:AddBlank(4)
 	local manualDashTimingLabel = autoParryMakerGroup:AddLabel("Manual Dash Timing: dash manually to capture timing.", true)
 	autoParryMakerGroup:AddButton("Copy Last Dash ID", function()
-		if not lastManualDashAnimationId or not lastManualDashAssetUrl then
+		if not autoParryState.lastManualDashAnimationId or not autoParryState.lastManualDashAssetUrl then
 			Library:Notify("No manual dash animation has been captured yet.", 2)
 			return
 		end
 
 		if type(setclipboard) == "function" then
-			pcall(setclipboard, lastManualDashAssetUrl)
-			Library:Notify("Copied dash rbxassetid for " .. lastManualDashAnimationId .. ".", 2)
+			pcall(setclipboard, autoParryState.lastManualDashAssetUrl)
+			Library:Notify("Copied dash rbxassetid for " .. autoParryState.lastManualDashAnimationId .. ".", 2)
 		else
 			Library:Notify("Clipboard is unavailable in this executor.", 2)
 		end
@@ -2496,35 +2508,35 @@ do
 	end
 
 	local function setManualParryDebugText(message)
-		pendingManualParryDebugMessage = "Manual Parry Timing: " .. tostring(message or "")
+		autoParryState.pendingManualParryDebugMessage = "Manual Parry Timing: " .. tostring(message or "")
 	end
 
 	local function setManualDashDebugText(message)
-		pendingManualDashDebugMessage = "Manual Dash Timing: " .. tostring(message or "")
+		autoParryState.pendingManualDashDebugMessage = "Manual Dash Timing: " .. tostring(message or "")
 	end
 
 	local function setLastManualParryAnimationId(animationId)
 		local normalizedAnimationId = tostring(animationId or ""):match("%d+")
 		if not normalizedAnimationId or normalizedAnimationId == "" then
-			lastManualParryAnimationId = nil
-			lastManualParryAssetUrl = nil
+			autoParryState.lastManualParryAnimationId = nil
+			autoParryState.lastManualParryAssetUrl = nil
 			return
 		end
 
-		lastManualParryAnimationId = normalizedAnimationId
-		lastManualParryAssetUrl = "rbxassetid://" .. normalizedAnimationId
+		autoParryState.lastManualParryAnimationId = normalizedAnimationId
+		autoParryState.lastManualParryAssetUrl = "rbxassetid://" .. normalizedAnimationId
 	end
 
 	local function setLastManualDashAnimationId(animationId)
 		local normalizedAnimationId = tostring(animationId or ""):match("%d+")
 		if not normalizedAnimationId or normalizedAnimationId == "" then
-			lastManualDashAnimationId = nil
-			lastManualDashAssetUrl = nil
+			autoParryState.lastManualDashAnimationId = nil
+			autoParryState.lastManualDashAssetUrl = nil
 			return
 		end
 
-		lastManualDashAnimationId = normalizedAnimationId
-		lastManualDashAssetUrl = "rbxassetid://" .. normalizedAnimationId
+		autoParryState.lastManualDashAnimationId = normalizedAnimationId
+		autoParryState.lastManualDashAssetUrl = "rbxassetid://" .. normalizedAnimationId
 	end
 
 	local function getMakerSourceKey(targetType)
@@ -2681,10 +2693,10 @@ do
 
 	local function updateLearnedAdaptiveOffset(sourceKey, animationId, actionType, deltaMs, weight)
 		local key = getAdaptiveAnimationKey(sourceKey, animationId, actionType)
-		local previous = tonumber(adaptiveTimingState.learnedOffsets[key]) or 0
+		local previous = tonumber(autoParryState.adaptiveTiming.learnedOffsets[key]) or 0
 		local appliedWeight = math.clamp(tonumber(weight) or 0.25, 0.05, 1)
 		local clampedDeltaMs = math.clamp(tonumber(deltaMs) or 0, -120, 120)
-		adaptiveTimingState.learnedOffsets[key] = math.clamp(previous + ((clampedDeltaMs - previous) * appliedWeight), -120, 120)
+		autoParryState.adaptiveTiming.learnedOffsets[key] = math.clamp(previous + ((clampedDeltaMs - previous) * appliedWeight), -120, 120)
 	end
 
 	local function getAdaptiveTimingOffsetMs(sourceKey, animationId, moveConfig, distance)
@@ -2694,9 +2706,9 @@ do
 		end
 
 		local actionType = (moveConfig and moveConfig.actionType) or "Parry"
-		local pingCorrectionMs = tonumber(adaptiveTimingState.lastComputedOffsetMs) or 0
-		local actionBiasMs = tonumber(adaptiveTimingState.actionBiasMs[actionType]) or 0
-		local learnedOffsetMs = tonumber(adaptiveTimingState.learnedOffsets[getAdaptiveAnimationKey(sourceKey, animationId, actionType)]) or 0
+		local pingCorrectionMs = tonumber(autoParryState.adaptiveTiming.lastComputedOffsetMs) or 0
+		local actionBiasMs = tonumber(autoParryState.adaptiveTiming.actionBiasMs[actionType]) or 0
+		local learnedOffsetMs = tonumber(autoParryState.adaptiveTiming.learnedOffsets[getAdaptiveAnimationKey(sourceKey, animationId, actionType)]) or 0
 		local distanceBiasMs = math.clamp(((tonumber(distance) or 0) - 8) * 1.5, -8, 18)
 
 		return math.clamp(manualOffsetMs + pingCorrectionMs + actionBiasMs + learnedOffsetMs + distanceBiasMs, -120, 250)
@@ -2736,7 +2748,7 @@ do
 		end
 
 		return {
-			configId = currentBuilderConfigId,
+			configId = autoParryState.currentBuilderConfigId,
 			sourceKey = sourceKey,
 			animationId = animationId,
 			nickname = tostring(Options.AutoParryMakerNickname.Value or ""),
@@ -2755,7 +2767,7 @@ do
 			return
 		end
 
-		currentBuilderConfigId = configData.configId
+		autoParryState.currentBuilderConfigId = configData.configId
 		Options.AutoParryMakerSource:SetValue(configData.sourceKey or "Players")
 		Options.AutoParryMakerAnimationId:SetValue(tostring(configData.animationId or ""))
 		Options.AutoParryMakerRepeatAmount:SetValue(tostring(configData.repeatAmount or 1))
@@ -2925,7 +2937,7 @@ do
 			return
 		end
 
-		currentBuilderConfigId = nil
+		autoParryState.currentBuilderConfigId = nil
 		Options.AutoParryMakerSource:SetValue(detectedEntry.sourceKey)
 		Options.AutoParryMakerAnimationId:SetValue(detectedEntry.animationId)
 		Options.AutoParryMakerNickname:SetValue(detectedEntry.targetName or "")
@@ -3081,7 +3093,7 @@ do
 		end
 
 		local savedConfig = upsertMakerConfig(configData, true)
-		currentBuilderConfigId = savedConfig and savedConfig.configId or nil
+		autoParryState.currentBuilderConfigId = savedConfig and savedConfig.configId or nil
 		syncAutoParryBuilderConfigsToRuntime()
 
 		local selectedLabel = buildSavedConfigLabel(savedConfig.sourceKey, savedConfig.animationId, savedConfig)
@@ -3093,7 +3105,7 @@ do
 		local configData = getBuilderConfigData()
 		if configData then
 			local savedConfig = upsertMakerConfig(configData, false)
-			currentBuilderConfigId = savedConfig and savedConfig.configId or nil
+			autoParryState.currentBuilderConfigId = savedConfig and savedConfig.configId or nil
 			syncAutoParryBuilderConfigsToRuntime()
 			refreshSavedConfigDropdown(buildSavedConfigLabel(savedConfig.sourceKey, savedConfig.animationId, savedConfig))
 		end
@@ -3168,7 +3180,7 @@ do
 	end
 
 	local function ensureAutoParryVisualizer()
-		local part = autoParryVisualizer.part
+		local part = autoParryState.visualizer.part
 		if part and part.Parent then
 			return part
 		end
@@ -3187,14 +3199,14 @@ do
 		part.Size = Vector3.new(1, 1, 1)
 		part.Parent = workspace
 
-		autoParryVisualizer.part = part
+		autoParryState.visualizer.part = part
 		return part
 	end
 
 	local function updateAutoParryVisualizer()
 		local character = LocalPlayer and LocalPlayer.Character
 		local root = getCharacterRoot(character)
-		local part = autoParryVisualizer.part
+		local part = autoParryState.visualizer.part
 		local visualizerToggle = Toggles.AutoParryVisualizer
 		local distanceOption = Options.AutoParryDistance
 
@@ -3508,31 +3520,31 @@ do
 	end
 
 	local function cleanupHandledAttackTracks()
-		for track in pairs(handledAttackTracks) do
+		for track in pairs(autoParryState.handledTracks) do
 			local ok, isPlaying = pcall(function()
 				return track.IsPlaying
 			end)
 
 			if not ok or not isPlaying then
-				handledAttackTracks[track] = nil
+				autoParryState.handledTracks[track] = nil
 			end
 		end
 	end
 
 	local function removeQueuedMoveActionForTrack(track)
-		for index = #queuedMoveActions, 1, -1 do
-			if queuedMoveActions[index].track == track then
-				table.remove(queuedMoveActions, index)
+		for index = #autoParryState.queuedMoveActions, 1, -1 do
+			if autoParryState.queuedMoveActions[index].track == track then
+				table.remove(autoParryState.queuedMoveActions, index)
 			end
 		end
 
 		if track then
-			queuedAttackTracks[track] = nil
+			autoParryState.queuedTracks[track] = nil
 		end
 	end
 
 	local function queueAutoParryTrack(targetCharacter, track)
-		if not targetCharacter or not track or handledAttackTracks[track] or queuedAttackTracks[track] then
+		if not targetCharacter or not track or autoParryState.handledTracks[track] or autoParryState.queuedTracks[track] then
 			return false
 		end
 
@@ -3589,8 +3601,8 @@ do
 
 		registerDetectedAnimation(candidate.targetType, targetCharacter.Name, normalizedAnimationId, currentTrackTimePosition, candidate.distance)
 
-		queuedAttackTracks[track] = true
-		table.insert(queuedMoveActions, {
+		autoParryState.queuedTracks[track] = true
+		table.insert(autoParryState.queuedMoveActions, {
 			target = candidate.character,
 			targetType = candidate.targetType,
 			sourceKey = sourceKey,
@@ -3611,7 +3623,7 @@ do
 				stoppedConnection = nil
 			end
 
-			if not handledAttackTracks[track] then
+			if not autoParryState.handledTracks[track] then
 				removeQueuedMoveActionForTrack(track)
 			end
 		end)
@@ -3638,7 +3650,7 @@ do
 	end
 
 	local function getQueuedAutoParryActionCandidate(action)
-		if not action or not action.track or handledAttackTracks[action.track] then
+		if not action or not action.track or autoParryState.handledTracks[action.track] then
 			return nil, nil
 		end
 
@@ -3673,7 +3685,7 @@ do
 	function autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		local repeatsRemaining = math.max(math.floor(tonumber(selectedAction.repeatsRemaining) or 1), 1) - 1
 		if repeatsRemaining <= 0 then
-			handledAttackTracks[animationTrack] = true
+			autoParryState.handledTracks[animationTrack] = true
 			removeQueuedMoveActionForTrack(animationTrack)
 			return
 		end
@@ -3721,7 +3733,7 @@ do
 			end)
 
 			if Toggles.AutoParryBlockInputs.Value then
-				autoParryInputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
+				autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 				autoParryRuntime.setAutoParryInputBlocking(true)
 			end
 
@@ -3738,8 +3750,8 @@ do
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
 			and not (Toggles.AutoParryDontBlatantDashPlayers.Value and targetType == "player")
-			and now - lastBlatantDashAt >= blatantDashCooldown then
-			lastBlatantDashAt = now
+			and now - autoParryState.lastBlatantDashAt >= blatantDashCooldown then
+			autoParryState.lastBlatantDashAt = now
 			if Toggles.AutoParryBlatantDash.Value then
 				usedDash = autoParryRuntime.fireAutoParryDashRemote(remote) == true
 			else
@@ -3756,8 +3768,8 @@ do
 				animationId,
 				parryTimingSeconds
 			))
-			pendingParryFailCheck = nil
-			handledAttackTracks[animationTrack] = true
+			autoParryState.pendingParryFailCheck = nil
+			autoParryState.handledTracks[animationTrack] = true
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		elseif activeMoveConfig and activeMoveConfig.actionType == "Dash" then
 			setAutoParryDebugText(string.format(
@@ -3767,12 +3779,12 @@ do
 				animationId,
 				parryTimingSeconds
 			))
-			pendingParryFailCheck = nil
-			handledAttackTracks[animationTrack] = true
+			autoParryState.pendingParryFailCheck = nil
+			autoParryState.handledTracks[animationTrack] = true
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		elseif activeMoveConfig and activeMoveConfig.block == true then
 			if fireBlockingStateRemote(true) then
-				pendingBlockReleaseAt = now + autoParryBlockHoldDuration
+				autoParryState.pendingBlockReleaseAt = now + autoParryBlockHoldDuration
 				setAutoParryDebugText(string.format(
 					"%sblock %s anim %s at %.2fs",
 					usedDash and "dash + " or "",
@@ -3789,7 +3801,7 @@ do
 					parryTimingSeconds
 				))
 			end
-			pendingParryFailCheck = nil
+			autoParryState.pendingParryFailCheck = nil
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		else
 			autoParryRuntime.fireAutoParryParryRemote(remote)
@@ -3800,10 +3812,10 @@ do
 				animationId,
 				parryTimingSeconds
 			))
-			handledAttackTracks[animationTrack] = true
+			autoParryState.handledTracks[animationTrack] = true
 
 			if Toggles.AutoParryDashOnFail.Value then
-				pendingParryFailCheck = {
+				autoParryState.pendingParryFailCheck = {
 					target = targetCharacter,
 					distance = actionRange,
 					checkAt = now + 0.18,
@@ -3812,14 +3824,14 @@ do
 					actionType = activeMoveConfig.actionType or "Parry",
 				}
 			else
-				pendingParryFailCheck = nil
+				autoParryState.pendingParryFailCheck = nil
 			end
 
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		end
 
 		if Toggles.AutoParryBlockInputs.Value then
-			autoParryInputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
+			autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 			autoParryRuntime.setAutoParryInputBlocking(true)
 		end
 	end
@@ -3827,36 +3839,36 @@ do
 	function autoParryRuntime.processAutoParryHeartbeat()
 		updateAutoParryVisualizer()
 
-		if pendingManualParryDebugMessage and manualParryTimingLabel and type(manualParryTimingLabel.SetText) == "function" then
-			manualParryTimingLabel:SetText(pendingManualParryDebugMessage)
-			pendingManualParryDebugMessage = nil
+		if autoParryState.pendingManualParryDebugMessage and manualParryTimingLabel and type(manualParryTimingLabel.SetText) == "function" then
+			manualParryTimingLabel:SetText(autoParryState.pendingManualParryDebugMessage)
+			autoParryState.pendingManualParryDebugMessage = nil
 		end
 
-		if pendingManualDashDebugMessage and manualDashTimingLabel and type(manualDashTimingLabel.SetText) == "function" then
-			manualDashTimingLabel:SetText(pendingManualDashDebugMessage)
-			pendingManualDashDebugMessage = nil
+		if autoParryState.pendingManualDashDebugMessage and manualDashTimingLabel and type(manualDashTimingLabel.SetText) == "function" then
+			manualDashTimingLabel:SetText(autoParryState.pendingManualDashDebugMessage)
+			autoParryState.pendingManualDashDebugMessage = nil
 		end
 
 		local now = os.clock()
 		cleanupHandledAttackTracks()
 
-		if Toggles.AutoParryAdaptiveTiming.Value and now - lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
-			lastAdaptiveTimingUpdateAt = now
+		if Toggles.AutoParryAdaptiveTiming.Value and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
+			autoParryState.lastAdaptiveTimingUpdateAt = now
 			updateAdaptiveTimingOffset(false)
 		end
 
-		if autoParryInputBlockActive and os.clock() >= autoParryInputBlockUntil then
+		if autoParryState.inputBlockActive and os.clock() >= autoParryState.inputBlockUntil then
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
 
-		if pendingBlockReleaseAt > 0 and now >= pendingBlockReleaseAt then
-			pendingBlockReleaseAt = 0
+		if autoParryState.pendingBlockReleaseAt > 0 and now >= autoParryState.pendingBlockReleaseAt then
+			autoParryState.pendingBlockReleaseAt = 0
 			fireBlockingStateRemote(false)
 		end
 
-		if pendingParryFailCheck and now >= pendingParryFailCheck.checkAt then
-			local targetCharacter = pendingParryFailCheck.target
-			local maxDistance = pendingParryFailCheck.distance or (Options.AutoParryDistance.Value or 18)
+		if autoParryState.pendingParryFailCheck and now >= autoParryState.pendingParryFailCheck.checkAt then
+			local targetCharacter = autoParryState.pendingParryFailCheck.target
+			local maxDistance = autoParryState.pendingParryFailCheck.distance or (Options.AutoParryDistance.Value or 18)
 			local localCharacter = LocalPlayer and LocalPlayer.Character
 			local localRoot = getCharacterRoot(localCharacter)
 			local targetRoot = getCharacterRoot(targetCharacter)
@@ -3868,49 +3880,49 @@ do
 				and humanoid
 				and humanoid.Health > 0
 				and (targetRoot.Position - localRoot.Position).Magnitude <= maxDistance
-				and now - lastDashOnFailAt >= dashOnFailCooldown then
+				and now - autoParryState.lastDashOnFailAt >= dashOnFailCooldown then
 				updateLearnedAdaptiveOffset(
-					pendingParryFailCheck.sourceKey,
-					pendingParryFailCheck.animationId,
-					pendingParryFailCheck.actionType,
+					autoParryState.pendingParryFailCheck.sourceKey,
+					autoParryState.pendingParryFailCheck.animationId,
+					autoParryState.pendingParryFailCheck.actionType,
 					-12,
 					0.25
 				)
-				lastDashOnFailAt = now
+				autoParryState.lastDashOnFailAt = now
 				autoParryRuntime.pressDashKey()
 			end
 
-			pendingParryFailCheck = nil
+			autoParryState.pendingParryFailCheck = nil
 		end
 
 		if not isAutoParryEnabled() then
-			pendingParryFailCheck = nil
-			table.clear(queuedMoveActions)
-			table.clear(queuedAttackTracks)
+			autoParryState.pendingParryFailCheck = nil
+			table.clear(autoParryState.queuedMoveActions)
+			table.clear(autoParryState.queuedTracks)
 			setAutoParryTrackingText("disabled.")
 			return
 		end
 
 		local remote = getRequestModuleRemote()
-		manualActionRequestRemote = remote or manualActionRequestRemote
+		autoParryState.manualActionRequestRemote = remote or autoParryState.manualActionRequestRemote
 		if not remote then
-			pendingParryFailCheck = nil
-			table.clear(queuedMoveActions)
-			table.clear(queuedAttackTracks)
+			autoParryState.pendingParryFailCheck = nil
+			table.clear(autoParryState.queuedMoveActions)
+			table.clear(autoParryState.queuedTracks)
 			setAutoParryTrackingText("remote not found.")
-			if not autoParryLastState.remoteMissing then
-				autoParryLastState.remoteMissing = true
+			if not autoParryState.lastState.remoteMissing then
+				autoParryState.lastState.remoteMissing = true
 				Library:Notify("Auto Parry remote was not found.", 2)
 			end
 			return
 		end
 
-		autoParryLastState.remoteMissing = false
+		autoParryState.lastState.remoteMissing = false
 
-		if now - lastAutoParryTrackSweepAt >= autoParryTrackSweepInterval then
-			lastAutoParryTrackSweepAt = now
+		if now - autoParryState.lastTrackSweepAt >= autoParryTrackSweepInterval then
+			autoParryState.lastTrackSweepAt = now
 			autoParryRuntime.refreshTrackedAutoParryTargets()
-			for model, trackedTarget in pairs(trackedAutoParryTargets) do
+			for model, trackedTarget in pairs(autoParryState.trackedTargets) do
 				if not model.Parent then
 					autoParryRuntime.disconnectTrackedAutoParryTarget(model)
 				else
@@ -3926,8 +3938,8 @@ do
 		local selectedDistance
 		local trackedDistance
 
-		for index = #queuedMoveActions, 1, -1 do
-			local action = queuedMoveActions[index]
+		for index = #autoParryState.queuedMoveActions, 1, -1 do
+			local action = autoParryState.queuedMoveActions[index]
 			local track = action.track
 			local candidate, currentTrackTimePosition = getQueuedAutoParryActionCandidate(action)
 
@@ -3957,11 +3969,11 @@ do
 
 		setAutoParryTrackingText(formatAutoParryTrackingText(trackedAction, trackedDistance, now))
 
-		if not selectedAction or now - lastParryAt < autoParryCooldown then
+		if not selectedAction or now - autoParryState.lastParryAt < autoParryCooldown then
 			return
 		end
 
-		lastParryAt = now
+		autoParryState.lastParryAt = now
 		autoParryRuntime.executeSelectedAutoParryAction(selectedAction, selectedDistance, remote, now)
 	end
 
@@ -4204,7 +4216,7 @@ do
 			return false
 		end
 
-		if instance == manualActionRequestRemote then
+		if instance == autoParryState.manualActionRequestRemote then
 			return true
 		end
 
@@ -4288,7 +4300,7 @@ do
 				local callback = GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY]
 				if type(callback) == "function" and isManualActionRequestRemote(self) then
 					if args[1] == "Misc" and args[2] == "Parry" then
-						manualParryInputSuppressUntil = os.clock() + 0.2
+						autoParryState.manualParryInputSuppressUntil = os.clock() + 0.2
 						local captureRequestedAt = os.clock()
 						task.defer(function()
 							pcall(callback, "manual parry", captureRequestedAt)
@@ -4364,7 +4376,7 @@ do
 	end
 
 	function autoParryRuntime.disconnectTrackedAutoParryTarget(model)
-		local trackedTarget = trackedAutoParryTargets[model]
+		local trackedTarget = autoParryState.trackedTargets[model]
 		if not trackedTarget then
 			return
 		end
@@ -4373,11 +4385,11 @@ do
 			connection:Disconnect()
 		end
 
-		trackedAutoParryTargets[model] = nil
+		autoParryState.trackedTargets[model] = nil
 	end
 
 	function autoParryRuntime.ensureTrackedAnimator(model, animator)
-		local trackedTarget = trackedAutoParryTargets[model]
+		local trackedTarget = autoParryState.trackedTargets[model]
 		if not trackedTarget or not animator or trackedTarget.animators[animator] then
 			return
 		end
@@ -4395,7 +4407,7 @@ do
 	end
 
 	function autoParryRuntime.trackAutoParryTarget(model)
-		if not model or not model:IsA("Model") or trackedAutoParryTargets[model] then
+		if not model or not model:IsA("Model") or autoParryState.trackedTargets[model] then
 			return
 		end
 
@@ -4409,7 +4421,7 @@ do
 			connections = {},
 		}
 
-		trackedAutoParryTargets[model] = trackedTarget
+		autoParryState.trackedTargets[model] = trackedTarget
 
 		for _, animator in ipairs(getTargetAnimators(model)) do
 			autoParryRuntime.ensureTrackedAnimator(model, animator)
@@ -4449,11 +4461,11 @@ do
 	end
 
 	function autoParryRuntime.setAutoParryInputBlocking(active)
-		if autoParryInputBlockActive == active then
+		if autoParryState.inputBlockActive == active then
 			return
 		end
 
-		autoParryInputBlockActive = active
+		autoParryState.inputBlockActive = active
 
 		if active then
 			ContextActionService:BindActionAtPriority(
@@ -4471,7 +4483,7 @@ do
 	end
 
 	function autoParryRuntime.pressDashKey()
-		manualDashInputSuppressUntil = os.clock() + 0.2
+		autoParryState.manualDashInputSuppressUntil = os.clock() + 0.2
 		pcall(function()
 			VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Q, false, game)
 			VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Q, false, game)
@@ -4491,7 +4503,7 @@ do
 
 	Toggles.AutoParryBlockInputs:OnChanged(function()
 		if not Toggles.AutoParryBlockInputs.Value then
-			autoParryInputBlockUntil = 0
+			autoParryState.inputBlockUntil = 0
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
 	end)
@@ -4567,7 +4579,7 @@ do
 		end
 
 		if inputObject.KeyCode == Enum.KeyCode.F then
-			if os.clock() < manualParryInputSuppressUntil then
+			if os.clock() < autoParryState.manualParryInputSuppressUntil then
 				return
 			end
 
@@ -4590,7 +4602,7 @@ do
 			return
 		end
 
-		if os.clock() < manualDashInputSuppressUntil then
+		if os.clock() < autoParryState.manualDashInputSuppressUntil then
 			return
 		end
 
@@ -4627,20 +4639,22 @@ do
 
 	Library:OnUnload(function()
 		autoParryRuntime.setAutoParryInputBlocking(false)
-		pendingParryFailCheck = nil
-		table.clear(queuedMoveActions)
-		table.clear(queuedAttackTracks)
-		for model in pairs(trackedAutoParryTargets) do
+		autoParryState.pendingParryFailCheck = nil
+		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
+		table.clear(autoParryState.queuedMoveActions)
+		table.clear(autoParryState.queuedTracks)
+		for model in pairs(autoParryState.trackedTargets) do
 			autoParryRuntime.disconnectTrackedAutoParryTarget(model)
 		end
-		if autoParryVisualizer.part then
-			autoParryVisualizer.part:Destroy()
-			autoParryVisualizer.part = nil
+		if autoParryState.visualizer.part then
+			autoParryState.visualizer.part:Destroy()
+			autoParryState.visualizer.part = nil
 		end
 	end)
 end
+setupAutoParryTab()
 
-do
+local function setupMiscTab()
 	local miscTab = Tabs["Misc"]
 
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
@@ -4667,8 +4681,9 @@ do
 	farmsGroup:AddLabel("Farms section placeholder.")
 	farmsGroup:AddLabel("Features will be added later.")
 end
+setupMiscTab()
 
-do
+local function setupSettingsTab()
 	local settingsTab = Tabs["Settings"]
 	local menuGroup = settingsTab:AddRightGroupbox("Menu")
 
@@ -4684,6 +4699,7 @@ do
 
 	Library.ToggleKeybind = Options.MenuKeybind
 end
+setupSettingsTab()
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
