@@ -3884,7 +3884,7 @@ local function setupAutoParryTab()
 	end
 
 	local function getMoveConfigRange(moveConfig)
-		return AutoParryConfigUtils.getMoveConfigRange(moveConfig, Options.AutoParryDistance.Value or 18)
+		return AutoParryConfigUtils.getMoveConfigRange(moveConfig, tonumber(getOptionValue("AutoParryDistance", 18)) or 18)
 	end
 
 	local function getMoveConfigDelaySeconds(moveConfig)
