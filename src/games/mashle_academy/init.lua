@@ -21,6 +21,7 @@ local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
+local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
 
 local ANIM_LOGGER_FILE_CANDIDATES = {
 	"AnimLogger.lua",
@@ -41,10 +42,19 @@ local SaveManager = loadstring(game:HttpGet(REPO_BASE .. "addons/SaveManager.lua
 
 function MashleAcademy.init(_context)
 	if GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] then
-		return
+		local existingLibrary = GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY]
+		if type(existingLibrary) == "table" and type(existingLibrary.Unload) == "function" then
+			pcall(function()
+				existingLibrary:Unload()
+			end)
+		end
+
+		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
+		GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = nil
 	end
 
 	GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = true
+	GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = Library
 
 local function getGameTabName()
 	local ok, info = pcall(function()
@@ -4641,6 +4651,7 @@ local function setupAutoParryTab()
 		autoParryRuntime.setAutoParryInputBlocking(false)
 		autoParryState.pendingParryFailCheck = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
+		GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = nil
 		table.clear(autoParryState.queuedMoveActions)
 		table.clear(autoParryState.queuedTracks)
 		for model in pairs(autoParryState.trackedTargets) do
