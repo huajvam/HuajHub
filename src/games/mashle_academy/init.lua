@@ -2597,6 +2597,40 @@ local function setupAutoParryTab()
 		return nil
 	end
 
+	local animationNameCache = {}
+
+	local function getAnimationAssetName(animationId)
+		local normalizedAnimationId = normalizeBuilderAnimationId(animationId)
+		if not normalizedAnimationId then
+			return nil
+		end
+
+		if animationNameCache[normalizedAnimationId] ~= nil then
+			return animationNameCache[normalizedAnimationId] or nil
+		end
+
+		local ok, info = pcall(function()
+			return MarketplaceService:GetProductInfo(tonumber(normalizedAnimationId))
+		end)
+
+		if ok and type(info) == "table" and type(info.Name) == "string" then
+			local resolvedName = info.Name:gsub("^%s+", ""):gsub("%s+$", "")
+			if resolvedName ~= "" then
+				animationNameCache[normalizedAnimationId] = resolvedName
+				return resolvedName
+			end
+		end
+
+		animationNameCache[normalizedAnimationId] = false
+		return nil
+	end
+
+	local function resolveDetectedAnimationName(animationId, track, fallbackName)
+		return getAnimationAssetName(animationId)
+			or getTrackAnimationName(track)
+			or fallbackName
+	end
+
 	local function buildSavedConfigLabel(sourceKey, animationId, configData)
 		local nickname = tostring(configData.nickname or ""):gsub("^%s+", ""):gsub("%s+$", "")
 		if nickname ~= "" then
@@ -3656,7 +3690,7 @@ local function setupAutoParryTab()
 			normalizedAnimationId,
 			currentTrackTimePosition,
 			candidate.distance,
-			getTrackAnimationName(track)
+			resolveDetectedAnimationName(normalizedAnimationId, track, targetCharacter.Name)
 		)
 
 		autoParryState.queuedTracks[track] = true
@@ -4122,7 +4156,7 @@ local function setupAutoParryTab()
 						local rawTimePosition = getTrackTimePosition(track) or 0
 						local candidateTrack = {
 							animationId = normalizeAnimationId(animationId),
-							animationName = getTrackAnimationName(track),
+							animationName = resolveDetectedAnimationName(animationId, track, targetCharacter.Name),
 							timePosition = math.max(rawTimePosition - captureCompensation, 0),
 							matched = getAnimationConfig(targetType, animationId) ~= nil,
 							priorityScore = getTrackPriorityScore(track),
