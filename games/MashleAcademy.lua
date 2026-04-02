@@ -3250,8 +3250,8 @@ local function setupAutoParryTab()
 		local actionType = (moveConfig and moveConfig.actionType) or "Parry"
 		local key = AdaptiveTimingUtils.getAdaptiveAnimationKey(normalizeBuilderAnimationId, sourceKey, animationId, actionType)
 		return AdaptiveTimingUtils.getTimingOffsetMs({
-			manualOffsetMs = tonumber(Options.AutoParryTimingOffset.Value) or 0,
-			adaptiveEnabled = Toggles.AutoParryAdaptiveTiming.Value == true,
+			manualOffsetMs = tonumber(getOptionValue("AutoParryTimingOffset", 0)) or 0,
+			adaptiveEnabled = getToggleValue("AutoParryAdaptiveTiming", false),
 			actionType = actionType,
 			pingCorrectionMs = tonumber(autoParryState.adaptiveTiming.lastComputedOffsetMs) or 0,
 			actionBiasMs = tonumber(autoParryState.adaptiveTiming.actionBiasMs[actionType]) or 0,
@@ -3261,9 +3261,9 @@ local function setupAutoParryTab()
 	end
 
 	local function getBuilderConfigData()
-		local animationId = normalizeBuilderAnimationId(Options.AutoParryMakerAnimationId.Value)
-		local sourceKey = Options.AutoParryMakerSource.Value or "Players"
-		local actionType = Options.AutoParryMakerActionType.Value or "Parry"
+		local animationId = normalizeBuilderAnimationId(getOptionValue("AutoParryMakerAnimationId", ""))
+		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
+		local actionType = getOptionValue("AutoParryMakerActionType", "Parry") or "Parry"
 
 		if not animationId or animationId == "" then
 			return nil
@@ -3273,14 +3273,14 @@ local function setupAutoParryTab()
 			configId = autoParryState.currentBuilderConfigId,
 			sourceKey = sourceKey,
 			animationId = animationId,
-			nickname = tostring(Options.AutoParryMakerNickname.Value or ""),
-			wait = tonumber(Options.AutoParryMakerWait.Value) or 0,
-			repeatAmount = math.max(1, math.floor(tonumber(Options.AutoParryMakerRepeatAmount.Value) or 1)),
-			repeatDelay = tonumber(Options.AutoParryMakerRepeatDelay.Value) or 0,
+			nickname = tostring(getOptionValue("AutoParryMakerNickname", "") or ""),
+			wait = tonumber(getOptionValue("AutoParryMakerWait", 0)) or 0,
+			repeatAmount = math.max(1, math.floor(tonumber(getOptionValue("AutoParryMakerRepeatAmount", 1)) or 1)),
+			repeatDelay = tonumber(getOptionValue("AutoParryMakerRepeatDelay", 0)) or 0,
 			actionType = actionType,
-			delay = Options.AutoParryMakerDelay.Value == "On",
-			delayRange = tonumber(Options.AutoParryMakerDelayRange.Value) or 0,
-			range = tonumber(Options.AutoParryMakerRange.Value) or 16,
+			delay = getOptionValue("AutoParryMakerDelay", "Off") == "On",
+			delayRange = tonumber(getOptionValue("AutoParryMakerDelayRange", 0)) or 0,
+			range = tonumber(getOptionValue("AutoParryMakerRange", 16)) or 16,
 		}
 	end
 
