@@ -68,8 +68,24 @@ local resolveConfiguredTiming = AutoParryConfigUtils.resolveConfiguredTiming
 local unloadCallbacks = {}
 local MASHLE_TELEPORT_LOCATIONS = {
 	{
-		name = "Example Spot",
-		cframe = CFrame.new(0, 10, 0),
+		name = "Wildwood Waypoint",
+		cframe = CFrame.new(-2737.0459, -170.828079, 2341.62231, 0.964204669, -7.07022139e-08, -0.265159041, 8.38839469e-08, 1, 3.8388567e-08, 0.265159041, -5.92570224e-08, 0.964204669),
+	},
+	{
+		name = "FoxRoot Waypoint",
+		cframe = CFrame.new(1093.70618, 148.240448, -681.392212, 0.99993062, 2.08667288e-08, -0.0117770443, -2.14097966e-08, 1, -4.5986333e-08, 0.0117770443, 4.62352894e-08, 0.99993062),
+	},
+	{
+		name = "Amberdune Waypoint",
+		cframe = CFrame.new(3071.53589, -324.125854, 899.911987, 1, -3.00653085e-08, 2.76935033e-14, 3.00653085e-08, 1, -1.02304945e-07, -2.46176726e-14, 1.02304945e-07, 1),
+	},
+	{
+		name = "Iceveil Waypoint",
+		cframe = CFrame.new(4026.97412, 452.833557, -799.645996, 1, -1.13955378e-08, 4.58303736e-15, 1.13955378e-08, 1, -3.87762853e-08, -4.1411606e-15, 3.87762853e-08, 1),
+	},
+	{
+		name = "Hell Waypoint",
+		cframe = CFrame.new(-3214.24609, 599.277405, -4055.79907, 1, -2.68896461e-08, 1.24301695e-14, 2.68896461e-08, 1, -9.14988902e-08, -9.96979632e-15, 9.14988902e-08, 1),
 	},
 	-- {
 	-- 	name = "Arena",
