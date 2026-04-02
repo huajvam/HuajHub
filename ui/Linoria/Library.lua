@@ -73,13 +73,15 @@ table.insert(Library.Signals, RenderStepped:Connect(function(Delta)
 end))
 
 local function GetPlayersString()
-    local PlayerList = Players:GetPlayers();
-    if type(PlayerList) ~= 'table' then
+    local PlayersList = Players:GetPlayers();
+    if type(PlayersList) ~= 'table' then
         return {}
     end
 
-    for i = 1, #PlayerList do
-        local Player = PlayerList[i]
+    local PlayerList = {}
+
+    for i = 1, #PlayersList do
+        local Player = PlayersList[i]
         PlayerList[i] = Player and Player.Name or tostring(Player);
     end;
 
