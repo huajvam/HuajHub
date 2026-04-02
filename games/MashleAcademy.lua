@@ -735,6 +735,7 @@ local function setupLocalCheatsTab()
 	local noStunJumpHeight = 7.2
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
+	local teleportPlayerLabels = {"(none)"}
 	local triggerAntiFallBypass
 	local ensureAntiFallState
 	local applyTeleportAntiFallProtection
@@ -770,6 +771,26 @@ local function setupLocalCheatsTab()
 		end
 	end
 
+	local function setTeleportPlayerDropdownValues(selectedLabel)
+		table.sort(teleportPlayerLabels, function(left, right)
+			if left == "(none)" then
+				return true
+			end
+			if right == "(none)" then
+				return false
+			end
+			return left:lower() < right:lower()
+		end)
+
+		Options.TeleportPlayer:SetValues(teleportPlayerLabels)
+
+		if selectedLabel and table.find(teleportPlayerLabels, selectedLabel) then
+			Options.TeleportPlayer:SetValue(selectedLabel)
+		elseif not table.find(teleportPlayerLabels, Options.TeleportPlayer.Value) then
+			Options.TeleportPlayer:SetValue("(none)")
+		end
+	end
+
 	local function refreshTeleportLocations()
 		teleportLocations = {}
 		teleportLabels = {"(none)"}
@@ -795,18 +816,62 @@ local function setupLocalCheatsTab()
 		setTeleportDropdownValues(teleportLabels[2])
 	end
 
+	local function refreshTeleportPlayers()
+		teleportPlayerLabels = {"(none)"}
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			if player ~= LocalPlayer then
+				table.insert(teleportPlayerLabels, player.Name)
+			end
+		end
+
+		setTeleportPlayerDropdownValues(teleportPlayerLabels[2])
+	end
+
+	local function getSelectedTeleportPlayer()
+		local selection = Options.TeleportPlayer and Options.TeleportPlayer.Value
+		if not selection or selection == "(none)" then
+			return nil
+		end
+
+		return Players:FindFirstChild(selection)
+	end
+
 	local function teleportToSelectedDestination()
-		local selection = Options.TeleportDestination.Value
-		local destination = selection and teleportLocations[selection]
-		if not destination then
-			Library:Notify("No teleport destination selected.", 2)
+		local character = LocalPlayer and LocalPlayer.Character
+		local root = getCharacterRoot(character)
+		if not character or not root then
+			Library:Notify("Character root is unavailable.", 2)
 			return
 		end
 
-		local character = LocalPlayer and LocalPlayer.Character
-		local root = getCharacterRoot(character)
-		local targetCFrame = destination.cframe
-		if not character or not root or typeof(targetCFrame) ~= "CFrame" then
+		local targetCFrame
+		local targetLabel
+
+		local selectedPlayer = getSelectedTeleportPlayer()
+		if selectedPlayer then
+			local targetCharacter = selectedPlayer.Character
+			local targetRoot = getCharacterRoot(targetCharacter)
+			if not targetRoot then
+				Library:Notify("Selected player is unavailable.", 2)
+				return
+			end
+
+			targetCFrame = targetRoot.CFrame
+			targetLabel = selectedPlayer.Name
+		else
+			local selection = Options.TeleportDestination.Value
+			local destination = selection and teleportLocations[selection]
+			if not destination then
+				Library:Notify("No teleport destination or player selected.", 2)
+				return
+			end
+
+			targetCFrame = destination.cframe
+			targetLabel = selection
+		end
+
+		if typeof(targetCFrame) ~= "CFrame" then
 			Library:Notify("Selected destination is unavailable.", 2)
 			return
 		end
@@ -814,7 +879,7 @@ local function setupLocalCheatsTab()
 		applyTeleportAntiFallProtection(character, 2)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.CFrame = targetCFrame
-		Library:Notify("Teleported to " .. tostring(selection) .. ".", 2)
+		Library:Notify("Teleported to " .. tostring(targetLabel) .. ".", 2)
 	end
 
 	local function destroyBodyMover(bodyMover)
@@ -1543,8 +1608,15 @@ local function setupLocalCheatsTab()
 		Default = 1,
 	})
 
+	teleportGroup:AddDropdown("TeleportPlayer", {
+		Text = "Teleport To Player",
+		Values = teleportPlayerLabels,
+		Default = 1,
+	})
+
 	teleportGroup:AddButton("Refresh Teleports", function()
 		refreshTeleportLocations()
+		refreshTeleportPlayers()
 		Library:Notify("Teleport list refreshed.", 2)
 	end)
 
@@ -1556,6 +1628,17 @@ local function setupLocalCheatsTab()
 	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
 
 	refreshTeleportLocations()
+	refreshTeleportPlayers()
+
+	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
+		if player ~= LocalPlayer then
+			refreshTeleportPlayers()
+		end
+	end))
+
+	maid:GiveTask(Players.PlayerRemoving:Connect(function()
+		refreshTeleportPlayers()
+	end))
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
 		if Toggles.SpeedHackEnabled.Value then
