@@ -2575,15 +2575,21 @@ local function setupAutoParryTab()
 	local AUTO_PARRY_BLOCK_INPUTS = {
 		Enum.UserInputType.MouseButton1,
 		Enum.UserInputType.MouseButton2,
-		Enum.KeyCode.W,
-		Enum.KeyCode.A,
-		Enum.KeyCode.S,
-		Enum.KeyCode.D,
-		Enum.KeyCode.Space,
-		Enum.KeyCode.LeftShift,
-		Enum.KeyCode.RightShift,
-		Enum.KeyCode.Q,
-		Enum.KeyCode.E,
+	Enum.KeyCode.W,
+	Enum.KeyCode.A,
+	Enum.KeyCode.S,
+	Enum.KeyCode.D,
+	Enum.KeyCode.Up,
+	Enum.KeyCode.Down,
+	Enum.KeyCode.Left,
+	Enum.KeyCode.Right,
+	Enum.KeyCode.Space,
+	Enum.KeyCode.LeftControl,
+	Enum.KeyCode.RightControl,
+	Enum.KeyCode.LeftShift,
+	Enum.KeyCode.RightShift,
+	Enum.KeyCode.Q,
+	Enum.KeyCode.E,
 		Enum.KeyCode.R,
 		Enum.KeyCode.F,
 		Enum.KeyCode.One,
@@ -4163,6 +4169,8 @@ local function setupAutoParryTab()
 		end
 
 		local now = os.clock()
+		local localCharacter = LocalPlayer and LocalPlayer.Character
+		local localHumanoid = getCharacterHumanoid(localCharacter)
 		cleanupHandledAttackTracks()
 
 		if getToggleValue("AutoParryAdaptiveTiming", false) and now - autoParryState.lastAdaptiveTimingUpdateAt >= adaptiveTimingUpdateInterval then
@@ -4174,6 +4182,13 @@ local function setupAutoParryTab()
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
 
+		if autoParryState.inputBlockActive and localHumanoid then
+			pcall(function()
+				localHumanoid:Move(Vector3.zero, false)
+				localHumanoid.Jump = false
+			end)
+		end
+
 		if autoParryState.pendingBlockReleaseAt > 0 and now >= autoParryState.pendingBlockReleaseAt then
 			autoParryState.pendingBlockReleaseAt = 0
 			fireBlockingStateRemote(false)
@@ -4182,7 +4197,6 @@ local function setupAutoParryTab()
 		if autoParryState.pendingParryFailCheck and now >= autoParryState.pendingParryFailCheck.checkAt then
 			local targetCharacter = autoParryState.pendingParryFailCheck.target
 			local maxDistance = autoParryState.pendingParryFailCheck.distance or (tonumber(getOptionValue("AutoParryDistance", 18)) or 18)
-			local localCharacter = LocalPlayer and LocalPlayer.Character
 			local localRoot = getCharacterRoot(localCharacter)
 			local targetRoot = getCharacterRoot(targetCharacter)
 			local humanoid = getCharacterHumanoid(targetCharacter)
