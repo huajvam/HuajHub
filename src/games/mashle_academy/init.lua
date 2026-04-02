@@ -2597,6 +2597,10 @@ local function setupAutoParryTab()
 		return nil
 	end
 
+	local function normalizeBuilderAnimationId(value)
+		return tostring(value or ""):match("%d+")
+	end
+
 	local animationNameCache = {}
 
 	local function getAnimationAssetName(animationId)
@@ -2659,10 +2663,6 @@ local function setupAutoParryTab()
 		end
 
 		return string.format("cfg_%d_%d", math.floor(os.clock() * 1000), math.random(1000, 9999))
-	end
-
-	local function normalizeBuilderAnimationId(value)
-		return tostring(value or ""):match("%d+")
 	end
 
 	local function normalizeLoadedConfigRecord(sourceKey, storageKey, configData)
