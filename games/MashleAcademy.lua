@@ -893,6 +893,10 @@ local function setupLocalCheatsTab()
 		return args[1] == "Misc" and args[2] == "FallDamage"
 	end
 
+	local function shouldMaintainLocalAntiFallState()
+		return isAntiFallActive() and os.clock() <= antiFallProtectedUntil
+	end
+
 	local function shouldMaintainAntiFallState()
 		return shouldUseAntiFallProtection() and os.clock() <= antiFallProtectedUntil
 	end
@@ -931,7 +935,7 @@ local function setupLocalCheatsTab()
 	end
 
 	ensureAntiFallState = function(character)
-		if not shouldMaintainAntiFallState() or not character then
+		if not shouldMaintainLocalAntiFallState() or not character then
 			return
 		end
 
@@ -1265,9 +1269,11 @@ local function setupLocalCheatsTab()
 		if preserveRemoteBypass then
 			teleportAntiFallUntil = math.max(teleportAntiFallUntil, expiresAt)
 		end
-		ensureAntiFallState(character)
+		if isAntiFallActive() then
+			ensureAntiFallState(character)
+		end
 		task.delay(appliedDuration + 0.1, function()
-			if not shouldMaintainAntiFallState() then
+			if not shouldMaintainLocalAntiFallState() then
 				removeAntiFallState()
 			end
 		end)
@@ -1275,7 +1281,6 @@ local function setupLocalCheatsTab()
 
 	applyTeleportAntiFallProtection = function(character, duration)
 		triggerAntiFallBypass(character, duration, true)
-		ensureAntiFallState(character)
 	end
 
 	local function startIFrames()
@@ -1353,7 +1358,7 @@ local function setupLocalCheatsTab()
 				return
 			end
 
-			if shouldMaintainAntiFallState() then
+			if shouldMaintainLocalAntiFallState() then
 				local character = LocalPlayer and LocalPlayer.Character
 				ensureAntiFallState(character)
 			elseif antiFallState then
