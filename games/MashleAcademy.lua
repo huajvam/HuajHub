@@ -33,6 +33,7 @@ local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY = "__huaj_hub_fall_damage_block_callback_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY = "__huaj_hub_fall_damage_block_hook_v1"
+local HUAJ_HUB_DASH_MULTIPLIER_CALLBACK_KEY = "__huaj_hub_dash_multiplier_callback_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
@@ -218,16 +219,22 @@ local function installFallDamageBlockHook()
 	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
 		local args = table.pack(...)
 		local callback = GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY]
+		local dashCallback = GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_CALLBACK_KEY]
 
 		local isCallerCheckAvailable = type(checkcaller) == "function"
 
-		if type(callback) == "function"
-			and (not isCallerCheckAvailable or not checkcaller())
+		if (not isCallerCheckAvailable or not checkcaller())
 			and getnamecallmethod() == "FireServer"
 		then
-			local ok, shouldBlock = pcall(callback, self, args)
-			if ok and shouldBlock == true then
-				return nil
+			if type(dashCallback) == "function" then
+				pcall(dashCallback, self, args)
+			end
+
+			if type(callback) == "function" then
+				local ok, shouldBlock = pcall(callback, self, args)
+				if ok and shouldBlock == true then
+					return nil
+				end
 			end
 		end
 
@@ -736,6 +743,7 @@ local function setupLocalCheatsTab()
 	local antiFallState = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
+	local dashMultiplierWindowUntil = 0
 	local knockedOwnershipLoopToken = 0
 	local noStunWalkSpeed = 16
 	local noStunJumpPower = 50
@@ -897,6 +905,7 @@ local function setupLocalCheatsTab()
 		end
 
 		table.clear(dashBodyVelocityStates)
+		dashMultiplierWindowUntil = 0
 	end
 
 	local function stopKnockedOwnership()
@@ -1359,10 +1368,57 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
+	local function shouldUseDashMultiplier()
+		return getToggleValue("DashMultiplierEnabled", false) and os.clock() <= dashMultiplierWindowUntil
+	end
+
+	local function beginDashMultiplierWindow(duration)
+		dashMultiplierWindowUntil = math.max(dashMultiplierWindowUntil, os.clock() + math.max(duration or 0.35, 0.1))
+	end
+
+	local function shouldApplyDashMultiplierRequest(instance, args)
+		if not getToggleValue("DashMultiplierEnabled", false) then
+			return false
+		end
+
+		if instance == nil or typeof(instance) ~= "Instance" or not instance:IsA("RemoteEvent") then
+			return false
+		end
+
+		if instance.Name ~= "RequestModule" then
+			return false
+		end
+
+		local parent = instance.Parent
+		if parent == nil or parent.Name ~= "Remotes" or not instance:IsDescendantOf(ReplicatedStorage) then
+			return false
+		end
+
+		if args[1] ~= "Misc" or args[2] ~= "Dash" then
+			return false
+		end
+
+		local dashDirection = args[3]
+		if dashDirection == "GroundRight"
+			or dashDirection == "GroundLeft"
+			or dashDirection == "GroundForward"
+			or dashDirection == "GroundBack" then
+			beginDashMultiplierWindow(0.35)
+			return true
+		end
+
+		return false
+	end
+
 	local function startDashMultiplier()
 		stopDashMultiplier()
 
 		dashMultiplierConnection = RunService.Heartbeat:Connect(function()
+			if not shouldUseDashMultiplier() then
+				table.clear(dashBodyVelocityStates)
+				return
+			end
+
 			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
 			if multiplier <= 1.001 then
 				table.clear(dashBodyVelocityStates)
@@ -1606,9 +1662,18 @@ local function setupLocalCheatsTab()
 		NoUI = false,
 	})
 
-	combatGroup:AddSlider("DashMultiplierValue", {
+	combatGroup:AddToggle("DashMultiplierEnabled", {
 		Text = "Dash Multiplier",
-		Default = 1,
+		Default = false,
+	})
+
+	local dashMultiplierDependency = combatGroup:AddDependencyBox()
+	dashMultiplierDependency:SetupDependencies({
+		{Toggles.DashMultiplierEnabled, true},
+	})
+	dashMultiplierDependency:AddSlider("DashMultiplierValue", {
+		Text = "Multiplier Value",
+		Default = 2,
 		Min = 1,
 		Max = 5,
 		Rounding = 1,
@@ -1647,6 +1712,7 @@ local function setupLocalCheatsTab()
 
 	installFallDamageBlockHook()
 	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+	GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_CALLBACK_KEY] = shouldApplyDashMultiplierRequest
 
 	refreshTeleportLocations()
 
@@ -1675,8 +1741,18 @@ local function setupLocalCheatsTab()
 		end
 	end)
 
+	Toggles.DashMultiplierEnabled:OnChanged(function()
+		if Toggles.DashMultiplierEnabled.Value then
+			startDashMultiplier()
+		else
+			stopDashMultiplier()
+		end
+	end)
+
 	Options.DashMultiplierValue:OnChanged(function()
-		startDashMultiplier()
+		if getToggleValue("DashMultiplierEnabled", false) then
+			startDashMultiplier()
+		end
 	end)
 
 	Toggles.AntiFallDamageEnabled:OnChanged(function()
@@ -1920,12 +1996,13 @@ local function setupLocalCheatsTab()
 		stopNoStun()
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
+		GLOBAL_ENV[HUAJ_HUB_DASH_MULTIPLIER_CALLBACK_KEY] = nil
 	end)
 
 	stopSpeedHack()
 	stopFly()
 	stopNoclip()
-	startDashMultiplier()
+	stopDashMultiplier()
 	stopAntiFall()
 	stopNoStun()
 	stopKnockedOwnership()
