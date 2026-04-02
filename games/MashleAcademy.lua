@@ -66,20 +66,19 @@ local getConfigActionType = AutoParryConfigUtils.getConfigActionType
 local buildRuntimeMoveConfig = AutoParryConfigUtils.buildRuntimeMoveConfig
 local resolveConfiguredTiming = AutoParryConfigUtils.resolveConfiguredTiming
 local unloadCallbacks = {}
-local MASHLE_TELEPORT_NAME_HINTS = {
-	academy = true,
-	spawn = true,
-	lobby = true,
-	shop = true,
-	merchant = true,
-	arena = true,
-	forest = true,
-	boss = true,
-	quest = true,
-	entrance = true,
-	exit = true,
-	trial = true,
-	trainer = true,
+local MASHLE_TELEPORT_LOCATIONS = {
+	{
+		name = "Example Spot",
+		cframe = CFrame.new(0, 10, 0),
+	},
+	-- {
+	-- 	name = "Arena",
+	-- 	cframe = CFrame.new(100, 15, -250),
+	-- },
+	-- {
+	-- 	name = "Shop",
+	-- 	cframe = CFrame.new(-320, 12, 480),
+	-- },
 }
 
 local function registerLibraryUnloadCallback(callback)
@@ -579,78 +578,6 @@ local function setupLocalCheatsTab()
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
 
-	local function getTeleportCFrameFromTarget(target)
-		if not target or not target.Parent then
-			return nil
-		end
-
-		if target:IsA("BasePart") then
-			return target.CFrame
-		end
-
-		if target:IsA("Model") then
-			local root = getCharacterRoot(target)
-			if root then
-				return root.CFrame
-			end
-
-			if target.PrimaryPart then
-				return target.PrimaryPart.CFrame
-			end
-
-			local ok, pivot = pcall(function()
-				return target:GetPivot()
-			end)
-			if ok then
-				return pivot
-			end
-		end
-
-		return nil
-	end
-
-	local function isGenericTeleportName(name)
-		if type(name) ~= "string" or name == "" then
-			return true
-		end
-
-		local lowered = string.lower(name)
-		return lowered == "part"
-			or lowered == "meshpart"
-			or lowered == "model"
-			or lowered == "union"
-			or lowered == "folder"
-	end
-
-	local function looksLikeTeleportLandmark(instance)
-		if not instance or not instance.Parent then
-			return false
-		end
-
-		local localCharacter = LocalPlayer and LocalPlayer.Character
-		if localCharacter and (instance == localCharacter or instance:IsDescendantOf(localCharacter)) then
-			return false
-		end
-
-		local liveFolder = workspace:FindFirstChild("Live")
-		if liveFolder and instance:IsDescendantOf(liveFolder) then
-			return false
-		end
-
-		if isGenericTeleportName(instance.Name) then
-			return false
-		end
-
-		local lowered = string.lower(instance.Name)
-		for hint in pairs(MASHLE_TELEPORT_NAME_HINTS) do
-			if string.find(lowered, hint, 1, true) then
-				return true
-			end
-		end
-
-		return false
-	end
-
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
 			if left == "(none)" then
@@ -675,38 +602,21 @@ local function setupLocalCheatsTab()
 		teleportLocations = {}
 		teleportLabels = {"(none)"}
 
-		local seenTargets = {}
-		for _, descendant in ipairs(workspace:GetDescendants()) do
-			if descendant:IsA("Model") or descendant:IsA("BasePart") then
-				if looksLikeTeleportLandmark(descendant) then
-					local target = descendant
-					if descendant:IsA("BasePart")
-						and descendant.Parent
-						and descendant.Parent:IsA("Model")
-						and looksLikeTeleportLandmark(descendant.Parent) then
-						target = descendant.Parent
-					end
+		for _, location in ipairs(MASHLE_TELEPORT_LOCATIONS) do
+			if type(location) == "table" and type(location.name) == "string" and typeof(location.cframe) == "CFrame" then
+				local label = location.name
+				local duplicateIndex = 2
 
-					if not seenTargets[target] then
-						local targetCFrame = getTeleportCFrameFromTarget(target)
-						if targetCFrame then
-							seenTargets[target] = true
-							local baseLabel = target.Name
-							local label = baseLabel
-							local duplicateIndex = 2
-
-							while teleportLocations[label] do
-								label = string.format("%s (%d)", baseLabel, duplicateIndex)
-								duplicateIndex += 1
-							end
-
-							teleportLocations[label] = {
-								target = target,
-							}
-							table.insert(teleportLabels, label)
-						end
-					end
+				while teleportLocations[label] do
+					label = string.format("%s (%d)", location.name, duplicateIndex)
+					duplicateIndex += 1
 				end
+
+				teleportLocations[label] = {
+					name = location.name,
+					cframe = location.cframe,
+				}
+				table.insert(teleportLabels, label)
 			end
 		end
 
@@ -724,10 +634,9 @@ local function setupLocalCheatsTab()
 		local character = LocalPlayer and LocalPlayer.Character
 		local root = getCharacterRoot(character)
 		local humanoid = getCharacterHumanoid(character)
-		local targetCFrame = getTeleportCFrameFromTarget(destination.target)
-		if not root or not targetCFrame then
+		local targetCFrame = destination.cframe
+		if not root or typeof(targetCFrame) ~= "CFrame" then
 			Library:Notify("Selected destination is unavailable.", 2)
-			refreshTeleportLocations()
 			return
 		end
 
