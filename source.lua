@@ -5,6 +5,8 @@ local REPO_NAME = GLOBAL_ENV.HuajHubRepoName or "HuajHub"
 local REPO_BRANCH = GLOBAL_ENV.HuajHubRepoBranch or "main"
 local RAW_BASE_URL = ("https://raw.githubusercontent.com/%s/%s/%s/"):format(REPO_OWNER, REPO_NAME, REPO_BRANCH)
 
+GLOBAL_ENV.HuajHubRawBaseUrl = RAW_BASE_URL
+
 local function compileChunk(source, chunkName)
 	local chunk, compileError = loadstring(source, chunkName)
 	if not chunk then
@@ -44,6 +46,23 @@ local function requireModule(path)
 	return executeChunk(source, sourceName)
 end
 
+local function normalizeModulePath(path)
+	if type(path) ~= "string" then
+		error("HuajHub sharedRequire expected string path")
+	end
+
+	local normalized = path:gsub("\\", "/")
+	if normalized:sub(1, 1) == "@" then
+		normalized = "utils/" .. normalized:sub(2)
+	end
+
+	return normalized
+end
+
+GLOBAL_ENV.sharedRequire = function(path)
+	return requireModule(normalizeModulePath(path))
+end
+
 local function resolveGameKey(gameMap)
 	if type(gameMap) ~= "table" then
 		error("HuajHub expected a game map table")
@@ -62,7 +81,7 @@ local function resolveGameKey(gameMap)
 	return gameMap.DefaultGame or "Universal"
 end
 
-local gameMap = requireModule("games/gameList.lua")
+local gameMap = sharedRequire("games/gameList.lua")
 local gameKey = resolveGameKey(gameMap)
 
 warn(("[HuajHub] Resolved game key: %s (PlaceId=%s GameId=%s)"):format(
@@ -76,7 +95,7 @@ if gameKey == "MashleAcademy" then
 	GLOBAL_ENV.__huaj_hub_mashle_library_v1 = nil
 end
 
-local gameModule = requireModule(("games/%s.lua"):format(gameKey))
+local gameModule = sharedRequire(("games/%s.lua"):format(gameKey))
 
 if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then
 	error(("HuajHub game module '%s' is missing init(context)"):format(tostring(gameKey)))

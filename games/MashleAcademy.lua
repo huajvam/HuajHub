@@ -2,15 +2,24 @@ local MashleAcademy = {}
 local REPO_BASE = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
 local GAME_KEY = "mashle_academy"
 
-local Players = game:GetService("Players")
-local ContextActionService = game:GetService("ContextActionService")
-local HttpService = game:GetService("HttpService")
-local MarketplaceService = game:GetService("MarketplaceService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local Stats = game:GetService("Stats")
-local UserInputService = game:GetService("UserInputService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
+local Services = sharedRequire("@utils/Services.lua")
+local Maid = sharedRequire("@utils/Maid.lua")
+local AnimationInfo = sharedRequire("@utils/AnimationInfo.lua")
+local CharacterUtils = sharedRequire("@utils/CharacterUtils.lua")
+local AnimatorUtils = sharedRequire("@utils/AnimatorUtils.lua")
+local EntityESP = sharedRequire("classes/EntityESP.lua")
+
+local Players, ContextActionService, HttpService, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
+	"Players",
+	"ContextActionService",
+	"HttpService",
+	"MarketplaceService",
+	"ReplicatedStorage",
+	"RunService",
+	"Stats",
+	"UserInputService",
+	"VirtualInputManager"
+)
 
 local GLOBAL_ENV = getgenv and getgenv() or _G
 local ANIM_LOGGER_RUNTIME_KEY = "__anim_logger_v254_runtime"
@@ -39,6 +48,28 @@ local ANIM_LOGGER_FILE_CANDIDATES = {
 local Library = loadstring(game:HttpGet(REPO_BASE .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(REPO_BASE .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(REPO_BASE .. "addons/SaveManager.lua"))()
+local maid = Maid.new()
+
+local normalizeAnimationId = AnimationInfo.normalizeId
+local normalizeBuilderAnimationId = AnimationInfo.extractNumericId
+local resolveDetectedAnimationName = AnimationInfo.resolveDetectedName
+local getCharacterRoot = CharacterUtils.getRoot
+local getCharacterHumanoid = CharacterUtils.getHumanoid
+local getHorizontalEdgeDistance = CharacterUtils.getHorizontalEdgeDistance
+local getEspLiveFolder = CharacterUtils.getLiveFolder
+local getTargetAnimator = AnimatorUtils.getPrimaryAnimator
+local getTargetAnimators = AnimatorUtils.getAllAnimators
+local unloadCallbacks = {}
+
+local function registerLibraryUnloadCallback(callback)
+	table.insert(unloadCallbacks, callback)
+end
+
+Library:OnUnload(function()
+	for _, callback in ipairs(unloadCallbacks) do
+		pcall(callback)
+	end
+end)
 
 local function sanitizeTabLabel(name)
 	if type(name) ~= "string" then
@@ -375,53 +406,6 @@ local function openAnimLoggerUi()
 	return nil, lastError
 end
 
-local function getCharacterRoot(character)
-	if not character then
-		return nil
-	end
-
-	return character:FindFirstChild("HumanoidRootPart")
-		or character:FindFirstChild("UpperTorso")
-		or character:FindFirstChild("Torso")
-end
-
-local function getHorizontalModelRadius(model)
-	if not model or not model:IsA("Model") then
-		return 0
-	end
-
-	local ok, size = pcall(function()
-		return model:GetExtentsSize()
-	end)
-
-	if ok and typeof(size) == "Vector3" then
-		return math.max(size.X, size.Z) * 0.5
-	end
-
-	local root = getCharacterRoot(model)
-	if root and root:IsA("BasePart") then
-		return math.max(root.Size.X, root.Size.Z) * 0.5
-	end
-
-	return 0
-end
-
-local function getHorizontalEdgeDistance(sourceCharacter, targetCharacter)
-	local sourceRoot = getCharacterRoot(sourceCharacter)
-	local targetRoot = getCharacterRoot(targetCharacter)
-	if not sourceRoot or not targetRoot then
-		return math.huge
-	end
-
-	local sourcePosition = Vector2.new(sourceRoot.Position.X, sourceRoot.Position.Z)
-	local targetPosition = Vector2.new(targetRoot.Position.X, targetRoot.Position.Z)
-	local centerDistance = (targetPosition - sourcePosition).Magnitude
-	local sourceRadius = getHorizontalModelRadius(sourceCharacter)
-	local targetRadius = getHorizontalModelRadius(targetCharacter)
-
-	return math.max(centerDistance - sourceRadius - targetRadius, 0)
-end
-
 local function getRequestModuleRemote()
 	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
 	local requestModule = remotes and remotes:FindFirstChild("RequestModule")
@@ -729,7 +713,7 @@ local function setupLocalCheatsTab()
 
 	local function getCharacterMovementState()
 		local character = LocalPlayer and LocalPlayer.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local humanoid = getCharacterHumanoid(character)
 		local rootPart = getCharacterRoot(character)
 		if not humanoid or not rootPart then
 			return nil, nil
@@ -967,7 +951,7 @@ local function setupLocalCheatsTab()
 				antiFallConnection = nil
 			end
 
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local humanoid = getCharacterHumanoid(character)
 			if not humanoid then
 				return
 			end
@@ -1128,7 +1112,7 @@ local function setupLocalCheatsTab()
 	end)
 
 	local function hookFallDamageHealthDebug(character)
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local humanoid = getCharacterHumanoid(character)
 		local rootPart = getCharacterRoot(character)
 		if not humanoid then
 			return
@@ -1139,7 +1123,7 @@ local function setupLocalCheatsTab()
 		pcall(function()
 			fallDebugState.lastHumanoidState = humanoid:GetState()
 		end)
-		Library:GiveSignal(humanoid.HealthChanged:Connect(function(newHealth)
+		maid:GiveTask(humanoid.HealthChanged:Connect(function(newHealth)
 			local oldHealth = fallDebugState.lastHealth or newHealth
 			if newHealth < oldHealth then
 				if not shouldLogFallDebug() and isFallDebugEnabled() then
@@ -1150,7 +1134,7 @@ local function setupLocalCheatsTab()
 			fallDebugState.lastHealth = newHealth
 		end))
 
-		Library:GiveSignal(humanoid.StateChanged:Connect(function(oldState, newState)
+		maid:GiveTask(humanoid.StateChanged:Connect(function(oldState, newState)
 			if not isFallDebugEnabled() then
 				return
 			end
@@ -1166,7 +1150,7 @@ local function setupLocalCheatsTab()
 			fallDebugState.lastHumanoidState = newState
 		end))
 
-		Library:GiveSignal(humanoid:GetPropertyChangedSignal("FloorMaterial"):Connect(function()
+		maid:GiveTask(humanoid:GetPropertyChangedSignal("FloorMaterial"):Connect(function()
 			local oldMaterial = fallDebugState.lastFloorMaterial
 			local newMaterial = humanoid.FloorMaterial
 			if isFallDebugEnabled() and shouldLogFallDebug() then
@@ -1180,7 +1164,7 @@ local function setupLocalCheatsTab()
 		end))
 
 		if rootPart then
-			Library:GiveSignal(rootPart:GetPropertyChangedSignal("AssemblyLinearVelocity"):Connect(function()
+			maid:GiveTask(rootPart:GetPropertyChangedSignal("AssemblyLinearVelocity"):Connect(function()
 				if not shouldLogFallDebug() then
 					return
 				end
@@ -1197,7 +1181,7 @@ local function setupLocalCheatsTab()
 			end))
 		end
 
-		Library:GiveSignal(character.AttributeChanged:Connect(function(attributeName)
+		maid:GiveTask(character.AttributeChanged:Connect(function(attributeName)
 			if not shouldLogFallDebug() then
 				return
 			end
@@ -1210,7 +1194,7 @@ local function setupLocalCheatsTab()
 			end
 		end))
 
-		Library:GiveSignal(humanoid.AttributeChanged:Connect(function(attributeName)
+		maid:GiveTask(humanoid.AttributeChanged:Connect(function(attributeName)
 			if not shouldLogFallDebug() then
 				return
 			end
@@ -1223,7 +1207,7 @@ local function setupLocalCheatsTab()
 			end
 		end))
 
-		Library:GiveSignal(character.DescendantAdded:Connect(function(descendant)
+		maid:GiveTask(character.DescendantAdded:Connect(function(descendant)
 			if isAntiFallActive() and shouldMaintainAntiFallState() and descendant.Name == "FallNegate" then
 				antiFallState = descendant
 				logFallDebug(string.format("anti-fall detected existing: %s", descendant:GetFullName()))
@@ -1242,7 +1226,7 @@ local function setupLocalCheatsTab()
 			end
 		end))
 
-		Library:GiveSignal(character.DescendantRemoving:Connect(function(descendant)
+		maid:GiveTask(character.DescendantRemoving:Connect(function(descendant)
 			if descendant == antiFallState then
 				antiFallState = nil
 				if isAntiFallActive() and shouldMaintainAntiFallState() then
@@ -1270,13 +1254,13 @@ local function setupLocalCheatsTab()
 		hookFallDamageHealthDebug(LocalPlayer.Character)
 	end
 
-	Library:GiveSignal(LocalPlayer.CharacterAdded:Connect(function(character)
+	maid:GiveTask(LocalPlayer.CharacterAdded:Connect(function(character)
 		task.defer(function()
 			hookFallDamageHealthDebug(character)
 		end)
 	end))
 
-	Library:GiveSignal(RunService.Heartbeat:Connect(function()
+	maid:GiveTask(RunService.Heartbeat:Connect(function()
 		if not isFallDebugEnabled() then
 			return
 		end
@@ -1300,7 +1284,7 @@ local function setupLocalCheatsTab()
 
 		if shouldLogFallDebug() and now - (fallDebugState.lastSampleAt or 0) >= 0.5 then
 			fallDebugState.lastSampleAt = now
-			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			local humanoid = getCharacterHumanoid(character)
 			local floorMaterial = humanoid and humanoid.FloorMaterial or "?"
 			local stateName = "?"
 			if humanoid then
@@ -1323,7 +1307,7 @@ local function setupLocalCheatsTab()
 		end
 	end))
 
-	Library:OnUnload(function()
+	registerLibraryUnloadCallback(function()
 		stopSpeedHack()
 		stopFly()
 		stopNoclip()
@@ -1375,10 +1359,6 @@ local function setupEspTab()
 		end
 
 		return nil
-	end
-
-	local function getEspLiveFolder()
-		return workspace:FindFirstChild("Live")
 	end
 
 	local function getEspHumanoid(model)
@@ -1509,19 +1489,6 @@ local function setupEspTab()
 		clearGlobalEspDrawings()
 	end
 
-	local function createDrawing(className, properties)
-		if espShuttingDown then
-			return nil
-		end
-
-		local object = Drawing.new(className)
-		for key, value in pairs(properties or {}) do
-			object[key] = value
-		end
-		table.insert(globalEspDrawings, object)
-		return object
-	end
-
 	local function ensureEspEntry(cache, model, accentColor)
 		if espShuttingDown or not drawingAvailable or not model or not model.Parent then
 			return nil
@@ -1534,104 +1501,17 @@ local function setupEspTab()
 		end
 
 		if not entry then
-			entry = {
-				model = model,
-				objects = {},
-				boxLines = {},
-				skeletonLines = {},
-			}
+			entry = EntityESP.new(globalEspDrawings, accentColor, function()
+				return espShuttingDown
+			end)
+			entry.model = model
 			entry.Destroy = function(self)
 				destroyEspEntry(cache, model, self)
 			end
-
-			for index = 1, 4 do
-				entry.boxLines[index] = createDrawing("Line", {
-					Thickness = 1.5,
-					Transparency = 1,
-					Color = accentColor,
-					Visible = false,
-				})
-				table.insert(entry.objects, entry.boxLines[index])
-			end
-
-			entry.healthBarOutline = createDrawing("Square", {
-				Filled = false,
-				Thickness = 1,
-				Transparency = 1,
-				Color = Color3.fromRGB(20, 20, 20),
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.healthBarOutline)
-
-			entry.healthBarFill = createDrawing("Square", {
-				Filled = true,
-				Thickness = 1,
-				Transparency = 1,
-				Color = Color3.fromRGB(80, 255, 120),
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.healthBarFill)
-
-			entry.nameText = createDrawing("Text", {
-				Center = true,
-				Outline = true,
-				Size = 13,
-				Font = 2,
-				Transparency = 1,
-				Color = Color3.fromRGB(255, 255, 255),
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.nameText)
-
-			entry.distanceText = createDrawing("Text", {
-				Center = true,
-				Outline = true,
-				Size = 13,
-				Font = 2,
-				Transparency = 1,
-				Color = Color3.fromRGB(205, 205, 205),
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.distanceText)
-
-			entry.healthText = createDrawing("Text", {
-				Center = true,
-				Outline = true,
-				Size = 13,
-				Font = 2,
-				Transparency = 1,
-				Color = Color3.fromRGB(150, 255, 150),
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.healthText)
-
-			entry.tracerLine = createDrawing("Line", {
-				Thickness = 1.25,
-				Transparency = 1,
-				Color = accentColor,
-				Visible = false,
-			})
-			table.insert(entry.objects, entry.tracerLine)
-
-			for index = 1, 20 do
-				entry.skeletonLines[index] = createDrawing("Line", {
-					Thickness = 1,
-					Transparency = 1,
-					Color = accentColor,
-					Visible = false,
-				})
-				table.insert(entry.objects, entry.skeletonLines[index])
-			end
-
 			cache[model] = entry
 		end
 
-		for _, line in ipairs(entry.boxLines) do
-			line.Color = accentColor
-		end
-		for _, line in ipairs(entry.skeletonLines) do
-			line.Color = accentColor
-		end
+		entry:setAccentColor(accentColor)
 		return entry
 	end
 
@@ -2118,46 +1998,46 @@ local function setupEspTab()
 		refreshEsp()
 	end)
 
-	Library:GiveSignal(Players.PlayerAdded:Connect(function(player)
-		Library:GiveSignal(player.CharacterAdded:Connect(function()
+	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
+		maid:GiveTask(player.CharacterAdded:Connect(function()
 			scheduleEspRefresh()
 		end))
 		scheduleEspRefresh()
 	end))
 
-	Library:GiveSignal(Players.PlayerRemoving:Connect(function()
+	maid:GiveTask(Players.PlayerRemoving:Connect(function()
 		scheduleEspRefresh()
 	end))
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		Library:GiveSignal(player.CharacterAdded:Connect(function()
+		maid:GiveTask(player.CharacterAdded:Connect(function()
 			scheduleEspRefresh()
 		end))
 	end
 
 	local liveFolder = getEspLiveFolder()
 	if liveFolder then
-		Library:GiveSignal(liveFolder.ChildAdded:Connect(function()
+		maid:GiveTask(liveFolder.ChildAdded:Connect(function()
 			scheduleEspRefresh()
 		end))
-		Library:GiveSignal(liveFolder.ChildRemoved:Connect(function()
+		maid:GiveTask(liveFolder.ChildRemoved:Connect(function()
 			scheduleEspRefresh()
 		end))
 	end
 
-	Library:GiveSignal(workspace.ChildAdded:Connect(function(child)
+	maid:GiveTask(workspace.ChildAdded:Connect(function(child)
 		if child.Name == "Live" then
-			Library:GiveSignal(child.ChildAdded:Connect(function()
+			maid:GiveTask(child.ChildAdded:Connect(function()
 				scheduleEspRefresh()
 			end))
-			Library:GiveSignal(child.ChildRemoved:Connect(function()
+			maid:GiveTask(child.ChildRemoved:Connect(function()
 				scheduleEspRefresh()
 			end))
 			scheduleEspRefresh()
 		end
 	end))
 
-	Library:GiveSignal(RunService.Heartbeat:Connect(function()
+	maid:GiveTask(RunService.Heartbeat:Connect(function()
 		if espShuttingDown then
 			return
 		end
@@ -2167,7 +2047,7 @@ local function setupEspTab()
 		end
 	end))
 
-	Library:OnUnload(function()
+	registerLibraryUnloadCallback(function()
 		espShuttingDown = true
 		pcall(function()
 			if Toggles.PlayerEspEnabled then
@@ -2578,61 +2458,6 @@ local function setupAutoParryTab()
 			entry.animationName or entry.targetName or "Unknown",
 			entry.animationId
 		)
-	end
-
-	local function getTrackAnimationName(track)
-		if not track then
-			return nil
-		end
-
-		local animation = track.Animation
-		if animation and type(animation.Name) == "string" and animation.Name ~= "" and animation.Name ~= "Animation" then
-			return animation.Name
-		end
-
-		if type(track.Name) == "string" and track.Name ~= "" and track.Name ~= "Animation" then
-			return track.Name
-		end
-
-		return nil
-	end
-
-	local function normalizeBuilderAnimationId(value)
-		return tostring(value or ""):match("%d+")
-	end
-
-	local animationNameCache = {}
-
-	local function getAnimationAssetName(animationId)
-		local normalizedAnimationId = normalizeBuilderAnimationId(animationId)
-		if not normalizedAnimationId then
-			return nil
-		end
-
-		if animationNameCache[normalizedAnimationId] ~= nil then
-			return animationNameCache[normalizedAnimationId] or nil
-		end
-
-		local ok, info = pcall(function()
-			return MarketplaceService:GetProductInfo(tonumber(normalizedAnimationId))
-		end)
-
-		if ok and type(info) == "table" and type(info.Name) == "string" then
-			local resolvedName = info.Name:gsub("^%s+", ""):gsub("%s+$", "")
-			if resolvedName ~= "" then
-				animationNameCache[normalizedAnimationId] = resolvedName
-				return resolvedName
-			end
-		end
-
-		animationNameCache[normalizedAnimationId] = false
-		return nil
-	end
-
-	local function resolveDetectedAnimationName(animationId, track, fallbackName)
-		return getAnimationAssetName(animationId)
-			or getTrackAnimationName(track)
-			or fallbackName
 	end
 
 	local function buildSavedConfigLabel(sourceKey, animationId, configData)
@@ -3370,49 +3195,6 @@ local function setupAutoParryTab()
 		}
 	end
 
-	local function normalizeAnimationId(animationId)
-		if type(animationId) ~= "string" then
-			animationId = tostring(animationId or "")
-		end
-
-		local digits = animationId:match("%d+")
-		return digits or animationId
-	end
-
-	local function getTargetAnimator(targetCharacter)
-		if not targetCharacter then
-			return nil
-		end
-
-		local humanoid = targetCharacter:FindFirstChildOfClass("Humanoid")
-		if humanoid then
-			local humanoidAnimator = humanoid:FindFirstChildOfClass("Animator")
-			if humanoidAnimator then
-				return humanoidAnimator
-			end
-		end
-
-		return targetCharacter:FindFirstChildWhichIsA("Animator", true)
-	end
-
-	local function getTargetAnimators(targetCharacter)
-		if not targetCharacter then
-			return {}
-		end
-
-		local animators = {}
-		local seenAnimators = {}
-
-		for _, descendant in ipairs(targetCharacter:GetDescendants()) do
-			if descendant:IsA("Animator") and not seenAnimators[descendant] then
-				seenAnimators[descendant] = true
-				table.insert(animators, descendant)
-			end
-		end
-
-		return animators
-	end
-
 	local function getAnimationConfig(targetType, animationId)
 		local normalized = normalizeAnimationId(animationId)
 		local animationTable = targetType == "player" and AUTO_PARRY_ANIMATION_TABLE.Players or AUTO_PARRY_ANIMATION_TABLE.Mobs
@@ -3964,7 +3746,7 @@ local function setupAutoParryTab()
 			local localCharacter = LocalPlayer and LocalPlayer.Character
 			local localRoot = getCharacterRoot(localCharacter)
 			local targetRoot = getCharacterRoot(targetCharacter)
-			local humanoid = targetCharacter and targetCharacter:FindFirstChildOfClass("Humanoid")
+			local humanoid = getCharacterHumanoid(targetCharacter)
 
 			if Toggles.AutoParryDashOnFail.Value
 				and localRoot
@@ -4591,7 +4373,7 @@ local function setupAutoParryTab()
 		end)
 
 		local character = LocalPlayer and LocalPlayer.Character
-		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		local humanoid = getCharacterHumanoid(character)
 		if humanoid then
 			pcall(function()
 				humanoid.Jump = true
@@ -4631,11 +4413,11 @@ local function setupAutoParryTab()
 		Options.AutoParryWhitelist:SetValue(currentSelection)
 	end
 
-	Library:GiveSignal(Players.PlayerAdded:Connect(function()
+	maid:GiveTask(Players.PlayerAdded:Connect(function()
 		autoParryRuntime.refreshAutoParryWhitelist()
 	end))
 
-	Library:GiveSignal(Players.PlayerRemoving:Connect(function()
+	maid:GiveTask(Players.PlayerRemoving:Connect(function()
 		autoParryRuntime.refreshAutoParryWhitelist()
 	end))
 
@@ -4672,7 +4454,7 @@ local function setupAutoParryTab()
 	refreshSavedConfigDropdown("(none)")
 	refreshDetectedAnimationDropdown("(none)")
 	autoParryRuntime.installManualActionDebugHook()
-	Library:GiveSignal(UserInputService.InputBegan:Connect(function(inputObject)
+	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
 			return
 		end
@@ -4717,34 +4499,35 @@ local function setupAutoParryTab()
 
 	local liveFolder = autoParryRuntime.refreshTrackedAutoParryTargets()
 	if liveFolder then
-		Library:GiveSignal(liveFolder.ChildAdded:Connect(function(child)
+		maid:GiveTask(liveFolder.ChildAdded:Connect(function(child)
 			autoParryRuntime.trackAutoParryTarget(child)
 		end))
 
-		Library:GiveSignal(liveFolder.ChildRemoved:Connect(function(child)
+		maid:GiveTask(liveFolder.ChildRemoved:Connect(function(child)
 			autoParryRuntime.disconnectTrackedAutoParryTarget(child)
 		end))
 	end
 
-	Library:GiveSignal(workspace.ChildAdded:Connect(function(child)
+	maid:GiveTask(workspace.ChildAdded:Connect(function(child)
 		if child.Name == "Live" then
 			autoParryRuntime.refreshTrackedAutoParryTargets()
-			Library:GiveSignal(child.ChildAdded:Connect(function(grandChild)
+			maid:GiveTask(child.ChildAdded:Connect(function(grandChild)
 				autoParryRuntime.trackAutoParryTarget(grandChild)
 			end))
-			Library:GiveSignal(child.ChildRemoved:Connect(function(grandChild)
+			maid:GiveTask(child.ChildRemoved:Connect(function(grandChild)
 				autoParryRuntime.disconnectTrackedAutoParryTarget(grandChild)
 			end))
 		end
 	end))
 
-	Library:GiveSignal(RunService.Heartbeat:Connect(autoParryRuntime.processAutoParryHeartbeat))
+	maid:GiveTask(RunService.Heartbeat:Connect(autoParryRuntime.processAutoParryHeartbeat))
 
-	Library:OnUnload(function()
+	registerLibraryUnloadCallback(function()
 		autoParryRuntime.setAutoParryInputBlocking(false)
 		autoParryState.pendingParryFailCheck = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = nil
+		maid:DoCleaning()
 		table.clear(autoParryState.queuedMoveActions)
 		table.clear(autoParryState.queuedTracks)
 		for model in pairs(autoParryState.trackedTargets) do

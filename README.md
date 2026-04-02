@@ -10,6 +10,11 @@ Multi-game Roblox hub.
 - `classes/`: shared class-style modules
 - `utils/`: shared utility modules
 
+Current shared foundation:
+- `sharedRequire(...)` exposed by `source.lua`
+- `utils/Services.lua`
+- `utils/Maid.lua`
+
 This now follows the same top-level shape as the Aztup Hub files:
 - one root entry script
 - one root `games` folder
