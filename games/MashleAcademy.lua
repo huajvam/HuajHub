@@ -736,6 +736,7 @@ local function setupLocalCheatsTab()
 	local noStunJumpHeight = 7.2
 	local lastCastLockScanAt = 0
 	local cachedCastLockProjectiles = {}
+	local castLockAppliedProjectiles = setmetatable({}, { __mode = "k" })
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
 	local triggerAntiFallBypass
@@ -1207,28 +1208,18 @@ local function setupLocalCheatsTab()
 		return nearestRoot
 	end
 
-	local function steerCastLockProjectile(projectile, targetRoot)
+	local function snapCastLockProjectile(projectile, targetRoot)
 		if not projectile or not targetRoot then
 			return
 		end
 
-		local projectilePosition = projectile.Position
 		local targetPosition = targetRoot.Position
-		local direction = targetPosition - projectilePosition
-		if direction.Magnitude <= 0.001 then
-			return
-		end
-
-		local currentSpeed = projectile.AssemblyLinearVelocity.Magnitude
-		local desiredSpeed = math.max(currentSpeed, 140)
-		local velocity = direction.Unit * desiredSpeed
-
 		pcall(function()
-			projectile.AssemblyLinearVelocity = velocity
+			projectile.AssemblyLinearVelocity = Vector3.zero
 		end)
 
 		pcall(function()
-			projectile.CFrame = CFrame.lookAt(projectilePosition, projectilePosition + velocity.Unit)
+			projectile.CFrame = targetRoot.CFrame
 		end)
 	end
 
@@ -1252,11 +1243,15 @@ local function setupLocalCheatsTab()
 			for index = #projectiles, 1, -1 do
 				local projectile = projectiles[index]
 				if projectile and typeof(projectile) == "Instance" and projectile.ClassName == "Part" then
-					local targetRoot = getNearestCastLockTarget(projectile.Position)
-					if targetRoot then
-						steerCastLockProjectile(projectile, targetRoot)
+					if not castLockAppliedProjectiles[projectile] then
+						local targetRoot = getNearestCastLockTarget(projectile.Position)
+						if targetRoot then
+							snapCastLockProjectile(projectile, targetRoot)
+							castLockAppliedProjectiles[projectile] = true
+						end
 					end
 				else
+					castLockAppliedProjectiles[projectile] = nil
 					table.remove(projectiles, index)
 				end
 			end
