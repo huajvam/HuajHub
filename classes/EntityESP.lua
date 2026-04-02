@@ -47,7 +47,7 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 
 	for index = 1, 4 do
 		self.boxLines[index] = EntityESP.createDrawing(registry, "Line", {
-			Thickness = 1.5,
+			Thickness = 1,
 			Transparency = 1,
 			Color = accentColor,
 			Visible = false,
@@ -76,7 +76,7 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 	self.nameText = EntityESP.createDrawing(registry, "Text", {
 		Center = true,
 		Outline = true,
-		Size = 13,
+		Size = 14,
 		Font = 2,
 		Transparency = 1,
 		Color = Color3.fromRGB(255, 255, 255),
@@ -90,7 +90,7 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 		Size = 13,
 		Font = 2,
 		Transparency = 1,
-		Color = Color3.fromRGB(205, 205, 205),
+		Color = Color3.fromRGB(220, 220, 220),
 		Visible = false,
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.distanceText)
@@ -101,13 +101,13 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 		Size = 13,
 		Font = 2,
 		Transparency = 1,
-		Color = Color3.fromRGB(150, 255, 150),
+		Color = Color3.fromRGB(170, 255, 170),
 		Visible = false,
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.healthText)
 
 	self.tracerLine = EntityESP.createDrawing(registry, "Line", {
-		Thickness = 1.25,
+		Thickness = 1,
 		Transparency = 1,
 		Color = accentColor,
 		Visible = false,

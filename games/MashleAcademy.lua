@@ -2252,21 +2252,21 @@ local function setupEspTab()
 		entry:setText(
 			entry.nameText,
 			getEspDisplayName(model, targetType),
-			Vector2.new(box.left + (box.width * 0.5), box.top - 16),
+			Vector2.new(box.left + (box.width * 0.5), box.top - 14),
 			Toggles.EspShowNames.Value
 		)
 
 		entry:setText(
 			entry.distanceText,
 			string.format("%.0f studs", distance),
-			Vector2.new(box.left + (box.width * 0.5), box.bottom + 2),
+			Vector2.new(box.left + (box.width * 0.5), box.bottom + 1),
 			Toggles.EspShowDistance.Value
 		)
 
 		entry:setText(
 			entry.healthText,
 			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
-			Vector2.new(box.left + (box.width * 0.5), box.top - 30),
+			Vector2.new(box.left + (box.width * 0.5), box.top - 27),
 			Toggles.EspShowHealthText.Value and humanoid ~= nil
 		)
 
@@ -2389,9 +2389,9 @@ local function setupEspTab()
 
 	espVisualGroup:AddSlider("EspRenderDistance", {
 		Text = "Render Distance",
-		Default = 150,
+		Default = 500,
 		Min = 10,
-		Max = 500,
+		Max = 2000,
 		Rounding = 0,
 		Suffix = " studs",
 	})
@@ -2413,7 +2413,7 @@ local function setupEspTab()
 
 	espVisualGroup:AddToggle("EspShowHealthText", {
 		Text = "Health Text",
-		Default = true,
+		Default = false,
 	})
 
 	espVisualGroup:AddToggle("EspShowHealthBar", {
@@ -2423,7 +2423,7 @@ local function setupEspTab()
 
 	espVisualGroup:AddToggle("EspShowBox", {
 		Text = "Box ESP",
-		Default = false,
+		Default = true,
 	})
 
 	espVisualGroup:AddToggle("EspShowSkeleton", {
@@ -2433,7 +2433,7 @@ local function setupEspTab()
 
 	espVisualGroup:AddToggle("EspShowTracers", {
 		Text = "Tracer Lines",
-		Default = false,
+		Default = true,
 	})
 
 	Toggles.PlayerEspEnabled:OnChanged(function()
