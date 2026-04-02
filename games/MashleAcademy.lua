@@ -4936,6 +4936,28 @@ local function setupMiscTab()
 	local fpsBoostTextureStates = {}
 	local fpsBoostMaterialStates = {}
 	local fpsBoostStudsPerTileStates = {}
+	local fpsBoostMeshTextureStates = {}
+	local blurEffectStates = {}
+
+	local function setBlurEffectsEnabled(enabled)
+		for _, descendant in ipairs(Lighting:GetDescendants()) do
+			if descendant:IsA("BlurEffect") then
+				if blurEffectStates[descendant] == nil then
+					blurEffectStates[descendant] = {
+						enabled = descendant.Enabled,
+						size = descendant.Size,
+					}
+				end
+
+				pcall(function()
+					descendant.Enabled = enabled and blurEffectStates[descendant].enabled or false
+				end)
+				pcall(function()
+					descendant.Size = enabled and blurEffectStates[descendant].size or 0
+				end)
+			end
+		end
+	end
 
 	local function restoreFpsBoostVisuals()
 		for instance, transparency in pairs(fpsBoostTextureStates) do
@@ -4965,6 +4987,15 @@ local function setupMiscTab()
 			end
 		end
 		table.clear(fpsBoostStudsPerTileStates)
+
+		for instance, textureId in pairs(fpsBoostMeshTextureStates) do
+			if instance and instance.Parent then
+				pcall(function()
+					instance.TextureID = textureId
+				end)
+			end
+		end
+		table.clear(fpsBoostMeshTextureStates)
 	end
 
 	local function applyFpsBoostVisuals()
@@ -4981,6 +5012,12 @@ local function setupMiscTab()
 				pcall(function()
 					descendant.Material = Enum.Material.SmoothPlastic
 				end)
+				if descendant:IsA("MeshPart") then
+					fpsBoostMeshTextureStates[descendant] = descendant.TextureID
+					pcall(function()
+						descendant.TextureID = ""
+					end)
+				end
 			elseif descendant:IsA("Terrain") then
 				fpsBoostStudsPerTileStates[descendant] = {
 					u = descendant.StudsPerTileU,
@@ -4996,7 +5033,11 @@ local function setupMiscTab()
 
 	local function setEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
-			if descendant:IsA("PostEffect") or descendant:IsA("Atmosphere") or descendant:IsA("Sky") or descendant:IsA("Clouds") then
+			if (descendant:IsA("PostEffect") and not descendant:IsA("BlurEffect"))
+				or descendant:IsA("Atmosphere")
+				or descendant:IsA("Sky")
+				or descendant:IsA("Clouds")
+			then
 				pcall(function()
 					descendant.Enabled = enabled
 				end)
@@ -5127,7 +5168,10 @@ local function setupMiscTab()
 		end)
 		setEffectsEnabled(true)
 		restoreFpsBoostVisuals()
+		setBlurEffectsEnabled(true)
 	end)
+
+	setBlurEffectsEnabled(false)
 end
 setupMiscTab()
 
