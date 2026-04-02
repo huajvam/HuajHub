@@ -3764,10 +3764,10 @@ local function setupAutoParryTab()
 			return nil
 		end
 
-		local mode = Options.AutoParryMode.Value or "Mobs+Players"
+		local mode = getOptionValue("AutoParryMode", "Mobs+Players") or "Mobs+Players"
 		local allowPlayers = mode == "Mobs+Players" or mode == "Players"
 		local allowMobs = mode == "Mobs+Players" or mode == "Mobs"
-		local whitelist = Options.AutoParryWhitelist.Value
+		local whitelist = getOptionValue("AutoParryWhitelist", nil)
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
 		local targetType = resolveAutoParryTargetType(model)
@@ -3956,7 +3956,7 @@ local function setupAutoParryTab()
 		local normalizedAnimationId = normalizeAnimationId(animationId)
 		local debugType = getAutoParryTargetDebugType(targetCharacter)
 
-		local baseDistance = Options.AutoParryDistance.Value or 18
+		local baseDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = classifyParryTarget(targetCharacter, baseDistance)
 		if not candidate then
 			setAutoParryDebugText(string.format("%s %s anim %s skipped by range/filter.", debugType, targetCharacter.Name, normalizedAnimationId))
@@ -4555,7 +4555,7 @@ local function setupAutoParryTab()
 	end
 
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
-		local maxDistance = Options.AutoParryDistance.Value or 18
+		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
