@@ -5216,7 +5216,12 @@ local function setupMiscTab()
 		setBlurEffectsEnabled(true)
 	end)
 end
-setupMiscTab()
+local miscSetupOk = pcall(setupMiscTab)
+if not miscSetupOk then
+	local miscFallback = Tabs["Misc"]:AddLeftGroupbox("Misc")
+	miscFallback:AddLabel("Misc failed to build.")
+	miscFallback:AddLabel("Using fallback view.")
+end
 
 local function setupSettingsTab()
 	local settingsTab = Tabs["Settings"]
@@ -5234,7 +5239,11 @@ local function setupSettingsTab()
 
 	Library.ToggleKeybind = Options.MenuKeybind
 end
-setupSettingsTab()
+local settingsSetupOk = pcall(setupSettingsTab)
+if not settingsSetupOk then
+	local settingsFallback = Tabs["Settings"]:AddLeftGroupbox("Menu")
+	settingsFallback:AddLabel("Settings failed to build.")
+end
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
