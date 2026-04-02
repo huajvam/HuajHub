@@ -163,6 +163,10 @@ local MASHLE_TELEPORT_LOCATIONS = {
 		name = "Sand trainer",
 		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
 	},
+	{
+		name = "Sand trainer",
+		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
+	},
 	-- {
 	-- 	name = "Arena",
 	-- 	cframe = CFrame.new(100, 15, -250),
@@ -4218,65 +4222,9 @@ local function setupAutoParryTab()
 	function autoParryRuntime.installManualActionDebugHook()
 		GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY] = reportManualActionDebug
 
-		if GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_HOOK_KEY] then
-			return true
-		end
-
-		if type(hookmetamethod) ~= "function" or type(newcclosure) ~= "function" then
-			setManualParryDebugText("remote hook unavailable in this executor.")
-			setManualDashDebugText("remote hook unavailable in this executor.")
-			return false
-		end
-
-		local previousNamecall
-		previousNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-			local args = {...}
-			local method = getnamecallmethod and getnamecallmethod()
-
-			if method == "FireServer" and isManualActionRequestRemote(self) then
-				local isFallDamageRequest = args[1] == "Misc" and args[2] == "FallDamage"
-				if isFallDamageRequest then
-					beginFallDebugWindow("RequestModule FallDamage", 3)
-				end
-
-				if shouldLogFallDebug() then
-					local payloadSummary = ""
-					if type(args[4]) == "table" then
-						local encoded = encodeDebugPayload(args[4])
-						payloadSummary = encoded ~= "" and (" payload=" .. tostring(encoded)) or ""
-					end
-
-					logFallDebug(string.format(
-						"RequestModule FireServer: %s | %s%s",
-						tostring(args[1]),
-						tostring(args[2]),
-						payloadSummary
-					))
-				end
-			end
-
-			if method == "FireServer" and shouldBlockFallDamageRequest(self, args) then
-				return nil
-			end
-
-			if method == "FireServer" and (tonumber(GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY]) or 0) <= 0 then
-				local callback = GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY]
-				if type(callback) == "function" and isManualActionRequestRemote(self) then
-					if args[1] == "Misc" and args[2] == "Parry" then
-						autoParryState.manualParryInputSuppressUntil = os.clock() + 0.2
-						local captureRequestedAt = os.clock()
-						task.defer(function()
-							pcall(callback, "manual parry", captureRequestedAt)
-						end)
-					end
-				end
-			end
-
-			return previousNamecall(self, ...)
-		end))
-
-		GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_HOOK_KEY] = true
-		return true
+		setManualParryDebugText("remote hook disabled; use F/Q/Space capture.")
+		setManualDashDebugText("remote hook disabled; use F/Q/Space capture.")
+		return false
 	end
 
 	function autoParryRuntime.fireAutoParryDashRemote(remote)
