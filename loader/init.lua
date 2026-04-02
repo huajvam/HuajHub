@@ -58,6 +58,12 @@ end
 local registry = requireModule("src/core/registry.lua")
 local gameKey = resolveGameKey(registry)
 warn(("[HuajHub] Resolved game key: %s (PlaceId=%s GameId=%s)"):format(tostring(gameKey), tostring(game.PlaceId), tostring(game.GameId)))
+
+if gameKey == "mashle_academy" then
+	GLOBAL_ENV.__huaj_hub_mashle_initialized_v1 = nil
+	GLOBAL_ENV.__huaj_hub_mashle_library_v1 = nil
+end
+
 local gameModule = requireModule(("src/games/%s/init.lua"):format(gameKey))
 
 if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then

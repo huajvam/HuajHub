@@ -507,6 +507,8 @@ local Window = Library:CreateWindow({
 	MenuFadeTime = 0.2,
 })
 
+warn("[HuajHub] Window created for mashle_academy")
+
 local tabDefinitions = {
 	{key = "Local Cheats", label = gameTabName, group = gameTabName},
 	{key = "Auto Parry", label = "Auto Parry", group = "Auto Parry"},
@@ -4724,6 +4726,16 @@ SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 SaveManager:BuildConfigSection(Tabs["Settings"])
 ThemeManager:ApplyToTab(Tabs["Settings"])
 SaveManager:LoadAutoloadConfig()
+
+task.defer(function()
+	local holder = Window and Window.Holder
+	if holder and holder.Visible == false and type(Library.Toggle) == "function" then
+		warn("[HuajHub] Forcing window visible")
+		pcall(function()
+			Library:Toggle()
+		end)
+	end
+end)
 
 end
 
