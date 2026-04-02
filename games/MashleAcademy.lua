@@ -4133,7 +4133,7 @@ local function setupAutoParryTab()
 				})
 			end)
 
-			if Toggles.AutoParryBlockInputs.Value then
+			if getToggleValue("AutoParryBlockInputs", false) then
 				autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 				autoParryRuntime.setAutoParryInputBlocking(true)
 			end
@@ -4150,10 +4150,10 @@ local function setupAutoParryTab()
 
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
-			and not (Toggles.AutoParryDontBlatantDashPlayers.Value and targetType == "player")
+			and not (getToggleValue("AutoParryDontBlatantDashPlayers", false) and targetType == "player")
 			and now - autoParryState.lastBlatantDashAt >= blatantDashCooldown then
 			autoParryState.lastBlatantDashAt = now
-			if Toggles.AutoParryBlatantDash.Value then
+			if getToggleValue("AutoParryBlatantDash", false) then
 				usedDash = autoParryRuntime.fireAutoParryDashRemote(remote) == true
 			else
 				autoParryRuntime.pressDashKey()
@@ -4215,7 +4215,7 @@ local function setupAutoParryTab()
 			))
 			autoParryState.handledTracks[animationTrack] = true
 
-			if Toggles.AutoParryDashOnFail.Value then
+			if getToggleValue("AutoParryDashOnFail", false) then
 				autoParryState.pendingParryFailCheck = {
 					target = targetCharacter,
 					distance = actionRange,
@@ -4231,7 +4231,7 @@ local function setupAutoParryTab()
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		end
 
-		if Toggles.AutoParryBlockInputs.Value then
+		if getToggleValue("AutoParryBlockInputs", false) then
 			autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
 			autoParryRuntime.setAutoParryInputBlocking(true)
 		end
