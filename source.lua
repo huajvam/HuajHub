@@ -25,7 +25,7 @@ local function createLoaderGui()
 	destroyLoaderGui()
 
 	local Players = game:GetService("Players")
-	local TweenService = game:GetService("TweenService")
+	local RunService = game:GetService("RunService")
 	local CoreGui = game:GetService("CoreGui")
 	local LocalPlayer = Players.LocalPlayer
 	local playerGui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
@@ -73,17 +73,41 @@ local function createLoaderGui()
 	title.TextSize = 22
 	title.Parent = frame
 
-	local spinner = Instance.new("ImageLabel")
+	local spinner = Instance.new("Frame")
 	spinner.Name = "Spinner"
 	spinner.BackgroundTransparency = 1
 	spinner.AnchorPoint = Vector2.new(0.5, 0.5)
 	spinner.Position = UDim2.fromScale(0.5, 0.52)
 	spinner.Size = UDim2.fromOffset(54, 54)
-	spinner.Image = "rbxassetid://3926305904"
-	spinner.ImageRectOffset = Vector2.new(924, 884)
-	spinner.ImageRectSize = Vector2.new(36, 36)
-	spinner.ImageColor3 = Color3.fromRGB(245, 245, 245)
 	spinner.Parent = frame
+
+	local spinnerDots = {}
+	local spinnerDotCount = 8
+	local spinnerRadius = 18
+	local spinnerDotSize = 8
+
+	for index = 1, spinnerDotCount do
+		local angle = ((index - 1) / spinnerDotCount) * (math.pi * 2)
+		local dot = Instance.new("Frame")
+		dot.Name = "Dot" .. index
+		dot.AnchorPoint = Vector2.new(0.5, 0.5)
+		dot.Size = UDim2.fromOffset(spinnerDotSize, spinnerDotSize)
+		dot.Position = UDim2.new(
+			0.5,
+			math.cos(angle) * spinnerRadius,
+			0.5,
+			math.sin(angle) * spinnerRadius
+		)
+		dot.BackgroundColor3 = Color3.fromRGB(245, 245, 245)
+		dot.BorderSizePixel = 0
+		dot.Parent = spinner
+
+		local dotCorner = Instance.new("UICorner")
+		dotCorner.CornerRadius = UDim.new(1, 0)
+		dotCorner.Parent = dot
+
+		spinnerDots[index] = dot
+	end
 
 	local status = Instance.new("TextLabel")
 	status.Name = "Status"
@@ -100,12 +124,22 @@ local function createLoaderGui()
 	screenGui.Parent = guiParent
 	GLOBAL_ENV[HUAJ_HUB_LOADER_GUI_KEY] = screenGui
 
-	local spinTween = TweenService:Create(
-		spinner,
-		TweenInfo.new(1, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut, -1),
-		{ Rotation = 360 }
-	)
-	spinTween:Play()
+	local spinnerStart = os.clock()
+	local spinnerConnection = RunService.RenderStepped:Connect(function()
+		local elapsed = (os.clock() - spinnerStart) * 2.2
+		for index, dot in ipairs(spinnerDots) do
+			if dot and dot.Parent then
+				local phase = elapsed - ((index - 1) / spinnerDotCount)
+				local alpha = 0.25 + (0.75 * (0.5 + 0.5 * math.sin(phase * math.pi * 2)))
+				dot.BackgroundTransparency = 1 - alpha
+				local scale = 0.8 + (0.35 * alpha)
+				dot.Size = UDim2.fromOffset(
+					math.floor(spinnerDotSize * scale + 0.5),
+					math.floor(spinnerDotSize * scale + 0.5)
+				)
+			end
+		end
+	end)
 
 	return {
 		setStatus = function(message)
@@ -115,7 +149,7 @@ local function createLoaderGui()
 		end,
 		destroy = function()
 			pcall(function()
-				spinTween:Cancel()
+				spinnerConnection:Disconnect()
 			end)
 			destroyLoaderGui()
 		end,
