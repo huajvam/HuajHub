@@ -66,6 +66,21 @@ local getConfigActionType = AutoParryConfigUtils.getConfigActionType
 local buildRuntimeMoveConfig = AutoParryConfigUtils.buildRuntimeMoveConfig
 local resolveConfiguredTiming = AutoParryConfigUtils.resolveConfiguredTiming
 local unloadCallbacks = {}
+local MASHLE_TELEPORT_NAME_HINTS = {
+	academy = true,
+	spawn = true,
+	lobby = true,
+	shop = true,
+	merchant = true,
+	arena = true,
+	forest = true,
+	boss = true,
+	quest = true,
+	entrance = true,
+	exit = true,
+	trial = true,
+	trainer = true,
+}
 
 local function registerLibraryUnloadCallback(callback)
 	table.insert(unloadCallbacks, callback)
@@ -545,6 +560,7 @@ end
 local function setupLocalCheatsTab()
 	local mainTab = Tabs["Local Cheats"]
 	local combatGroup = mainTab:AddLeftGroupbox("Local Cheats")
+	local teleportGroup = mainTab:AddRightGroupbox("Teleports")
 	local speedHackConnection = nil
 	local flyConnection = nil
 	local noclipConnection = nil
@@ -560,6 +576,171 @@ local function setupLocalCheatsTab()
 	local antiFallState = nil
 	local antiFallProtectedUntil = 0
 	local knockedOwnershipLoopToken = 0
+	local teleportLocations = {}
+	local teleportLabels = {"(none)"}
+
+	local function getTeleportCFrameFromTarget(target)
+		if not target or not target.Parent then
+			return nil
+		end
+
+		if target:IsA("BasePart") then
+			return target.CFrame
+		end
+
+		if target:IsA("Model") then
+			local root = getCharacterRoot(target)
+			if root then
+				return root.CFrame
+			end
+
+			if target.PrimaryPart then
+				return target.PrimaryPart.CFrame
+			end
+
+			local ok, pivot = pcall(function()
+				return target:GetPivot()
+			end)
+			if ok then
+				return pivot
+			end
+		end
+
+		return nil
+	end
+
+	local function isGenericTeleportName(name)
+		if type(name) ~= "string" or name == "" then
+			return true
+		end
+
+		local lowered = string.lower(name)
+		return lowered == "part"
+			or lowered == "meshpart"
+			or lowered == "model"
+			or lowered == "union"
+			or lowered == "folder"
+	end
+
+	local function looksLikeTeleportLandmark(instance)
+		if not instance or not instance.Parent then
+			return false
+		end
+
+		local localCharacter = LocalPlayer and LocalPlayer.Character
+		if localCharacter and (instance == localCharacter or instance:IsDescendantOf(localCharacter)) then
+			return false
+		end
+
+		local liveFolder = workspace:FindFirstChild("Live")
+		if liveFolder and instance:IsDescendantOf(liveFolder) then
+			return false
+		end
+
+		if isGenericTeleportName(instance.Name) then
+			return false
+		end
+
+		local lowered = string.lower(instance.Name)
+		for hint in pairs(MASHLE_TELEPORT_NAME_HINTS) do
+			if string.find(lowered, hint, 1, true) then
+				return true
+			end
+		end
+
+		return false
+	end
+
+	local function setTeleportDropdownValues(selectedLabel)
+		table.sort(teleportLabels, function(left, right)
+			if left == "(none)" then
+				return true
+			end
+			if right == "(none)" then
+				return false
+			end
+			return left < right
+		end)
+
+		Options.TeleportDestination:SetValues(teleportLabels)
+
+		if selectedLabel and teleportLocations[selectedLabel] then
+			Options.TeleportDestination:SetValue(selectedLabel)
+		elseif not teleportLocations[Options.TeleportDestination.Value] then
+			Options.TeleportDestination:SetValue("(none)")
+		end
+	end
+
+	local function refreshTeleportLocations()
+		teleportLocations = {}
+		teleportLabels = {"(none)"}
+
+		local seenTargets = {}
+		for _, descendant in ipairs(workspace:GetDescendants()) do
+			if descendant:IsA("Model") or descendant:IsA("BasePart") then
+				if looksLikeTeleportLandmark(descendant) then
+					local target = descendant
+					if descendant:IsA("BasePart")
+						and descendant.Parent
+						and descendant.Parent:IsA("Model")
+						and looksLikeTeleportLandmark(descendant.Parent) then
+						target = descendant.Parent
+					end
+
+					if not seenTargets[target] then
+						local targetCFrame = getTeleportCFrameFromTarget(target)
+						if targetCFrame then
+							seenTargets[target] = true
+							local baseLabel = target.Name
+							local label = baseLabel
+							local duplicateIndex = 2
+
+							while teleportLocations[label] do
+								label = string.format("%s (%d)", baseLabel, duplicateIndex)
+								duplicateIndex += 1
+							end
+
+							teleportLocations[label] = {
+								target = target,
+							}
+							table.insert(teleportLabels, label)
+						end
+					end
+				end
+			end
+		end
+
+		setTeleportDropdownValues(teleportLabels[2])
+	end
+
+	local function teleportToSelectedDestination()
+		local selection = Options.TeleportDestination.Value
+		local destination = selection and teleportLocations[selection]
+		if not destination then
+			Library:Notify("No teleport destination selected.", 2)
+			return
+		end
+
+		local character = LocalPlayer and LocalPlayer.Character
+		local root = getCharacterRoot(character)
+		local humanoid = getCharacterHumanoid(character)
+		local targetCFrame = getTeleportCFrameFromTarget(destination.target)
+		if not root or not targetCFrame then
+			Library:Notify("Selected destination is unavailable.", 2)
+			refreshTeleportLocations()
+			return
+		end
+
+		if humanoid then
+			pcall(function()
+				humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+			end)
+		end
+
+		root.AssemblyLinearVelocity = Vector3.zero
+		root.CFrame = targetCFrame + Vector3.new(0, 4, 0)
+		Library:Notify("Teleported to " .. tostring(selection) .. ".", 2)
+	end
 
 	local function destroyBodyMover(bodyMover)
 		if bodyMover then
@@ -1063,6 +1244,23 @@ local function setupLocalCheatsTab()
 		Text = "Knocked Ownership",
 		Default = false,
 	})
+
+	teleportGroup:AddDropdown("TeleportDestination", {
+		Text = "Destination",
+		Values = teleportLabels,
+		Default = 1,
+	})
+
+	teleportGroup:AddButton("Refresh Teleports", function()
+		refreshTeleportLocations()
+		Library:Notify("Teleport list refreshed.", 2)
+	end)
+
+	teleportGroup:AddButton("Teleport To Selected", function()
+		teleportToSelectedDestination()
+	end)
+
+	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
 		if Toggles.SpeedHackEnabled.Value then
@@ -3011,7 +3209,29 @@ local function setupAutoParryTab()
 		return "unknown"
 	end
 
+	local function isLocalAutoParryCharacter(model)
+		local character = LocalPlayer and LocalPlayer.Character
+		if not model or not model:IsA("Model") or not character then
+			return false
+		end
+
+		if model == character then
+			return true
+		end
+
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if ownerPlayer == LocalPlayer then
+			return true
+		end
+
+		return model:IsDescendantOf(character) or character:IsDescendantOf(model)
+	end
+
 	local function resolveAutoParryTargetType(model)
+		if isLocalAutoParryCharacter(model) then
+			return nil
+		end
+
 		local debugType = getAutoParryTargetDebugType(model)
 		if debugType == "mob" or debugType == "player" then
 			return debugType
@@ -3067,7 +3287,7 @@ local function setupAutoParryTab()
 	local function classifyParryTarget(model, maxDistance)
 		local character = LocalPlayer and LocalPlayer.Character
 		local root = getCharacterRoot(character)
-		if not root or not model or not model:IsA("Model") or model == character then
+		if not root or not model or not model:IsA("Model") or isLocalAutoParryCharacter(model) then
 			return nil
 		end
 
@@ -3082,10 +3302,6 @@ local function setupAutoParryTab()
 		local whitelist = Options.AutoParryWhitelist.Value
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		if ownerPlayer == LocalPlayer then
-			return nil
-		end
-
 		local targetType = resolveAutoParryTargetType(model)
 		local isMob = targetType == "mob"
 		local isPlayer = targetType == "player"
@@ -3258,7 +3474,7 @@ local function setupAutoParryTab()
 			return false
 		end
 
-		if Players:GetPlayerFromCharacter(targetCharacter) == LocalPlayer then
+		if isLocalAutoParryCharacter(targetCharacter) then
 			return false
 		end
 
@@ -3837,6 +4053,10 @@ local function setupAutoParryTab()
 		local fallbackCandidate
 
 		for _, model in ipairs(liveFolder:GetChildren()) do
+			if isLocalAutoParryCharacter(model) then
+				continue
+			end
+
 			local candidate = classifyParryTarget(model, maxDistance)
 			if candidate then
 				local animationId, animationName, isMatched, timePosition, priorityScore = getManualDebugTrackForTarget(candidate.character, candidate.targetType, captureRequestedAt)
@@ -4097,7 +4317,7 @@ local function setupAutoParryTab()
 	local trackedAnimatorRegistry = TrackedAnimatorRegistry.new({
 		getAnimators = getTargetAnimators,
 		shouldTrackModel = function(model)
-			return Players:GetPlayerFromCharacter(model) ~= LocalPlayer
+			return not isLocalAutoParryCharacter(model)
 		end,
 		onAnimatorTrack = function(model, _, track)
 			if not isAutoParryEnabled() then
