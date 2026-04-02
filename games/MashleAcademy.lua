@@ -590,6 +590,7 @@ local function setupLocalCheatsTab()
 	local flyVelocity = nil
 	local antiFallState = nil
 	local antiFallProtectedUntil = 0
+	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
@@ -657,12 +658,12 @@ local function setupLocalCheatsTab()
 			return
 		end
 
-		triggerAntiFallBypass(character, 2.5)
+		triggerAntiFallBypass(character, 2.5, true)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.CFrame = targetCFrame
 		task.defer(function()
 			if character and character.Parent then
-				triggerAntiFallBypass(character, 1.5)
+				triggerAntiFallBypass(character, 1.5, true)
 			end
 		end)
 		Library:Notify("Teleported to " .. tostring(selection) .. ".", 2)
@@ -744,8 +745,16 @@ local function setupLocalCheatsTab()
 		return Toggles and Toggles.AntiFallDamageEnabled and Toggles.AntiFallDamageEnabled.Value == true
 	end
 
+	local function isTeleportAntiFallActive()
+		return os.clock() <= teleportAntiFallUntil
+	end
+
+	local function shouldUseAntiFallProtection()
+		return isAntiFallActive() or isTeleportAntiFallActive()
+	end
+
 	local function shouldMaintainAntiFallState()
-		return isAntiFallActive() and os.clock() <= antiFallProtectedUntil
+		return shouldUseAntiFallProtection() and os.clock() <= antiFallProtectedUntil
 	end
 
 	local function getCharacterStateFolder(character)
@@ -821,6 +830,7 @@ local function setupLocalCheatsTab()
 		end
 
 		antiFallProtectedUntil = 0
+		teleportAntiFallUntil = 0
 		removeAntiFallState()
 	end
 
@@ -1050,10 +1060,20 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
-	triggerAntiFallBypass = function(character, duration)
+	triggerAntiFallBypass = function(character, duration, preserveRemoteBypass)
 		local now = os.clock()
-		antiFallProtectedUntil = math.max(antiFallProtectedUntil, now + math.max(duration or 1.5, 0.25))
+		local appliedDuration = math.max(duration or 1.5, 0.25)
+		local expiresAt = now + appliedDuration
+		antiFallProtectedUntil = math.max(antiFallProtectedUntil, expiresAt)
+		if preserveRemoteBypass then
+			teleportAntiFallUntil = math.max(teleportAntiFallUntil, expiresAt)
+		end
 		ensureAntiFallState(character)
+		task.delay(appliedDuration + 0.1, function()
+			if not shouldMaintainAntiFallState() then
+				removeAntiFallState()
+			end
+		end)
 	end
 
 	local function startAntiFall()
@@ -4110,8 +4130,7 @@ local function setupAutoParryTab()
 	end
 
 	local function shouldBlockFallDamageRequest(instance, args)
-		return Toggles.AntiFallDamageEnabled
-			and Toggles.AntiFallDamageEnabled.Value
+		return shouldUseAntiFallProtection()
 			and isManualActionRequestRemote(instance)
 			and args[1] == "Misc"
 			and args[2] == "FallDamage"
