@@ -4933,6 +4933,66 @@ local function setupMiscTab()
 			return workspace.StreamingTargetRadius
 		end, 128),
 	}
+	local fpsBoostTextureStates = {}
+	local fpsBoostMaterialStates = {}
+	local fpsBoostStudsPerTileStates = {}
+
+	local function restoreFpsBoostVisuals()
+		for instance, transparency in pairs(fpsBoostTextureStates) do
+			if instance and instance.Parent then
+				pcall(function()
+					instance.Transparency = transparency
+				end)
+			end
+		end
+		table.clear(fpsBoostTextureStates)
+
+		for instance, material in pairs(fpsBoostMaterialStates) do
+			if instance and instance.Parent then
+				pcall(function()
+					instance.Material = material
+				end)
+			end
+		end
+		table.clear(fpsBoostMaterialStates)
+
+		for instance, state in pairs(fpsBoostStudsPerTileStates) do
+			if instance and instance.Parent then
+				pcall(function()
+					instance.StudsPerTileU = state.u
+					instance.StudsPerTileV = state.v
+				end)
+			end
+		end
+		table.clear(fpsBoostStudsPerTileStates)
+	end
+
+	local function applyFpsBoostVisuals()
+		restoreFpsBoostVisuals()
+
+		for _, descendant in ipairs(workspace:GetDescendants()) do
+			if descendant:IsA("Texture") or descendant:IsA("Decal") then
+				fpsBoostTextureStates[descendant] = descendant.Transparency
+				pcall(function()
+					descendant.Transparency = 1
+				end)
+			elseif descendant:IsA("BasePart") then
+				fpsBoostMaterialStates[descendant] = descendant.Material
+				pcall(function()
+					descendant.Material = Enum.Material.SmoothPlastic
+				end)
+			elseif descendant:IsA("Terrain") then
+				fpsBoostStudsPerTileStates[descendant] = {
+					u = descendant.StudsPerTileU,
+					v = descendant.StudsPerTileV,
+				}
+				pcall(function()
+					descendant.StudsPerTileU = 64
+					descendant.StudsPerTileV = 64
+				end)
+			end
+		end
+	end
 
 	local function setEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
@@ -4964,10 +5024,8 @@ local function setupMiscTab()
 			pcall(function()
 				Lighting.EnvironmentSpecularScale = 0
 			end)
-			pcall(function()
-				Lighting.FogEnd = math.max(renderDistance * 64, 256)
-			end)
 			setEffectsEnabled(false)
+			applyFpsBoostVisuals()
 		else
 			pcall(function()
 				Lighting.Brightness = originalVisualSettings.brightness
@@ -4978,11 +5036,13 @@ local function setupMiscTab()
 			pcall(function()
 				Lighting.EnvironmentSpecularScale = originalVisualSettings.environmentSpecularScale
 			end)
-			pcall(function()
-				Lighting.FogEnd = originalVisualSettings.fogEnd
-			end)
 			setEffectsEnabled(true)
+			restoreFpsBoostVisuals()
 		end
+
+		pcall(function()
+			Lighting.FogEnd = originalVisualSettings.fogEnd
+		end)
 
 		pcall(function()
 			local radius = math.max(math.floor(renderDistance), 1) * 64
@@ -5066,6 +5126,7 @@ local function setupMiscTab()
 			workspace.StreamingTargetRadius = originalVisualSettings.streamingTargetRadius
 		end)
 		setEffectsEnabled(true)
+		restoreFpsBoostVisuals()
 	end)
 end
 setupMiscTab()
