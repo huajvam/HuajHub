@@ -739,11 +739,12 @@ local function setupLocalCheatsTab()
 	local knockedOwnershipStateRemovedConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
-	local dashBodyVelocityStates = {}
 	local antiFallState = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local dashMultiplierWindowUntil = 0
+	local dashMultiplierDirection = nil
+	local dashMultiplierRemainingDistance = 0
 	local knockedOwnershipLoopToken = 0
 	local noStunWalkSpeed = 16
 	local noStunJumpPower = 50
@@ -904,8 +905,9 @@ local function setupLocalCheatsTab()
 			dashMultiplierConnection = nil
 		end
 
-		table.clear(dashBodyVelocityStates)
 		dashMultiplierWindowUntil = 0
+		dashMultiplierDirection = nil
+		dashMultiplierRemainingDistance = 0
 	end
 
 	local function stopKnockedOwnership()
@@ -1376,6 +1378,34 @@ local function setupLocalCheatsTab()
 		dashMultiplierWindowUntil = math.max(dashMultiplierWindowUntil, os.clock() + math.max(duration or 0.35, 0.1))
 	end
 
+	local function getDashDirectionVector(rootPart, dashDirection)
+		if not rootPart then
+			return nil
+		end
+
+		local lookVector = Vector3.new(rootPart.CFrame.LookVector.X, 0, rootPart.CFrame.LookVector.Z)
+		local rightVector = Vector3.new(rootPart.CFrame.RightVector.X, 0, rootPart.CFrame.RightVector.Z)
+
+		if lookVector.Magnitude > 0 then
+			lookVector = lookVector.Unit
+		end
+		if rightVector.Magnitude > 0 then
+			rightVector = rightVector.Unit
+		end
+
+		if dashDirection == "GroundForward" then
+			return lookVector
+		elseif dashDirection == "GroundBack" then
+			return -lookVector
+		elseif dashDirection == "GroundRight" then
+			return rightVector
+		elseif dashDirection == "GroundLeft" then
+			return -rightVector
+		end
+
+		return nil
+	end
+
 	local function shouldApplyDashMultiplierRequest(instance, args)
 		if not getToggleValue("DashMultiplierEnabled", false) then
 			return false
@@ -1403,7 +1433,12 @@ local function setupLocalCheatsTab()
 			or dashDirection == "GroundLeft"
 			or dashDirection == "GroundForward"
 			or dashDirection == "GroundBack" then
-			beginDashMultiplierWindow(0.35)
+			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
+			if multiplier > 1.001 then
+				dashMultiplierDirection = dashDirection
+				dashMultiplierRemainingDistance = math.max(0, 18 * (multiplier - 1))
+				beginDashMultiplierWindow(0.14)
+			end
 			return true
 		end
 
@@ -1413,63 +1448,39 @@ local function setupLocalCheatsTab()
 	local function startDashMultiplier()
 		stopDashMultiplier()
 
-		dashMultiplierConnection = RunService.Heartbeat:Connect(function()
+		dashMultiplierConnection = RunService.Heartbeat:Connect(function(deltaTime)
 			if not shouldUseDashMultiplier() then
-				table.clear(dashBodyVelocityStates)
+				dashMultiplierDirection = nil
+				dashMultiplierRemainingDistance = 0
 				return
 			end
 
 			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
 			if multiplier <= 1.001 then
-				table.clear(dashBodyVelocityStates)
+				dashMultiplierDirection = nil
+				dashMultiplierRemainingDistance = 0
 				return
 			end
 
 			local character = LocalPlayer and LocalPlayer.Character
 			local rootPart = getCharacterRoot(character)
-			if not rootPart then
-				table.clear(dashBodyVelocityStates)
+			if not rootPart or not dashMultiplierDirection or dashMultiplierRemainingDistance <= 0 then
 				return
 			end
 
-			local activeMovers = {}
-
-			for _, descendant in ipairs(rootPart:GetDescendants()) do
-				if descendant:IsA("BodyVelocity")
-					and descendant ~= speedHackVelocity
-					and descendant ~= flyVelocity
-					and descendant.Name ~= "HuajHubSpeedHackVelocity"
-					and descendant.Name ~= "HuajHubFlyVelocity" then
-					activeMovers[descendant] = true
-
-					local currentVelocity = descendant.Velocity
-					local moverState = dashBodyVelocityStates[descendant]
-
-					if moverState
-						and moverState.lastApplied
-						and (currentVelocity - moverState.lastApplied).Magnitude <= 0.05 then
-						continue
-					end
-
-					local adjustedVelocity = Vector3.new(
-						currentVelocity.X * multiplier,
-						currentVelocity.Y,
-						currentVelocity.Z * multiplier
-					)
-
-					descendant.Velocity = adjustedVelocity
-					dashBodyVelocityStates[descendant] = {
-						lastRaw = currentVelocity,
-						lastApplied = adjustedVelocity,
-					}
-				end
+			local directionVector = getDashDirectionVector(rootPart, dashMultiplierDirection)
+			if not directionVector or directionVector.Magnitude <= 0 then
+				return
 			end
 
-			for mover in pairs(dashBodyVelocityStates) do
-				if not activeMovers[mover] or mover.Parent == nil then
-					dashBodyVelocityStates[mover] = nil
-				end
+			local pushRate = 18 * math.max(multiplier - 1, 0) / 0.14
+			local stepDistance = math.min(dashMultiplierRemainingDistance, pushRate * math.max(deltaTime or 0, 0))
+			if stepDistance <= 0 then
+				return
 			end
+
+			rootPart.CFrame = rootPart.CFrame + (directionVector * stepDistance)
+			dashMultiplierRemainingDistance -= stepDistance
 		end)
 	end
 
