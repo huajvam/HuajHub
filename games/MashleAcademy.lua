@@ -31,6 +31,8 @@ local HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY = "__huaj_hub_manual_action_callback_v
 local HUAJ_HUB_MANUAL_ACTION_HOOK_KEY = "__huaj_hub_manual_action_hook_v1"
 local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v1"
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
+local HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY = "__huaj_hub_fall_damage_block_callback_v1"
+local HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY = "__huaj_hub_fall_damage_block_hook_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
@@ -199,6 +201,43 @@ local function sanitizeTabLabel(name)
 	return name
 end
 
+local function installFallDamageBlockHook()
+	if GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY] then
+		return true
+	end
+
+	if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then
+		return false
+	end
+
+	local hookWrapper = newcclosure or function(callback)
+		return callback
+	end
+
+	local originalNamecall
+	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
+		local args = table.pack(...)
+		local callback = GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY]
+
+		local isCallerCheckAvailable = type(checkcaller) == "function"
+
+		if type(callback) == "function"
+			and (not isCallerCheckAvailable or not checkcaller())
+			and getnamecallmethod() == "FireServer"
+		then
+			local ok, shouldBlock = pcall(callback, self, args)
+			if ok and shouldBlock == true then
+				return nil
+			end
+		end
+
+		return originalNamecall(self, ...)
+	end))
+
+	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY] = true
+	return true
+end
+
 function MashleAcademy.init(_context)
 	if GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] then
 		local existingLibrary = GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY]
@@ -214,6 +253,7 @@ function MashleAcademy.init(_context)
 
 	GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = true
 	GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = Library
+	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 
 local function getGameTabName()
 	local ok, info = pcall(function()
@@ -832,6 +872,27 @@ local function setupLocalCheatsTab()
 		return isAntiFallActive() or isTeleportAntiFallActive()
 	end
 
+	local function shouldBlockTeleportFallDamageRequest(instance, args)
+		if not shouldUseAntiFallProtection() then
+			return false
+		end
+
+		if instance == nil or typeof(instance) ~= "Instance" or not instance:IsA("RemoteEvent") then
+			return false
+		end
+
+		if instance.Name ~= "RequestModule" then
+			return false
+		end
+
+		local parent = instance.Parent
+		if parent == nil or parent.Name ~= "Remotes" or not instance:IsDescendantOf(ReplicatedStorage) then
+			return false
+		end
+
+		return args[1] == "Misc" and args[2] == "FallDamage"
+	end
+
 	local function shouldMaintainAntiFallState()
 		return shouldUseAntiFallProtection() and os.clock() <= antiFallProtectedUntil
 	end
@@ -1380,6 +1441,9 @@ local function setupLocalCheatsTab()
 		teleportToSelectedDestination()
 	end)
 
+	installFallDamageBlockHook()
+	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+
 	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
@@ -1646,6 +1710,7 @@ local function setupLocalCheatsTab()
 		stopAntiFall()
 		stopIFrames()
 		stopKnockedOwnership()
+		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
 
 	stopSpeedHack()
