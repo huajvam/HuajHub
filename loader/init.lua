@@ -30,10 +30,12 @@ end
 
 local function readModuleSource(path)
 	if canReadLocalFile(path) then
+		warn("[HuajHub] Loading local module: " .. path)
 		return readfile(path), "local"
 	end
 
 	local url = RAW_BASE_URL .. path
+	warn("[HuajHub] Fetching module: " .. url)
 	return game:HttpGet(url), url
 end
 
@@ -55,16 +57,23 @@ end
 
 local registry = requireModule("src/core/registry.lua")
 local gameKey = resolveGameKey(registry)
+warn(("[HuajHub] Resolved game key: %s (PlaceId=%s GameId=%s)"):format(tostring(gameKey), tostring(game.PlaceId), tostring(game.GameId)))
 local gameModule = requireModule(("src/games/%s/init.lua"):format(gameKey))
 
 if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then
 	error(("HuajHub game module '%s' is missing init(context)"):format(tostring(gameKey)))
 end
 
-gameModule.init({
+local ok, initError = pcall(gameModule.init, {
 	gameKey = gameKey,
 	repoOwner = REPO_OWNER,
 	repoName = REPO_NAME,
 	repoBranch = REPO_BRANCH,
 	rawBaseUrl = RAW_BASE_URL,
 })
+
+if not ok then
+	error(("[HuajHub] Failed to initialize '%s': %s"):format(tostring(gameKey), tostring(initError)))
+end
+
+warn("[HuajHub] Initialization complete: " .. tostring(gameKey))
