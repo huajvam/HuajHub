@@ -163,6 +163,10 @@ local MASHLE_TELEPORT_LOCATIONS = {
 		name = "Sand trainer",
 		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
 	},
+	{
+		name = "Sand trainer",
+		cframe = CFrame.new(3524.19458, 107.499878, 253.549484, -0.767369151, -6.61880932e-08, 0.641205549, -4.63483971e-08, 1, 4.77565436e-08, -0.641205549, 6.92805013e-09, -0.767369151),
+	},
 	-- {
 	-- 	name = "Arena",
 	-- 	cframe = CFrame.new(100, 15, -250),
@@ -672,6 +676,7 @@ local function setupLocalCheatsTab()
 	local teleportLabels = {"(none)"}
 	local triggerAntiFallBypass
 	local ensureAntiFallState
+	local applyTeleportAntiFallProtection
 
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
@@ -734,12 +739,12 @@ local function setupLocalCheatsTab()
 			return
 		end
 
-		triggerAntiFallBypass(character, 2.5, true)
+		applyTeleportAntiFallProtection(character, 2.5)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.CFrame = targetCFrame
 		task.defer(function()
 			if character and character.Parent then
-				triggerAntiFallBypass(character, 1.5, true)
+				applyTeleportAntiFallProtection(character, 1.5)
 			end
 		end)
 		Library:Notify("Teleported to " .. tostring(selection) .. ".", 2)
@@ -1150,6 +1155,11 @@ local function setupLocalCheatsTab()
 				removeAntiFallState()
 			end
 		end)
+	end
+
+	applyTeleportAntiFallProtection = function(character, duration)
+		triggerAntiFallBypass(character, duration, true)
+		ensureAntiFallState(character)
 	end
 
 	local function startAntiFall()
