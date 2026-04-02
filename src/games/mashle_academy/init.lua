@@ -40,6 +40,22 @@ local Library = loadstring(game:HttpGet(REPO_BASE .. "Library.lua"))()
 local ThemeManager = loadstring(game:HttpGet(REPO_BASE .. "addons/ThemeManager.lua"))()
 local SaveManager = loadstring(game:HttpGet(REPO_BASE .. "addons/SaveManager.lua"))()
 
+local function sanitizeTabLabel(name)
+	if type(name) ~= "string" then
+		return "Cheats"
+	end
+
+	name = name:gsub("🤡", "")
+	name = name:gsub("[%z\1-\31]", "")
+	name = name:match("^%s*(.-)%s*$") or name
+
+	if name == "" then
+		return "Cheats"
+	end
+
+	return name
+end
+
 function MashleAcademy.init(_context)
 	if GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] then
 		local existingLibrary = GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY]
@@ -62,11 +78,11 @@ local function getGameTabName()
 	end)
 
 	if ok and type(info) == "table" and type(info.Name) == "string" and info.Name ~= "" then
-		return info.Name
+		return sanitizeTabLabel(info.Name)
 	end
 
 	if type(game.Name) == "string" and game.Name ~= "" then
-		return game.Name
+		return sanitizeTabLabel(game.Name)
 	end
 
 	return "Cheats"
