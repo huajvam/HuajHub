@@ -74,9 +74,13 @@ end))
 
 local function GetPlayersString()
     local PlayerList = Players:GetPlayers();
+    if type(PlayerList) ~= 'table' then
+        return {}
+    end
 
     for i = 1, #PlayerList do
-        PlayerList[i] = PlayerList[i].Name;
+        local Player = PlayerList[i]
+        PlayerList[i] = Player and Player.Name or tostring(Player);
     end;
 
     table.sort(PlayerList, function(str1, str2) return str1 < str2 end);
@@ -2906,7 +2910,7 @@ function Library:SetWatermark(Text)
     Library.WatermarkText.Text = Text;
 end;
 
-function Library:Notify(Text, Time)
+function Library:Notify(Text, Time, AccentColor)
     local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
 
     YSize = YSize + 7
@@ -2972,7 +2976,7 @@ function Library:Notify(Text, Time)
     });
 
     local LeftColor = Library:Create('Frame', {
-        BackgroundColor3 = Library.AccentColor;
+        BackgroundColor3 = AccentColor or Library.AccentColor;
         BorderSizePixel = 0;
         Position = UDim2.new(0, -1, 0, -1);
         Size = UDim2.new(0, 3, 1, 2);
@@ -2980,9 +2984,13 @@ function Library:Notify(Text, Time)
         Parent = NotifyOuter;
     });
 
-    Library:AddToRegistry(LeftColor, {
-        BackgroundColor3 = 'AccentColor';
-    }, true);
+    if AccentColor then
+        LeftColor.BackgroundColor3 = AccentColor;
+    else
+        Library:AddToRegistry(LeftColor, {
+            BackgroundColor3 = 'AccentColor';
+        }, true);
+    end
 
     pcall(NotifyOuter.TweenSize, NotifyOuter, UDim2.new(0, XSize + 8 + 4, 0, YSize), 'Out', 'Quad', 0.4, true);
 

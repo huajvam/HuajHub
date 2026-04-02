@@ -591,8 +591,12 @@ end
 
 local function getOtherPlayerNames()
 	local names = {}
+	local playersList = Players and Players.GetPlayers and Players:GetPlayers()
+	if type(playersList) ~= "table" then
+		return names
+	end
 
-	for _, player in ipairs(Players:GetPlayers()) do
+	for _, player in ipairs(playersList) do
 		if player ~= LocalPlayer then
 			table.insert(names, player.Name)
 		end
@@ -4694,6 +4698,10 @@ local function setupAutoParryTab()
 	end)
 
 	function autoParryRuntime.refreshAutoParryWhitelist()
+		if not Options or not Options.AutoParryWhitelist then
+			return
+		end
+
 		local values = getOtherPlayerNames()
 		local currentSelection = {}
 
@@ -4706,8 +4714,12 @@ local function setupAutoParryTab()
 			end
 		end
 
-		Options.AutoParryWhitelist:SetValues(values)
-		Options.AutoParryWhitelist:SetValue(currentSelection)
+		pcall(function()
+			Options.AutoParryWhitelist:SetValues(values)
+		end)
+		pcall(function()
+			Options.AutoParryWhitelist:SetValue(currentSelection)
+		end)
 	end
 
 	maid:GiveTask(Players.PlayerAdded:Connect(function()
