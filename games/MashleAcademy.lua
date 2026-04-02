@@ -4276,51 +4276,6 @@ local function setupAutoParryTab()
 			return previousNamecall(self, ...)
 		end))
 
-		if not GLOBAL_ENV[HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY] and type(hookfunction) == "function" then
-			local requestModule = getRequestModuleRemote()
-			if requestModule then
-				local originalFireServer
-				local ok = pcall(function()
-					originalFireServer = hookfunction(requestModule.FireServer, newcclosure(function(self, ...)
-						local args = {...}
-						if isManualActionRequestRemote(self) then
-							local isFallDamageRequest = args[1] == "Misc" and args[2] == "FallDamage"
-							if isFallDamageRequest then
-								beginFallDebugWindow("Direct RequestModule FallDamage", 3)
-							end
-
-							if shouldLogFallDebug() then
-								local payloadSummary = ""
-								if type(args[4]) == "table" then
-									local payloadOk, encoded = pcall(function()
-										return HttpService:JSONEncode(args[4])
-									end)
-									payloadSummary = payloadOk and (" payload=" .. tostring(encoded)) or ""
-								end
-
-								logFallDebug(string.format(
-									"Direct FireServer: %s | %s%s",
-									tostring(args[1]),
-									tostring(args[2]),
-									payloadSummary
-								))
-							end
-						end
-
-						if shouldBlockFallDamageRequest(self, args) then
-							return nil
-						end
-
-						return originalFireServer(self, ...)
-					end))
-				end)
-
-				if ok and originalFireServer then
-					GLOBAL_ENV[HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY] = true
-				end
-			end
-		end
-
 		GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_HOOK_KEY] = true
 		return true
 	end
