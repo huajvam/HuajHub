@@ -721,7 +721,6 @@ local function setupLocalCheatsTab()
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
 	local noStunHumanoidConnection = nil
-	local dashProbeInputConnection = nil
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
@@ -739,9 +738,6 @@ local function setupLocalCheatsTab()
 	local triggerAntiFallBypass
 	local ensureAntiFallState
 	local applyTeleportAntiFallProtection
-	local dashProbeStatusLabel
-	local dashProbeActiveUntil = 0
-	local dashProbeState = nil
 	local NO_STUN_STATE_NAMES = {
 		NoMove = true,
 		NoMoveFake = true,
@@ -932,68 +928,6 @@ local function setupLocalCheatsTab()
 			noStunHumanoidConnection:Disconnect()
 			noStunHumanoidConnection = nil
 		end
-	end
-
-	local function setDashProbeStatus(message)
-		if dashProbeStatusLabel and type(dashProbeStatusLabel.SetText) == "function" then
-			dashProbeStatusLabel:SetText("Dash Probe: " .. tostring(message or "idle"))
-		end
-	end
-
-	local function finishDashProbe()
-		local probe = dashProbeState
-		dashProbeState = nil
-		dashProbeActiveUntil = 0
-
-		if not probe then
-			setDashProbeStatus("idle")
-			return
-		end
-
-		local method = "unclear"
-		if probe.maxHorizontalVelocity >= 55 then
-			method = "root velocity"
-		elseif probe.bodyMoverNames[1] then
-			method = probe.bodyMoverNames[1]
-		elseif probe.totalHorizontalDistance >= 18 then
-			method = "direct position/CFrame"
-		end
-
-		local moverText = (#probe.bodyMoverNames > 0) and table.concat(probe.bodyMoverNames, ", ") or "none"
-		setDashProbeStatus(string.format(
-			"%s | vel %.1f | dist %.1f | movers %s",
-			method,
-			probe.maxHorizontalVelocity,
-			probe.totalHorizontalDistance,
-			moverText
-		))
-		Library:Notify(string.format(
-			"Dash probe: %s | vel %.1f | dist %.1f | movers %s",
-			method,
-			probe.maxHorizontalVelocity,
-			probe.totalHorizontalDistance,
-			moverText
-		), 4)
-	end
-
-	local function beginDashProbe()
-		local character = LocalPlayer and LocalPlayer.Character
-		local rootPart = getCharacterRoot(character)
-		if not character or not rootPart then
-			setDashProbeStatus("no character/root")
-			return
-		end
-
-		dashProbeState = {
-			root = rootPart,
-			lastPosition = rootPart.Position,
-			maxHorizontalVelocity = 0,
-			totalHorizontalDistance = 0,
-			bodyMoverNames = {},
-			bodyMoverMap = {},
-		}
-		dashProbeActiveUntil = os.clock() + 0.45
-		setDashProbeStatus("sampling...")
 	end
 
 	local function isAntiFallActive()
@@ -1539,27 +1473,6 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
-	local function startDashProbeListener()
-		if dashProbeInputConnection then
-			dashProbeInputConnection:Disconnect()
-			dashProbeInputConnection = nil
-		end
-
-		dashProbeInputConnection = UserInputService.InputBegan:Connect(function(inputObject, processed)
-			if processed or UserInputService:GetFocusedTextBox() then
-				return
-			end
-
-			if not Toggles.DashProbeEnabled or not Toggles.DashProbeEnabled.Value then
-				return
-			end
-
-			if inputObject.UserInputType == Enum.UserInputType.Keyboard and inputObject.KeyCode == Enum.KeyCode.Q then
-				beginDashProbe()
-			end
-		end)
-	end
-
 	combatGroup:AddToggle("SpeedHackEnabled", {
 		Text = "Speedhack",
 		Default = false,
@@ -1619,17 +1532,10 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	combatGroup:AddToggle("DashProbeEnabled", {
-		Text = "Dash Probe",
-		Default = false,
-	})
-
 	combatGroup:AddToggle("KnockedOwnershipEnabled", {
 		Text = "Knocked Ownership",
 		Default = false,
 	})
-
-	dashProbeStatusLabel = combatGroup:AddLabel("Dash Probe: idle", true)
 
 	teleportGroup:AddDropdown("TeleportDestination", {
 		Text = "Destination",
@@ -1689,21 +1595,6 @@ local function setupLocalCheatsTab()
 			startNoStun()
 		else
 			stopNoStun()
-		end
-	end)
-
-	Toggles.DashProbeEnabled:OnChanged(function()
-		if Toggles.DashProbeEnabled.Value then
-			startDashProbeListener()
-			setDashProbeStatus("armed (press Q)")
-		else
-			if dashProbeInputConnection then
-				dashProbeInputConnection:Disconnect()
-				dashProbeInputConnection = nil
-			end
-			dashProbeState = nil
-			dashProbeActiveUntil = 0
-			setDashProbeStatus("idle")
 		end
 	end)
 
@@ -1877,38 +1768,6 @@ local function setupLocalCheatsTab()
 	end))
 
 	maid:GiveTask(RunService.Heartbeat:Connect(function()
-		if dashProbeState then
-			local now = os.clock()
-			local probe = dashProbeState
-			local rootPart = probe.root
-
-			if not rootPart or not rootPart.Parent then
-				finishDashProbe()
-			else
-				local velocity = rootPart.AssemblyLinearVelocity
-				local horizontalVelocity = Vector3.new(velocity.X, 0, velocity.Z).Magnitude
-				probe.maxHorizontalVelocity = math.max(probe.maxHorizontalVelocity, horizontalVelocity)
-
-				local currentPosition = rootPart.Position
-				local horizontalDelta = Vector3.new(currentPosition.X - probe.lastPosition.X, 0, currentPosition.Z - probe.lastPosition.Z).Magnitude
-				probe.totalHorizontalDistance += horizontalDelta
-				probe.lastPosition = currentPosition
-
-				for _, descendant in ipairs(rootPart:GetDescendants()) do
-					if descendant:IsA("BodyVelocity") or descendant:IsA("LinearVelocity") or descendant:IsA("VectorForce") then
-						if not probe.bodyMoverMap[descendant.ClassName] then
-							probe.bodyMoverMap[descendant.ClassName] = true
-							table.insert(probe.bodyMoverNames, descendant.ClassName)
-						end
-					end
-				end
-
-				if now >= dashProbeActiveUntil then
-					finishDashProbe()
-				end
-			end
-		end
-
 		if not isFallDebugEnabled() then
 			return
 		end
@@ -1961,12 +1820,6 @@ local function setupLocalCheatsTab()
 		stopNoclip()
 		stopAntiFall()
 		stopNoStun()
-		if dashProbeInputConnection then
-			dashProbeInputConnection:Disconnect()
-			dashProbeInputConnection = nil
-		end
-		dashProbeState = nil
-		dashProbeActiveUntil = 0
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
@@ -1976,12 +1829,6 @@ local function setupLocalCheatsTab()
 	stopNoclip()
 	stopAntiFall()
 	stopNoStun()
-	if dashProbeInputConnection then
-		dashProbeInputConnection:Disconnect()
-		dashProbeInputConnection = nil
-	end
-	dashProbeState = nil
-	dashProbeActiveUntil = 0
 	stopKnockedOwnership()
 end
 setupLocalCheatsTab()
