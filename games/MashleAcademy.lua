@@ -677,7 +677,7 @@ local Window = Library:CreateWindow({
 	MenuFadeTime = 0.2,
 })
 
-warn("[HuajHub] Window created for mashle_academy")
+Library:Notify("Huaj Hub Loaded", 3, Color3.fromRGB(80, 255, 120))
 
 local tabDefinitions = {
 	{key = "Local Cheats", label = gameTabName, group = gameTabName},
@@ -724,6 +724,7 @@ local function setupLocalCheatsTab()
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
+	local castLockOnConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
@@ -749,6 +750,21 @@ local function setupLocalCheatsTab()
 		Stunned = true,
 		NotParryableStun = true,
 	}
+
+	local function getNilInstancesByNameClass(name, className)
+		if type(getnilinstances) ~= "function" then
+			return {}
+		end
+
+		local matches = {}
+		for _, instance in next, getnilinstances() do
+			if instance and instance.Name == name and instance.ClassName == className then
+				table.insert(matches, instance)
+			end
+		end
+
+		return matches
+	end
 
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
@@ -896,6 +912,13 @@ local function setupLocalCheatsTab()
 		if knockedOwnershipCharacterConnection then
 			knockedOwnershipCharacterConnection:Disconnect()
 			knockedOwnershipCharacterConnection = nil
+		end
+	end
+
+	local function stopCastLockOn()
+		if castLockOnConnection then
+			castLockOnConnection:Disconnect()
+			castLockOnConnection = nil
 		end
 	end
 
@@ -1126,6 +1149,103 @@ local function setupLocalCheatsTab()
 		end
 
 		return humanoid, rootPart
+	end
+
+	local function iterCastLockTargets()
+		local targets = {}
+		local seen = {}
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			local character = player.Character
+			if character and character ~= (LocalPlayer and LocalPlayer.Character) and not seen[character] then
+				seen[character] = true
+				table.insert(targets, character)
+			end
+		end
+
+		local liveFolder = getEspLiveFolder()
+		if liveFolder then
+			for _, child in ipairs(liveFolder:GetChildren()) do
+				if child:IsA("Model") and child ~= (LocalPlayer and LocalPlayer.Character) and not seen[child] then
+					seen[child] = true
+					table.insert(targets, child)
+				end
+			end
+		end
+
+		return targets
+	end
+
+	local function getNearestCastLockTarget(originPosition)
+		local nearestRoot = nil
+		local nearestDistance = math.huge
+
+		for _, model in ipairs(iterCastLockTargets()) do
+			local humanoid = getCharacterHumanoid(model)
+			local root = getCharacterRoot(model)
+			if root and (not humanoid or humanoid.Health > 0) then
+				local distance = (root.Position - originPosition).Magnitude
+				if distance < nearestDistance then
+					nearestDistance = distance
+					nearestRoot = root
+				end
+			end
+		end
+
+		return nearestRoot
+	end
+
+	local function steerCastLockProjectile(projectile, targetRoot)
+		if not projectile or not targetRoot then
+			return
+		end
+
+		local projectilePosition = projectile.Position
+		local targetPosition = targetRoot.Position
+		local direction = targetPosition - projectilePosition
+		if direction.Magnitude <= 0.001 then
+			return
+		end
+
+		local currentSpeed = projectile.AssemblyLinearVelocity.Magnitude
+		local desiredSpeed = math.max(currentSpeed, 140)
+		local velocity = direction.Unit * desiredSpeed
+
+		pcall(function()
+			projectile.AssemblyLinearVelocity = velocity
+		end)
+
+		pcall(function()
+			projectile.CFrame = CFrame.lookAt(projectilePosition, projectilePosition + velocity.Unit)
+		end)
+	end
+
+	local function startCastLockOn()
+		stopCastLockOn()
+
+		if type(getnilinstances) ~= "function" then
+			Library:Notify("Cast Lock On is unavailable in this executor.", 2)
+			if Toggles.CastLockOnEnabled then
+				Toggles.CastLockOnEnabled:SetValue(false)
+			end
+			return
+		end
+
+		castLockOnConnection = RunService.Heartbeat:Connect(function()
+			local projectiles = getNilInstancesByNameClass("Tornado", "Part")
+			if #projectiles == 0 then
+				return
+			end
+
+			for _, projectile in ipairs(projectiles) do
+				if projectile then
+					local targetRoot = getNearestCastLockTarget(projectile.Position)
+					if targetRoot then
+						steerCastLockProjectile(projectile, targetRoot)
+					end
+				end
+			end
+		end)
 	end
 
 	local function getKnockedOwnershipTool(character)
@@ -1547,6 +1667,11 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
+	combatGroup:AddToggle("CastLockOnEnabled", {
+		Text = "Cast Lock On",
+		Default = false,
+	})
+
 	teleportGroup:AddDropdown("TeleportDestination", {
 		Text = "Destination",
 		Values = teleportLabels,
@@ -1613,6 +1738,14 @@ local function setupLocalCheatsTab()
 			startKnockedOwnership()
 		else
 			stopKnockedOwnership()
+		end
+	end)
+
+	Toggles.CastLockOnEnabled:OnChanged(function()
+		if Toggles.CastLockOnEnabled.Value then
+			startCastLockOn()
+		else
+			stopCastLockOn()
 		end
 	end)
 
@@ -1831,6 +1964,7 @@ local function setupLocalCheatsTab()
 		stopAntiFall()
 		stopNoStun()
 		stopKnockedOwnership()
+		stopCastLockOn()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
 
@@ -1840,6 +1974,7 @@ local function setupLocalCheatsTab()
 	stopAntiFall()
 	stopNoStun()
 	stopKnockedOwnership()
+	stopCastLockOn()
 end
 setupLocalCheatsTab()
 
@@ -4955,7 +5090,6 @@ end)
 task.defer(function()
 	local holder = Window and Window.Holder
 	if holder and holder.Visible == false and type(Library.Toggle) == "function" then
-		warn("[HuajHub] Forcing window visible")
 		pcall(function()
 			Library:Toggle()
 		end)
