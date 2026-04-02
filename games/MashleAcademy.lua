@@ -2649,6 +2649,7 @@ local function setupAutoParryTab()
 		lastManualParryAssetUrl = nil,
 		lastManualDashAnimationId = nil,
 		lastManualDashAssetUrl = nil,
+		manualBlockCaptureStartedAt = 0,
 		pendingParryFailCheck = nil,
 		pendingManualParryDebugMessage = nil,
 		pendingManualDashDebugMessage = nil,
@@ -4465,9 +4466,11 @@ local function setupAutoParryTab()
 		local candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
-		local actionType = isDashAction and "Dash" or (isJumpAction and "Jump" or "Parry")
+		local isBlockAction = actionKind == "manual block"
+		local actionType = isDashAction and "Dash" or (isJumpAction and "Jump" or (isBlockAction and "Block" or "Parry"))
 		local setDebugText = isDashAction and setManualDashDebugText or setManualParryDebugText
 		local setLastAnimationId = isDashAction and setLastManualDashAnimationId or setLastManualParryAnimationId
+		local manualBlockHold = tonumber(autoParryState.manualBlockCaptureHold) or autoParryBlockHoldDuration
 		if not candidate then
 			setLastAnimationId(nil)
 			setDebugText(string.format("%s -> no nearby tracked animation found.", actionKind))
@@ -4511,17 +4514,18 @@ local function setupAutoParryTab()
 			actionType = actionType,
 			delay = false,
 			delayRange = 0,
-			blockHold = autoParryBlockHoldDuration,
+			blockHold = manualBlockHold,
 			range = latestCapture.range or 16,
 		})
 		setDebugText(string.format(
-			"%s -> %s %s anim %s at %.2fs%s",
+			"%s -> %s %s anim %s at %.2fs%s%s",
 			actionKind,
 			candidate.targetType,
 			candidate.targetName,
 			candidate.animationId,
 			candidate.timePosition or 0,
-			candidate.matched and " (in table)" or " (not in table)"
+			candidate.matched and " (in table)" or " (not in table)",
+			isBlockAction and string.format(" | hold %.2fs", manualBlockHold) or ""
 		))
 	end
 
@@ -4568,7 +4572,7 @@ local function setupAutoParryTab()
 	function autoParryRuntime.installManualActionDebugHook()
 		GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY] = reportManualActionDebug
 
-		setManualParryDebugText("remote hook disabled; use F/Q/Space capture.")
+		setManualParryDebugText("remote hook disabled; use F/Q/Space/RMB capture.")
 		setManualDashDebugText("remote hook disabled; use F/Q/Space capture.")
 		return false
 	end
@@ -4748,6 +4752,9 @@ local function setupAutoParryTab()
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
+			if inputObject.UserInputType == Enum.UserInputType.MouseButton2 then
+				autoParryState.manualBlockCaptureStartedAt = os.clock()
+			end
 			return
 		end
 
@@ -4786,6 +4793,25 @@ local function setupAutoParryTab()
 		local captureRequestedAt = os.clock()
 		task.defer(function()
 			pcall(reportManualActionDebug, "manual dash", captureRequestedAt)
+		end)
+	end))
+
+	maid:GiveTask(UserInputService.InputEnded:Connect(function(inputObject)
+		if inputObject.UserInputType ~= Enum.UserInputType.MouseButton2 then
+			return
+		end
+
+		local startedAt = tonumber(autoParryState.manualBlockCaptureStartedAt) or 0
+		autoParryState.manualBlockCaptureStartedAt = 0
+		if startedAt <= 0 then
+			return
+		end
+
+		local heldFor = math.max(os.clock() - startedAt, 0.03)
+		autoParryState.manualBlockCaptureHold = math.min(heldFor, 3)
+		local captureRequestedAt = startedAt
+		task.defer(function()
+			pcall(reportManualActionDebug, "manual block", captureRequestedAt)
 		end)
 	end))
 
