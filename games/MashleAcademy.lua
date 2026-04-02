@@ -2898,6 +2898,11 @@ local function setupAutoParryTab()
 		Default = "0",
 		Numeric = true,
 	})
+	local makerBlockHoldInput = autoParryMakerGroup:AddInput("AutoParryMakerBlockHold", {
+		Text = "Block Hold",
+		Default = "0.35",
+		Numeric = true,
+	})
 	local makerRangeSlider = autoParryMakerGroup:AddSlider("AutoParryMakerRange", {
 		Text = "Range",
 		Default = 16,
@@ -3157,6 +3162,7 @@ local function setupAutoParryTab()
 			actionType = actionType,
 			delay = getOptionValue("AutoParryMakerDelay", "Off") == "On",
 			delayRange = tonumber(getOptionValue("AutoParryMakerDelayRange", 0)) or 0,
+			blockHold = tonumber(getOptionValue("AutoParryMakerBlockHold", autoParryBlockHoldDuration)) or autoParryBlockHoldDuration,
 			range = tonumber(getOptionValue("AutoParryMakerRange", 16)) or 16,
 		}
 	end
@@ -3176,6 +3182,7 @@ local function setupAutoParryTab()
 		Options.AutoParryMakerActionType:SetValue(getConfigActionType(configData))
 		Options.AutoParryMakerDelay:SetValue(configData.delay and "On" or "Off")
 		Options.AutoParryMakerDelayRange:SetValue(tostring(configData.delayRange or 0))
+		Options.AutoParryMakerBlockHold:SetValue(tostring(configData.blockHold or autoParryBlockHoldDuration))
 		Options.AutoParryMakerRange:SetValue(tonumber(configData.range) or 16)
 	end
 
@@ -3814,6 +3821,24 @@ local function setupAutoParryTab()
 		end
 	end
 
+	local function hasQueuedMoveActionForAnimation(targetCharacter, animationId)
+		local normalizedAnimationId = normalizeAnimationId(animationId)
+		if not targetCharacter or not normalizedAnimationId or normalizedAnimationId == "" then
+			return false
+		end
+
+		for _, queuedAction in ipairs(autoParryState.queuedMoveActions) do
+			if queuedAction
+				and queuedAction.target == targetCharacter
+				and normalizeAnimationId(queuedAction.animationId) == normalizedAnimationId
+			then
+				return true
+			end
+		end
+
+		return false
+	end
+
 	local function queueAutoParryTrack(targetCharacter, track)
 		if not targetCharacter or not track or autoParryState.handledTracks[track] or autoParryState.queuedTracks[track] then
 			return false
@@ -3832,6 +3857,10 @@ local function setupAutoParryTab()
 
 		local normalizedAnimationId = normalizeAnimationId(animationId)
 		local debugType = getAutoParryTargetDebugType(targetCharacter)
+
+		if hasQueuedMoveActionForAnimation(targetCharacter, normalizedAnimationId) then
+			return false
+		end
 
 		local baseDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = classifyParryTarget(targetCharacter, baseDistance)
@@ -4062,7 +4091,7 @@ local function setupAutoParryTab()
 			autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		elseif activeMoveConfig and activeMoveConfig.block == true then
 			if fireBlockingStateRemote(true) then
-				autoParryState.pendingBlockReleaseAt = now + autoParryBlockHoldDuration
+				autoParryState.pendingBlockReleaseAt = now + (tonumber(activeMoveConfig.blockHold) or autoParryBlockHoldDuration)
 				setAutoParryDebugText(string.format(
 					"%sblock %s anim %s at %.2fs",
 					usedDash and "dash + " or "",
@@ -4482,6 +4511,7 @@ local function setupAutoParryTab()
 			actionType = actionType,
 			delay = false,
 			delayRange = 0,
+			blockHold = autoParryBlockHoldDuration,
 			range = latestCapture.range or 16,
 		})
 		setDebugText(string.format(
