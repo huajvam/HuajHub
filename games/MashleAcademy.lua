@@ -1,5 +1,4 @@
 local MashleAcademy = {}
-local REPO_BASE = "https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/"
 local GAME_KEY = "mashle_academy"
 
 local Services = sharedRequire("@utils/Services.lua")
@@ -50,9 +49,9 @@ local ANIM_LOGGER_FILE_CANDIDATES = {
 	"./src/games/mashle_academy/AnimLogger.lua",
 }
 
-local Library = loadstring(game:HttpGet(REPO_BASE .. "Library.lua"))()
-local ThemeManager = loadstring(game:HttpGet(REPO_BASE .. "addons/ThemeManager.lua"))()
-local SaveManager = loadstring(game:HttpGet(REPO_BASE .. "addons/SaveManager.lua"))()
+local Library = sharedRequire("ui/Linoria/Library.lua")
+local ThemeManager = sharedRequire("ui/Linoria/addons/ThemeManager.lua")
+local SaveManager = sharedRequire("ui/Linoria/addons/SaveManager.lua")
 local maid = Maid.new()
 
 local normalizeAnimationId = AnimationInfo.normalizeId
@@ -699,15 +698,12 @@ local function setupLocalCheatsTab()
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
 	local antiFallCharacterConnection = nil
-	local iFramesHeartbeatConnection = nil
-	local iFramesCharacterConnection = nil
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
-	local iFramesState = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -856,10 +852,6 @@ local function setupLocalCheatsTab()
 		end
 	end
 
-	local function isIFramesActive()
-		return Toggles and Toggles.IFramesEnabled and Toggles.IFramesEnabled.Value == true
-	end
-
 	local function isAntiFallActive()
 		return Toggles and Toggles.AntiFallDamageEnabled and Toggles.AntiFallDamageEnabled.Value == true
 	end
@@ -924,16 +916,6 @@ local function setupLocalCheatsTab()
 		antiFallState = nil
 	end
 
-	local function removeIFramesState()
-		if iFramesState then
-			pcall(function()
-				iFramesState:Destroy()
-			end)
-		end
-
-		iFramesState = nil
-	end
-
 	ensureAntiFallState = function(character)
 		if not shouldMaintainLocalAntiFallState() or not character then
 			return
@@ -969,40 +951,6 @@ local function setupLocalCheatsTab()
 		end
 	end
 
-	local function ensureIFramesState(character)
-		if not isIFramesActive() or not character then
-			return
-		end
-
-		local characterState = getCharacterStateFolder(character)
-		if not characterState then
-			return
-		end
-
-		if iFramesState and iFramesState.Parent ~= characterState then
-			iFramesState = nil
-		end
-
-		if not iFramesState then
-			local existing = characterState:FindFirstChild("IFrames")
-			if existing and existing:IsA("BoolValue") then
-				iFramesState = existing
-			else
-				local iFrames = Instance.new("BoolValue")
-				iFrames.Name = "IFrames"
-				iFrames.Value = true
-				iFrames.Parent = characterState
-				iFramesState = iFrames
-			end
-		end
-
-		if iFramesState then
-			pcall(function()
-				iFramesState.Value = true
-			end)
-		end
-	end
-
 	local function stopAntiFall()
 		if antiFallConnection then
 			antiFallConnection:Disconnect()
@@ -1020,19 +968,6 @@ local function setupLocalCheatsTab()
 		antiFallProtectedUntil = 0
 		teleportAntiFallUntil = 0
 		removeAntiFallState()
-	end
-
-	local function stopIFrames()
-		if iFramesHeartbeatConnection then
-			iFramesHeartbeatConnection:Disconnect()
-			iFramesHeartbeatConnection = nil
-		end
-		if iFramesCharacterConnection then
-			iFramesCharacterConnection:Disconnect()
-			iFramesCharacterConnection = nil
-		end
-
-		removeIFramesState()
 	end
 
 	local function getCharacterMovementState()
@@ -1283,34 +1218,6 @@ local function setupLocalCheatsTab()
 		triggerAntiFallBypass(character, duration, true)
 	end
 
-	local function startIFrames()
-		stopIFrames()
-
-		local currentCharacter = LocalPlayer and LocalPlayer.Character
-		if currentCharacter then
-			ensureIFramesState(currentCharacter)
-		end
-
-		iFramesCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
-			iFramesState = nil
-			task.defer(function()
-				if isIFramesActive() then
-					ensureIFramesState(character)
-				end
-			end)
-		end)
-
-		iFramesHeartbeatConnection = RunService.Heartbeat:Connect(function()
-			if not isIFramesActive() then
-				removeIFramesState()
-				return
-			end
-
-			local character = LocalPlayer and LocalPlayer.Character
-			ensureIFramesState(character)
-		end)
-	end
-
 	local function startAntiFall()
 		stopAntiFall()
 		local function hookCharacter(character)
@@ -1421,11 +1328,6 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	combatGroup:AddToggle("IFramesEnabled", {
-		Text = "IFrames",
-		Default = false,
-	})
-
 	combatGroup:AddToggle("KnockedOwnershipEnabled", {
 		Text = "Knocked Ownership",
 		Default = false,
@@ -1481,14 +1383,6 @@ local function setupLocalCheatsTab()
 			startAntiFall()
 		else
 			stopAntiFall()
-		end
-	end)
-
-	Toggles.IFramesEnabled:OnChanged(function()
-		if Toggles.IFramesEnabled.Value then
-			startIFrames()
-		else
-			stopIFrames()
 		end
 	end)
 
@@ -1713,7 +1607,6 @@ local function setupLocalCheatsTab()
 		stopFly()
 		stopNoclip()
 		stopAntiFall()
-		stopIFrames()
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
@@ -1722,7 +1615,6 @@ local function setupLocalCheatsTab()
 	stopFly()
 	stopNoclip()
 	stopAntiFall()
-	stopIFrames()
 	stopKnockedOwnership()
 end
 setupLocalCheatsTab()
