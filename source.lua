@@ -130,7 +130,6 @@ local function installAntiKick()
 	end
 
 	if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then
-		warn("[HuajHub] Anti-kick unavailable: executor is missing metamethod hooks")
 		return
 	end
 
@@ -147,13 +146,10 @@ local function installAntiKick()
 
 		if not isCallerCheckAvailable or not checkcaller() then
 			if self == LocalPlayer and method == "Kick" then
-				local args = table.pack(...)
-				warn("[HuajHub] Blocked LocalPlayer:Kick()", tostring(args[1]))
 				return nil
 			end
 
 			if self == game and method == "Shutdown" then
-				warn("[HuajHub] Blocked game:Shutdown()")
 				return nil
 			end
 		end
@@ -165,7 +161,7 @@ local function installAntiKick()
 end
 
 installAntiKick()
-loaderGui.setStatus("Checking hub")
+loaderGui.setStatus("Checking data")
 
 local function compileChunk(source, chunkName)
 	local chunk, compileError = loadstring(source, chunkName)
@@ -192,14 +188,10 @@ end
 
 local function readModuleSource(path)
 	if canReadLocalFile(path) then
-		warn("[HuajHub] Loading local module: " .. path)
-		loaderGui.setStatus("Loading " .. path)
 		return readfile(path), "local"
 	end
 
 	local url = RAW_BASE_URL .. path
-	warn("[HuajHub] Fetching module: " .. url)
-	loaderGui.setStatus("Fetching " .. path)
 	return game:HttpGet(url), url
 end
 
@@ -244,14 +236,8 @@ local function resolveGameKey(gameMap)
 end
 
 local gameMap = sharedRequire("games/gameList.lua")
+loaderGui.setStatus("Loading game module")
 local gameKey = resolveGameKey(gameMap)
-loaderGui.setStatus("Loading " .. tostring(gameKey))
-
-warn(("[HuajHub] Resolved game key: %s (PlaceId=%s GameId=%s)"):format(
-	tostring(gameKey),
-	tostring(game.PlaceId),
-	tostring(game.GameId)
-))
 
 if gameKey == "MashleAcademy" then
 	GLOBAL_ENV.__huaj_hub_mashle_initialized_v1 = nil
@@ -264,6 +250,7 @@ if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then
 	error(("HuajHub game module '%s' is missing init(context)"):format(tostring(gameKey)))
 end
 
+loaderGui.setStatus("Loading UI")
 local ok, initError = pcall(gameModule.init, {
 	gameKey = gameKey,
 	repoOwner = REPO_OWNER,
@@ -280,7 +267,6 @@ if not ok then
 	error(("[HuajHub] Failed to initialize '%s': %s"):format(tostring(gameKey), tostring(initError)))
 end
 
-warn("[HuajHub] Initialization complete: " .. tostring(gameKey))
 loaderGui.setStatus("Loaded " .. tostring(gameKey))
 task.delay(0.75, function()
 	loaderGui.destroy()
