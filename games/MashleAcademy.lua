@@ -727,6 +727,7 @@ local function setupLocalCheatsTab()
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
 	local noStunHumanoidConnection = nil
+	local noStunNeutralizedStates = {}
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
@@ -923,8 +924,31 @@ local function setupLocalCheatsTab()
 		end
 
 		pcall(function()
-			valueObject:Destroy()
+			if not noStunNeutralizedStates[valueObject] then
+				noStunNeutralizedStates[valueObject] = {
+					name = valueObject.Name,
+					value = valueObject.Value,
+				}
+			end
+
+			valueObject.Value = false
+			valueObject.Name = "__HuajHubBlocked_" .. tostring(noStunNeutralizedStates[valueObject].name)
 		end)
+	end
+
+	local function restoreNoStunValues()
+		for valueObject, state in pairs(noStunNeutralizedStates) do
+			if valueObject and valueObject.Parent and type(state) == "table" then
+				pcall(function()
+					valueObject.Name = state.name or valueObject.Name
+					if state.value ~= nil then
+						valueObject.Value = state.value
+					end
+				end)
+			end
+		end
+
+		table.clear(noStunNeutralizedStates)
 	end
 
 	local function stopNoStun()
@@ -944,6 +968,8 @@ local function setupLocalCheatsTab()
 			noStunHumanoidConnection:Disconnect()
 			noStunHumanoidConnection = nil
 		end
+
+		restoreNoStunValues()
 	end
 
 	local function isAntiFallActive()
@@ -5194,7 +5220,7 @@ setupMiscTab()
 
 local function setupSettingsTab()
 	local settingsTab = Tabs["Settings"]
-	local menuGroup = settingsTab:AddRightGroupbox("Menu")
+	local menuGroup = settingsTab:AddLeftGroupbox("Menu")
 
 	menuGroup:AddButton("Unload", function()
 		Library:Unload()
@@ -5218,9 +5244,24 @@ SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 
 ThemeManager:SetFolder("HuajHub")
 SaveManager:SetFolder("HuajHub/" .. GAME_KEY)
+local saveManagerOk, saveManagerErr = pcall(function()
+	SaveManager:BuildConfigSection(Tabs["Settings"])
+end)
 
-SaveManager:BuildConfigSection(Tabs["Settings"])
-ThemeManager:ApplyToTab(Tabs["Settings"])
+local themeManagerOk, themeManagerErr = pcall(function()
+	ThemeManager:ApplyToTab(Tabs["Settings"])
+end)
+
+if not saveManagerOk or not themeManagerOk then
+	local diagnosticsGroup = Tabs["Settings"]:AddRightGroupbox("Settings Status")
+	diagnosticsGroup:AddLabel("Some settings sections failed to load.")
+	if not saveManagerOk then
+		diagnosticsGroup:AddLabel("Config section failed.")
+	end
+	if not themeManagerOk then
+		diagnosticsGroup:AddLabel("Theme section failed.")
+	end
+end
 pcall(function()
 	ContextActionService:UnbindAction("HuajHubAutoParryInputBlock")
 end)
