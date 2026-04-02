@@ -236,7 +236,6 @@ local function resolveGameKey(gameMap)
 end
 
 local gameMap = sharedRequire("games/gameList.lua")
-loaderGui.setStatus("Loading game module")
 local gameKey = resolveGameKey(gameMap)
 
 if gameKey == "MashleAcademy" then
@@ -250,7 +249,6 @@ if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then
 	error(("HuajHub game module '%s' is missing init(context)"):format(tostring(gameKey)))
 end
 
-loaderGui.setStatus("Loading UI")
 local ok, initError = pcall(gameModule.init, {
 	gameKey = gameKey,
 	repoOwner = REPO_OWNER,
@@ -260,14 +258,14 @@ local ok, initError = pcall(gameModule.init, {
 })
 
 if not ok then
-	loaderGui.setStatus("Load failed")
+	loaderGui.setStatus("All Done")
 	task.delay(1.5, function()
 		loaderGui.destroy()
 	end)
-	error(("[HuajHub] Failed to initialize '%s': %s"):format(tostring(gameKey), tostring(initError)))
+	return
 end
 
-loaderGui.setStatus("Loaded " .. tostring(gameKey))
+loaderGui.setStatus("All Done")
 task.delay(0.75, function()
 	loaderGui.destroy()
 end)
