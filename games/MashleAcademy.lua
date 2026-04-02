@@ -68,24 +68,8 @@ local resolveConfiguredTiming = AutoParryConfigUtils.resolveConfiguredTiming
 local unloadCallbacks = {}
 local MASHLE_TELEPORT_LOCATIONS = {
 	{
-		name = "WildWood Waypoint",
-		cframe = CFrame.new(-2735.43066, -170.828064, 2341.5647, -0.0113657042, -4.36656791e-08, -0.999935389, 7.12605441e-08, 1, -4.44784796e-08, 0.999935389, -7.17614697e-08, -0.0113657042),
-	},
-	{
-		name = "FoxRoot Waypoint",
-		cframe = CFrame.new(1093.70605, 148.240448, -680.398987, 1, 3.48740166e-08, -8.96237023e-14, -3.48740166e-08, 1, -5.72306398e-08, 8.76278352e-14, 5.72306398e-08, 1),
-	},
-	{
-		name = "Amberdune Waypoint",
-		cframe = CFrame.new(3071.55103, -322.678009, 899.762024, 0.999955356, 0.000737704337, 0.00941975415, -0.00212303083, 0.988997638, 0.147916064, -0.00920699537, -0.14792946, 0.988955021),
-	},
-	{
-		name = "Iceveil Waypoint",
-		cframe = CFrame.new(4026.97412, 452.833557, -799.645996, 1, -8.89808019e-11, -1.36754833e-16, 8.89808019e-11, 1, 9.61615498e-08, 1.28198304e-16, -9.61615498e-08, 1),
-	},
-	{
-		name = "Hell Waypoint",
-		cframe = CFrame.new(-3214.24609, 599.277405, -4055.79907, 1, -1.13785439e-10, -6.36748746e-17, 1.13785439e-10, 1, 1.23020811e-07, 4.96769008e-17, -1.23020811e-07, 1),
+		name = "Example Spot",
+		cframe = CFrame.new(0, 10, 0),
 	},
 	-- {
 	-- 	name = "Arena",
@@ -593,6 +577,7 @@ local function setupLocalCheatsTab()
 	local knockedOwnershipLoopToken = 0
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
+	local triggerAntiFallBypass
 
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
@@ -1048,7 +1033,7 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
-	local function triggerAntiFallBypass(character, duration)
+	triggerAntiFallBypass = function(character, duration)
 		local now = os.clock()
 		antiFallProtectedUntil = math.max(antiFallProtectedUntil, now + math.max(duration or 1.5, 0.25))
 		ensureAntiFallState(character)
