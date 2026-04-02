@@ -721,9 +721,11 @@ local function setupLocalCheatsTab()
 	local applyTeleportAntiFallProtection
 	local NO_STUN_STATE_NAMES = {
 		NoMove = true,
+		NoMoveFake = true,
 		NoRoate = true,
 		NoRotate = true,
 		NoJump = true,
+		NoAct = true,
 		Action = true,
 		Stunned = true,
 		NotParryableStun = true,
