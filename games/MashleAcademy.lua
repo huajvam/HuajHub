@@ -701,6 +701,7 @@ local function setupLocalCheatsTab()
 	local noStunHeartbeatConnection = nil
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
+	local noStunHumanoidConnection = nil
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
@@ -710,6 +711,9 @@ local function setupLocalCheatsTab()
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
+	local noStunWalkSpeed = 16
+	local noStunJumpPower = 50
+	local noStunJumpHeight = 7.2
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
 	local triggerAntiFallBypass
@@ -720,6 +724,9 @@ local function setupLocalCheatsTab()
 		NoRoate = true,
 		NoRotate = true,
 		NoJump = true,
+		Action = true,
+		Stunned = true,
+		NotParryableStun = true,
 	}
 
 	local function setTeleportDropdownValues(selectedLabel)
@@ -896,6 +903,10 @@ local function setupLocalCheatsTab()
 			noStunStateAddedConnection:Disconnect()
 			noStunStateAddedConnection = nil
 		end
+		if noStunHumanoidConnection then
+			noStunHumanoidConnection:Disconnect()
+			noStunHumanoidConnection = nil
+		end
 	end
 
 	local function isAntiFallActive()
@@ -963,6 +974,52 @@ local function setupLocalCheatsTab()
 		end
 
 		return characterState
+	end
+
+	local function captureNoStunDefaults(humanoid)
+		if not humanoid then
+			return
+		end
+
+		if humanoid.WalkSpeed and humanoid.WalkSpeed > 0 then
+			noStunWalkSpeed = humanoid.WalkSpeed
+		end
+
+		if humanoid.UseJumpPower then
+			if humanoid.JumpPower and humanoid.JumpPower > 0 then
+				noStunJumpPower = humanoid.JumpPower
+			end
+		elseif humanoid.JumpHeight and humanoid.JumpHeight > 0 then
+			noStunJumpHeight = humanoid.JumpHeight
+		end
+	end
+
+	local function enforceNoStunHumanoid(humanoid)
+		if not humanoid then
+			return
+		end
+
+		captureNoStunDefaults(humanoid)
+
+		pcall(function()
+			humanoid.AutoRotate = true
+		end)
+
+		pcall(function()
+			if humanoid.WalkSpeed <= 0 then
+				humanoid.WalkSpeed = noStunWalkSpeed
+			end
+		end)
+
+		pcall(function()
+			if humanoid.UseJumpPower then
+				if humanoid.JumpPower <= 0 then
+					humanoid.JumpPower = noStunJumpPower
+				end
+			elseif humanoid.JumpHeight <= 0 then
+				humanoid.JumpHeight = noStunJumpHeight
+			end
+		end)
 	end
 
 	local function removeAntiFallState()
@@ -1341,8 +1398,23 @@ local function setupLocalCheatsTab()
 				noStunStateAddedConnection:Disconnect()
 				noStunStateAddedConnection = nil
 			end
+			if noStunHumanoidConnection then
+				noStunHumanoidConnection:Disconnect()
+				noStunHumanoidConnection = nil
+			end
 
 			local characterState = clearCharacterNoStunStates(character)
+			local humanoid = getCharacterHumanoid(character)
+			if humanoid then
+				captureNoStunDefaults(humanoid)
+				enforceNoStunHumanoid(humanoid)
+				noStunHumanoidConnection = humanoid:GetPropertyChangedSignal("WalkSpeed"):Connect(function()
+					if isNoStunActive() then
+						enforceNoStunHumanoid(humanoid)
+					end
+				end)
+			end
+
 			if not characterState then
 				return
 			end
@@ -1376,6 +1448,7 @@ local function setupLocalCheatsTab()
 
 			local character = LocalPlayer and LocalPlayer.Character
 			clearCharacterNoStunStates(character)
+			enforceNoStunHumanoid(getCharacterHumanoid(character))
 		end)
 	end
 
