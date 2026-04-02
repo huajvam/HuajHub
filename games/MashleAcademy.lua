@@ -11,10 +11,11 @@ local AdaptiveTimingUtils = sharedRequire("@utils/AdaptiveTimingUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
 local TrackedAnimatorRegistry = sharedRequire("classes/TrackedAnimatorRegistry.lua")
 
-local Players, ContextActionService, HttpService, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
+local Players, ContextActionService, HttpService, Lighting, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
 	"Players",
 	"ContextActionService",
 	"HttpService",
+	"Lighting",
 	"MarketplaceService",
 	"ReplicatedStorage",
 	"RunService",
@@ -724,7 +725,6 @@ local function setupLocalCheatsTab()
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
-	local castLockOnConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
@@ -734,9 +734,6 @@ local function setupLocalCheatsTab()
 	local noStunWalkSpeed = 16
 	local noStunJumpPower = 50
 	local noStunJumpHeight = 7.2
-	local lastCastLockScanAt = 0
-	local cachedCastLockProjectiles = {}
-	local castLockAppliedProjectiles = setmetatable({}, { __mode = "k" })
 	local teleportLocations = {}
 	local teleportLabels = {"(none)"}
 	local triggerAntiFallBypass
@@ -753,31 +750,6 @@ local function setupLocalCheatsTab()
 		Stunned = true,
 		NotParryableStun = true,
 	}
-
-	local function getNilInstancesByNameClass(name, className)
-		if type(getnilinstances) ~= "function" then
-			return {}
-		end
-
-		local matches = {}
-		for _, instance in next, getnilinstances() do
-			if instance and instance.Name == name and instance.ClassName == className then
-				table.insert(matches, instance)
-			end
-		end
-
-		return matches
-	end
-
-	local function getCachedCastLockProjectiles()
-		local now = os.clock()
-		if now - lastCastLockScanAt >= 0.5 then
-			lastCastLockScanAt = now
-			cachedCastLockProjectiles = getNilInstancesByNameClass("Tornado", "Part")
-		end
-
-		return cachedCastLockProjectiles
-	end
 
 	local function setTeleportDropdownValues(selectedLabel)
 		table.sort(teleportLabels, function(left, right)
@@ -925,13 +897,6 @@ local function setupLocalCheatsTab()
 		if knockedOwnershipCharacterConnection then
 			knockedOwnershipCharacterConnection:Disconnect()
 			knockedOwnershipCharacterConnection = nil
-		end
-	end
-
-	local function stopCastLockOn()
-		if castLockOnConnection then
-			castLockOnConnection:Disconnect()
-			castLockOnConnection = nil
 		end
 	end
 
@@ -1162,100 +1127,6 @@ local function setupLocalCheatsTab()
 		end
 
 		return humanoid, rootPart
-	end
-
-	local function iterCastLockTargets()
-		local targets = {}
-		local seen = {}
-
-		for _, player in ipairs(Players:GetPlayers()) do
-			local character = player.Character
-			if character and character ~= (LocalPlayer and LocalPlayer.Character) and not seen[character] then
-				seen[character] = true
-				table.insert(targets, character)
-			end
-		end
-
-		local liveFolder = getEspLiveFolder()
-		if liveFolder then
-			for _, child in ipairs(liveFolder:GetChildren()) do
-				if child:IsA("Model") and child ~= (LocalPlayer and LocalPlayer.Character) and not seen[child] then
-					seen[child] = true
-					table.insert(targets, child)
-				end
-			end
-		end
-
-		return targets
-	end
-
-	local function getNearestCastLockTarget(originPosition)
-		local nearestRoot = nil
-		local nearestDistance = math.huge
-
-		for _, model in ipairs(iterCastLockTargets()) do
-			local humanoid = getCharacterHumanoid(model)
-			local root = getCharacterRoot(model)
-			if root and (not humanoid or humanoid.Health > 0) then
-				local distance = (root.Position - originPosition).Magnitude
-				if distance < nearestDistance then
-					nearestDistance = distance
-					nearestRoot = root
-				end
-			end
-		end
-
-		return nearestRoot
-	end
-
-	local function snapCastLockProjectile(projectile, targetRoot)
-		if not projectile or not targetRoot then
-			return
-		end
-
-		local targetPosition = targetRoot.Position
-		pcall(function()
-			projectile.AssemblyLinearVelocity = Vector3.zero
-		end)
-
-		pcall(function()
-			projectile.CFrame = targetRoot.CFrame
-		end)
-	end
-
-	local function startCastLockOn()
-		stopCastLockOn()
-
-		if type(getnilinstances) ~= "function" then
-			Library:Notify("Cast Lock On is unavailable in this executor.", 2)
-			if Toggles.CastLockOnEnabled then
-				Toggles.CastLockOnEnabled:SetValue(false)
-			end
-			return
-		end
-
-		castLockOnConnection = RunService.Heartbeat:Connect(function()
-			local projectiles = getCachedCastLockProjectiles()
-			if #projectiles == 0 then
-				return
-			end
-
-			for index = #projectiles, 1, -1 do
-				local projectile = projectiles[index]
-				if projectile and typeof(projectile) == "Instance" and projectile.ClassName == "Part" then
-					if not castLockAppliedProjectiles[projectile] then
-						local targetRoot = getNearestCastLockTarget(projectile.Position)
-						if targetRoot then
-							snapCastLockProjectile(projectile, targetRoot)
-							castLockAppliedProjectiles[projectile] = true
-						end
-					end
-				else
-					castLockAppliedProjectiles[projectile] = nil
-					table.remove(projectiles, index)
-				end
-			end
-		end)
 	end
 
 	local function getKnockedOwnershipTool(character)
@@ -1677,11 +1548,6 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	combatGroup:AddToggle("CastLockOnEnabled", {
-		Text = "Cast Lock On",
-		Default = false,
-	})
-
 	teleportGroup:AddDropdown("TeleportDestination", {
 		Text = "Destination",
 		Values = teleportLabels,
@@ -1748,14 +1614,6 @@ local function setupLocalCheatsTab()
 			startKnockedOwnership()
 		else
 			stopKnockedOwnership()
-		end
-	end)
-
-	Toggles.CastLockOnEnabled:OnChanged(function()
-		if Toggles.CastLockOnEnabled.Value then
-			startCastLockOn()
-		else
-			stopCastLockOn()
 		end
 	end)
 
@@ -1974,7 +1832,6 @@ local function setupLocalCheatsTab()
 		stopAntiFall()
 		stopNoStun()
 		stopKnockedOwnership()
-		stopCastLockOn()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
 
@@ -1984,7 +1841,6 @@ local function setupLocalCheatsTab()
 	stopAntiFall()
 	stopNoStun()
 	stopKnockedOwnership()
-	stopCastLockOn()
 end
 setupLocalCheatsTab()
 
@@ -5034,6 +4890,75 @@ setupAutoParryTab()
 
 local function setupMiscTab()
 	local miscTab = Tabs["Misc"]
+	local originalVisualSettings = {
+		globalShadows = Lighting.GlobalShadows,
+		brightness = Lighting.Brightness,
+		environmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
+		environmentSpecularScale = Lighting.EnvironmentSpecularScale,
+		fogEnd = Lighting.FogEnd,
+		streamingMinRadius = workspace.StreamingMinRadius,
+		streamingTargetRadius = workspace.StreamingTargetRadius,
+	}
+
+	local function setEffectsEnabled(enabled)
+		for _, descendant in ipairs(Lighting:GetDescendants()) do
+			if descendant:IsA("PostEffect") or descendant:IsA("Atmosphere") or descendant:IsA("Sky") or descendant:IsA("Clouds") then
+				pcall(function()
+					descendant.Enabled = enabled
+				end)
+			end
+		end
+	end
+
+	local function applyVisualSettings()
+		local fpsBoostEnabled = getToggleValue("MiscFpsBoostEnabled", false)
+		local disableShadowsEnabled = getToggleValue("MiscDisableShadowsEnabled", false)
+		local chunkLoaderEnabled = getToggleValue("MiscChunkLoaderEnabled", false)
+		local renderDistance = tonumber(getOptionValue("MiscRenderDistance", 11)) or 11
+
+		pcall(function()
+			Lighting.GlobalShadows = not disableShadowsEnabled
+		end)
+
+		if fpsBoostEnabled then
+			pcall(function()
+				Lighting.Brightness = 1
+			end)
+			pcall(function()
+				Lighting.EnvironmentDiffuseScale = 0
+			end)
+			pcall(function()
+				Lighting.EnvironmentSpecularScale = 0
+			end)
+			pcall(function()
+				Lighting.FogEnd = math.max(renderDistance * 64, 256)
+			end)
+			setEffectsEnabled(false)
+		else
+			pcall(function()
+				Lighting.Brightness = originalVisualSettings.brightness
+			end)
+			pcall(function()
+				Lighting.EnvironmentDiffuseScale = originalVisualSettings.environmentDiffuseScale
+			end)
+			pcall(function()
+				Lighting.EnvironmentSpecularScale = originalVisualSettings.environmentSpecularScale
+			end)
+			pcall(function()
+				Lighting.FogEnd = originalVisualSettings.fogEnd
+			end)
+			setEffectsEnabled(true)
+		end
+
+		pcall(function()
+			local radius = math.max(math.floor(renderDistance), 1) * 64
+			workspace.StreamingMinRadius = chunkLoaderEnabled and radius or originalVisualSettings.streamingMinRadius
+		end)
+		pcall(function()
+			local radius = math.max(math.floor(renderDistance), 1) * 64
+			workspace.StreamingTargetRadius = chunkLoaderEnabled and radius or originalVisualSettings.streamingTargetRadius
+		end)
+	end
 
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
 	miscGroup:AddLabel("Core misc features go here.")
@@ -5044,8 +4969,28 @@ local function setupMiscTab()
 	alertsGroup:AddLabel("Features will be added later.")
 
 	local visualsGroup = miscTab:AddLeftGroupbox("Visuals")
-	visualsGroup:AddLabel("Visuals section placeholder.")
-	visualsGroup:AddLabel("Features will be added later.")
+	visualsGroup:AddToggle("MiscFpsBoostEnabled", {
+		Text = "FPS Boost",
+		Default = false,
+	})
+
+	visualsGroup:AddToggle("MiscChunkLoaderEnabled", {
+		Text = "Chunk Loader",
+		Default = false,
+	})
+
+	visualsGroup:AddToggle("MiscDisableShadowsEnabled", {
+		Text = "Disable Shadows",
+		Default = false,
+	})
+
+	visualsGroup:AddSlider("MiscRenderDistance", {
+		Text = "Render Distance",
+		Default = 11,
+		Min = 1,
+		Max = 30,
+		Rounding = 0,
+	})
 
 	local lootGroup = miscTab:AddRightGroupbox("Auto Loot")
 	lootGroup:AddLabel("Auto Loot section placeholder.")
@@ -5058,6 +5003,36 @@ local function setupMiscTab()
 	local farmsGroup = miscTab:AddRightGroupbox("Farms")
 	farmsGroup:AddLabel("Farms section placeholder.")
 	farmsGroup:AddLabel("Features will be added later.")
+
+	Toggles.MiscFpsBoostEnabled:OnChanged(applyVisualSettings)
+	Toggles.MiscChunkLoaderEnabled:OnChanged(applyVisualSettings)
+	Toggles.MiscDisableShadowsEnabled:OnChanged(applyVisualSettings)
+	Options.MiscRenderDistance:OnChanged(applyVisualSettings)
+
+	registerLibraryUnloadCallback(function()
+		pcall(function()
+			Lighting.GlobalShadows = originalVisualSettings.globalShadows
+		end)
+		pcall(function()
+			Lighting.Brightness = originalVisualSettings.brightness
+		end)
+		pcall(function()
+			Lighting.EnvironmentDiffuseScale = originalVisualSettings.environmentDiffuseScale
+		end)
+		pcall(function()
+			Lighting.EnvironmentSpecularScale = originalVisualSettings.environmentSpecularScale
+		end)
+		pcall(function()
+			Lighting.FogEnd = originalVisualSettings.fogEnd
+		end)
+		pcall(function()
+			workspace.StreamingMinRadius = originalVisualSettings.streamingMinRadius
+		end)
+		pcall(function()
+			workspace.StreamingTargetRadius = originalVisualSettings.streamingTargetRadius
+		end)
+		setEffectsEnabled(true)
+	end)
 end
 setupMiscTab()
 
