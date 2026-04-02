@@ -4902,14 +4902,36 @@ setupAutoParryTab()
 
 local function setupMiscTab()
 	local miscTab = Tabs["Misc"]
+	local function safeRead(propertyGetter, fallback)
+		local ok, value = pcall(propertyGetter)
+		if ok and value ~= nil then
+			return value
+		end
+		return fallback
+	end
+
 	local originalVisualSettings = {
-		globalShadows = Lighting.GlobalShadows,
-		brightness = Lighting.Brightness,
-		environmentDiffuseScale = Lighting.EnvironmentDiffuseScale,
-		environmentSpecularScale = Lighting.EnvironmentSpecularScale,
-		fogEnd = Lighting.FogEnd,
-		streamingMinRadius = workspace.StreamingMinRadius,
-		streamingTargetRadius = workspace.StreamingTargetRadius,
+		globalShadows = safeRead(function()
+			return Lighting.GlobalShadows
+		end, true),
+		brightness = safeRead(function()
+			return Lighting.Brightness
+		end, 2),
+		environmentDiffuseScale = safeRead(function()
+			return Lighting.EnvironmentDiffuseScale
+		end, 1),
+		environmentSpecularScale = safeRead(function()
+			return Lighting.EnvironmentSpecularScale
+		end, 1),
+		fogEnd = safeRead(function()
+			return Lighting.FogEnd
+		end, 100000),
+		streamingMinRadius = safeRead(function()
+			return workspace.StreamingMinRadius
+		end, 64),
+		streamingTargetRadius = safeRead(function()
+			return workspace.StreamingTargetRadius
+		end, 128),
 	}
 
 	local function setEffectsEnabled(enabled)
