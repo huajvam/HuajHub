@@ -2746,7 +2746,9 @@ local function setupAutoParryTab()
 		autoParryState.pendingParryFailCheck = nil
 		table.clear(autoParryState.queuedMoveActions)
 		table.clear(autoParryState.queuedTracks)
-		autoParryRuntime.setAutoParryInputBlocking(false)
+		if autoParryRuntime and type(autoParryRuntime.setAutoParryInputBlocking) == "function" then
+			autoParryRuntime.setAutoParryInputBlocking(false)
+		end
 		fireBlockingStateRemote(false)
 	end)
 
