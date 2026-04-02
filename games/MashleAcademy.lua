@@ -718,6 +718,7 @@ local function setupLocalCheatsTab()
 	local speedHackConnection = nil
 	local flyConnection = nil
 	local noclipConnection = nil
+	local dashMultiplierConnection = nil
 	local noclipPartStates = {}
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
@@ -731,6 +732,7 @@ local function setupLocalCheatsTab()
 	local knockedOwnershipStateRemovedConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
+	local dashBodyVelocityStates = {}
 	local antiFallState = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
@@ -886,6 +888,15 @@ local function setupLocalCheatsTab()
 		end
 		setCharacterNoclip(false)
 		table.clear(noclipPartStates)
+	end
+
+	local function stopDashMultiplier()
+		if dashMultiplierConnection then
+			dashMultiplierConnection:Disconnect()
+			dashMultiplierConnection = nil
+		end
+
+		table.clear(dashBodyVelocityStates)
 	end
 
 	local function stopKnockedOwnership()
@@ -1348,6 +1359,64 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
+	local function startDashMultiplier()
+		stopDashMultiplier()
+
+		dashMultiplierConnection = RunService.Heartbeat:Connect(function()
+			local multiplier = tonumber(getOptionValue("DashMultiplierValue", 1)) or 1
+			if multiplier <= 1.001 then
+				table.clear(dashBodyVelocityStates)
+				return
+			end
+
+			local character = LocalPlayer and LocalPlayer.Character
+			local rootPart = getCharacterRoot(character)
+			if not rootPart then
+				table.clear(dashBodyVelocityStates)
+				return
+			end
+
+			local activeMovers = {}
+
+			for _, descendant in ipairs(rootPart:GetDescendants()) do
+				if descendant:IsA("BodyVelocity")
+					and descendant ~= speedHackVelocity
+					and descendant ~= flyVelocity
+					and descendant.Name ~= "HuajHubSpeedHackVelocity"
+					and descendant.Name ~= "HuajHubFlyVelocity" then
+					activeMovers[descendant] = true
+
+					local currentVelocity = descendant.Velocity
+					local moverState = dashBodyVelocityStates[descendant]
+
+					if moverState
+						and moverState.lastApplied
+						and (currentVelocity - moverState.lastApplied).Magnitude <= 0.05 then
+						continue
+					end
+
+					local adjustedVelocity = Vector3.new(
+						currentVelocity.X * multiplier,
+						currentVelocity.Y,
+						currentVelocity.Z * multiplier
+					)
+
+					descendant.Velocity = adjustedVelocity
+					dashBodyVelocityStates[descendant] = {
+						lastRaw = currentVelocity,
+						lastApplied = adjustedVelocity,
+					}
+				end
+			end
+
+			for mover in pairs(dashBodyVelocityStates) do
+				if not activeMovers[mover] or mover.Parent == nil then
+					dashBodyVelocityStates[mover] = nil
+				end
+			end
+		end)
+	end
+
 	triggerAntiFallBypass = function(character, duration, preserveRemoteBypass)
 		local now = os.clock()
 		local appliedDuration = math.max(duration or 1.5, 0.25)
@@ -1537,6 +1606,15 @@ local function setupLocalCheatsTab()
 		NoUI = false,
 	})
 
+	combatGroup:AddSlider("DashMultiplierValue", {
+		Text = "Dash Multiplier",
+		Default = 1,
+		Min = 1,
+		Max = 5,
+		Rounding = 1,
+		Compact = false,
+	})
+
 	combatGroup:AddToggle("AntiFallDamageEnabled", {
 		Text = "Anti Fall Damage",
 		Default = false,
@@ -1595,6 +1673,10 @@ local function setupLocalCheatsTab()
 		else
 			stopNoclip()
 		end
+	end)
+
+	Options.DashMultiplierValue:OnChanged(function()
+		startDashMultiplier()
 	end)
 
 	Toggles.AntiFallDamageEnabled:OnChanged(function()
@@ -1833,6 +1915,7 @@ local function setupLocalCheatsTab()
 		stopSpeedHack()
 		stopFly()
 		stopNoclip()
+		stopDashMultiplier()
 		stopAntiFall()
 		stopNoStun()
 		stopKnockedOwnership()
@@ -1842,6 +1925,7 @@ local function setupLocalCheatsTab()
 	stopSpeedHack()
 	stopFly()
 	stopNoclip()
+	startDashMultiplier()
 	stopAntiFall()
 	stopNoStun()
 	stopKnockedOwnership()
