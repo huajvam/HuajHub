@@ -2618,6 +2618,7 @@ local function setupAutoParryTab()
 		},
 		lastHeartbeatErrorMessage = nil,
 		lastHeartbeatErrorAt = 0,
+		heartbeatDisabled = false,
 		visualizer = {
 			part = nil,
 		},
@@ -2732,6 +2733,21 @@ local function setupAutoParryTab()
 			autoParryState.lastAdaptiveTimingUpdateAt = 0
 			updateAdaptiveTimingOffset(true)
 		end
+	end)
+
+	Toggles.AutoParryEnabled:OnChanged(function()
+		if getToggleValue("AutoParryEnabled", false) then
+			autoParryState.heartbeatDisabled = false
+			autoParryState.lastHeartbeatErrorMessage = nil
+			autoParryState.lastHeartbeatErrorAt = 0
+			return
+		end
+
+		autoParryState.pendingParryFailCheck = nil
+		table.clear(autoParryState.queuedMoveActions)
+		table.clear(autoParryState.queuedTracks)
+		autoParryRuntime.setAutoParryInputBlocking(false)
+		fireBlockingStateRemote(false)
 	end)
 
 	autoParryGroup:AddSlider("AutoParryDistance", {
@@ -4755,6 +4771,10 @@ local function setupAutoParryTab()
 	end))
 
 	maid:GiveTask(RunService.Heartbeat:Connect(function()
+		if autoParryState.heartbeatDisabled then
+			return
+		end
+
 		local ok, err = pcall(autoParryRuntime.processAutoParryHeartbeat)
 		if ok then
 			return
@@ -4765,7 +4785,19 @@ local function setupAutoParryTab()
 		if errorMessage ~= autoParryState.lastHeartbeatErrorMessage or (now - autoParryState.lastHeartbeatErrorAt) >= 2 then
 			autoParryState.lastHeartbeatErrorMessage = errorMessage
 			autoParryState.lastHeartbeatErrorAt = now
+			autoParryState.heartbeatDisabled = true
+			autoParryState.pendingParryFailCheck = nil
+			table.clear(autoParryState.queuedMoveActions)
+			table.clear(autoParryState.queuedTracks)
+			autoParryRuntime.setAutoParryInputBlocking(false)
+			fireBlockingStateRemote(false)
+			if Toggles and Toggles.AutoParryEnabled and type(Toggles.AutoParryEnabled.SetValue) == "function" then
+				pcall(function()
+					Toggles.AutoParryEnabled:SetValue(false)
+				end)
+			end
 			warn("[HuajHub] Auto Parry heartbeat error: " .. errorMessage)
+			Library:Notify("Auto Parry was disabled after a runtime error. Re-enable it after uploading the fixed file.", 4)
 		end
 	end))
 
