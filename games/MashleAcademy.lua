@@ -737,9 +737,10 @@ local function setupLocalCheatsTab()
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
+	local godModeLoopToken = 0
 	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
-		FallDamageValueTotal = -1,
-		FallDamage = -100,
+		FallDamageValueTotal = -math.huge,
+		FallDamage = -math.huge,
 	}
 	local GOD_MODE_REMOTE_INTERVAL = 0.05
 	local GOD_MODE_REMOTE_BURST = 3
