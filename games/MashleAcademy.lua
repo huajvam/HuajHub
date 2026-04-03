@@ -3230,6 +3230,7 @@ local function setupAutoParryTab()
 	local onCreateMakerConfig
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
+	local deleteMakerConfigById
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
@@ -3280,6 +3281,7 @@ local function setupAutoParryTab()
 		lastManualDashAnimationId = nil,
 		lastManualDashAssetUrl = nil,
 		manualBlockCaptureStartedAt = 0,
+		manualBlockCaptureConsumed = false,
 		pendingParryFailCheck = nil,
 		pendingManualParryDebugMessage = nil,
 		pendingManualDashDebugMessage = nil,
@@ -3552,6 +3554,34 @@ local function setupAutoParryTab()
 			onSaveMakerConfig()
 		end
 	end)
+	local deleteMakerConfigButton = saveMakerConfigButton:AddButton("Delete Config", function()
+		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
+		local configId = autoParryState.currentBuilderConfigId
+		if (not configId or configId == "") and Options and Options.AutoParryMakerSavedConfig then
+			local selectedLabel = Options.AutoParryMakerSavedConfig.Value
+			local configRef = selectedLabel and builderConfigLabelMap[selectedLabel]
+			if configRef then
+				sourceKey = configRef.sourceKey or sourceKey
+				configId = configRef.configId
+			end
+		end
+
+		if not configId or configId == "" then
+			Library:Notify("Select a saved config before deleting it.", 2)
+			return
+		end
+
+		if not deleteMakerConfigById(sourceKey, configId) then
+			Library:Notify("Could not find that saved config.", 2)
+			return
+		end
+
+		autoParryState.currentBuilderConfigId = nil
+		refreshSavedConfigDropdown("(none)")
+		syncAutoParryBuilderConfigsToRuntime()
+		saveAutoParryMakerConfigsToFile()
+		Library:Notify("Deleted Auto Parry config.", 2)
+	end)
 	local autoGetMakerConfigButton = autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
 		if onAutoGetMakerConfig then
 			onAutoGetMakerConfig()
@@ -3730,6 +3760,23 @@ local function setupAutoParryTab()
 		end
 
 		return nil
+	end
+
+	deleteMakerConfigById = function(sourceKey, configId)
+		if type(configId) ~= "string" or configId == "" then
+			return false
+		end
+
+		local sourceConfigs = getMakerConfigList(sourceKey)
+		for index = #sourceConfigs, 1, -1 do
+			local configData = sourceConfigs[index]
+			if type(configData) == "table" and tostring(configData.configId or "") == configId then
+				table.remove(sourceConfigs, index)
+				return true
+			end
+		end
+
+		return false
 	end
 
 	local function findMakerConfigByAnimationId(sourceKey, animationId)
@@ -5469,8 +5516,17 @@ local function setupAutoParryTab()
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
-			if inputObject.UserInputType == Enum.UserInputType.MouseButton2 then
-				autoParryState.manualBlockCaptureStartedAt = os.clock()
+			if inputObject.UserInputType == Enum.UserInputType.MouseButton1 then
+				local startedAt = tonumber(autoParryState.manualBlockCaptureStartedAt) or 0
+				if startedAt > 0 and (os.clock() - startedAt) <= 0.5 then
+					autoParryState.manualBlockCaptureConsumed = true
+					if os.clock() >= autoParryState.manualParryInputSuppressUntil then
+						local captureRequestedAt = os.clock()
+						task.defer(function()
+							pcall(reportManualActionDebug, "manual parry", captureRequestedAt)
+						end)
+					end
+				end
 			end
 			return
 		end
@@ -5480,14 +5536,13 @@ local function setupAutoParryTab()
 		end
 
 		if inputObject.KeyCode == Enum.KeyCode.F then
-			if os.clock() < autoParryState.manualParryInputSuppressUntil then
+			local now = os.clock()
+			if now < autoParryState.manualParryInputSuppressUntil then
 				return
 			end
 
-			local captureRequestedAt = os.clock()
-			task.defer(function()
-				pcall(reportManualActionDebug, "manual parry", captureRequestedAt)
-			end)
+			autoParryState.manualBlockCaptureStartedAt = now
+			autoParryState.manualBlockCaptureConsumed = false
 			return
 		end
 
@@ -5514,13 +5569,19 @@ local function setupAutoParryTab()
 	end))
 
 	maid:GiveTask(UserInputService.InputEnded:Connect(function(inputObject)
-		if inputObject.UserInputType ~= Enum.UserInputType.MouseButton2 then
+		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard or inputObject.KeyCode ~= Enum.KeyCode.F then
 			return
 		end
 
 		local startedAt = tonumber(autoParryState.manualBlockCaptureStartedAt) or 0
+		local consumed = autoParryState.manualBlockCaptureConsumed == true
 		autoParryState.manualBlockCaptureStartedAt = 0
+		autoParryState.manualBlockCaptureConsumed = false
 		if startedAt <= 0 then
+			return
+		end
+
+		if consumed then
 			return
 		end
 
