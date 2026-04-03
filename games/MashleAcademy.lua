@@ -3582,6 +3582,15 @@ local function setupAutoParryTab()
 		saveAutoParryMakerConfigsToFile()
 		Library:Notify("Deleted Auto Parry config.", 2)
 	end)
+	autoParryMakerGroup:AddButton("Refresh Configs", function()
+		autoParryMakerConfigs.Players = {}
+		autoParryMakerConfigs.Mobs = {}
+		autoParryState.currentBuilderConfigId = nil
+		loadAutoParryMakerConfigsFromFile()
+		syncAutoParryBuilderConfigsToRuntime()
+		refreshSavedConfigDropdown("(none)")
+		Library:Notify("Refreshed Auto Parry Maker configs.", 2)
+	end)
 	autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
 		if onAutoGetMakerConfig then
 			onAutoGetMakerConfig()
