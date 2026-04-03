@@ -2673,6 +2673,7 @@ local function setupAutoParryTab()
 		trackedTargets = {},
 		handledTracks = {},
 		queuedTracks = {},
+		recentAnimationActions = {},
 		inputBlockUntil = 0,
 		inputBlockActive = false,
 		lastParryAt = 0,
@@ -3845,6 +3846,13 @@ local function setupAutoParryTab()
 				autoParryState.handledTracks[track] = nil
 			end
 		end
+
+		local now = os.clock()
+		for recentKey, recentTimestamp in pairs(autoParryState.recentAnimationActions) do
+			if now - (tonumber(recentTimestamp) or 0) >= 0.45 then
+				autoParryState.recentAnimationActions[recentKey] = nil
+			end
+		end
 	end
 
 	local function removeQueuedMoveActionForTrack(track)
@@ -3877,6 +3885,46 @@ local function setupAutoParryTab()
 		return false
 	end
 
+	local function getRecentAnimationActionKey(targetCharacter, animationId)
+		local normalizedAnimationId = normalizeAnimationId(animationId)
+		if not targetCharacter or not normalizedAnimationId or normalizedAnimationId == "" then
+			return nil
+		end
+
+		local targetDebugId = targetCharacter:GetDebugId()
+		if not targetDebugId or targetDebugId == "" then
+			targetDebugId = tostring(targetCharacter)
+		end
+
+		return string.format("%s::%s", targetDebugId, normalizedAnimationId)
+	end
+
+	local function wasAnimationRecentlyHandled(targetCharacter, animationId)
+		local recentKey = getRecentAnimationActionKey(targetCharacter, animationId)
+		if not recentKey then
+			return false
+		end
+
+		local recentTimestamp = autoParryState.recentAnimationActions[recentKey]
+		if not recentTimestamp then
+			return false
+		end
+
+		if os.clock() - (tonumber(recentTimestamp) or 0) < 0.45 then
+			return true
+		end
+
+		autoParryState.recentAnimationActions[recentKey] = nil
+		return false
+	end
+
+	local function markAnimationRecentlyHandled(targetCharacter, animationId)
+		local recentKey = getRecentAnimationActionKey(targetCharacter, animationId)
+		if recentKey then
+			autoParryState.recentAnimationActions[recentKey] = os.clock()
+		end
+	end
+
 	local function queueAutoParryTrack(targetCharacter, track)
 		if not targetCharacter or not track or autoParryState.handledTracks[track] or autoParryState.queuedTracks[track] then
 			return false
@@ -3897,6 +3945,10 @@ local function setupAutoParryTab()
 		local debugType = getAutoParryTargetDebugType(targetCharacter)
 
 		if hasQueuedMoveActionForAnimation(targetCharacter, normalizedAnimationId) then
+			return false
+		end
+
+		if wasAnimationRecentlyHandled(targetCharacter, normalizedAnimationId) then
 			return false
 		end
 
@@ -4092,6 +4144,8 @@ local function setupAutoParryTab()
 			return
 		end
 
+		markAnimationRecentlyHandled(targetCharacter, animationId)
+
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
 			and not (getToggleValue("AutoParryDontBlatantDashPlayers", false) and targetType == "player")
@@ -4252,6 +4306,7 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
+			table.clear(autoParryState.recentAnimationActions)
 			setAutoParryTrackingText("disabled.")
 			return
 		end
@@ -4262,6 +4317,7 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
+			table.clear(autoParryState.recentAnimationActions)
 			setAutoParryTrackingText("remote not found.")
 			if not autoParryState.lastState.remoteMissing then
 				autoParryState.lastState.remoteMissing = true
