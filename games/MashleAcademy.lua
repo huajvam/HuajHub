@@ -1814,8 +1814,7 @@ local function setupLocalCheatsTab()
 		teleportToSelectedDestination()
 	end)
 
-	installFallDamageBlockHook()
-	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
@@ -6068,7 +6067,7 @@ local function setupMiscTab()
 
 	local function setInventoryViewerText(text)
 		if inventoryListLabel and type(inventoryListLabel.SetText) == "function" then
-			inventoryListLabel:SetText(text)
+			inventoryListLabel:SetText(tostring(text or ""))
 		end
 	end
 
@@ -6176,7 +6175,7 @@ local function setupMiscTab()
 	inventoryGroup:AddDropdown("InventoryViewerPlayer", {
 		Text = "Player",
 		Values = inventoryPlayerLabels,
-		Default = 1,
+		Default = "(none)",
 		Multi = false,
 	})
 	inventoryGroup:AddButton("Refresh Player List", function()
