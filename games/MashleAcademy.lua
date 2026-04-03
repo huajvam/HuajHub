@@ -11,7 +11,7 @@ local AdaptiveTimingUtils = sharedRequire("@utils/AdaptiveTimingUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
 local TrackedAnimatorRegistry = sharedRequire("classes/TrackedAnimatorRegistry.lua")
 
-local Players, ContextActionService, HttpService, Lighting, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
+local Players, ContextActionService, HttpService, Lighting, MarketplaceService, ReplicatedStorage, RunService, Stats, TeleportService, UserInputService, VirtualInputManager = Services:Get(
 	"Players",
 	"ContextActionService",
 	"HttpService",
@@ -20,6 +20,7 @@ local Players, ContextActionService, HttpService, Lighting, MarketplaceService, 
 	"ReplicatedStorage",
 	"RunService",
 	"Stats",
+	"TeleportService",
 	"UserInputService",
 	"VirtualInputManager"
 )
@@ -5417,9 +5418,97 @@ local function setupMiscTab()
 		end)
 	end
 
+	local function fetchServerPage(placeId, cursor)
+		local requestUrl = string.format(
+			"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true%s",
+			placeId,
+			cursor and ("&cursor=" .. HttpService:UrlEncode(cursor)) or ""
+		)
+
+		local responseBody
+		local ok, response = pcall(function()
+			return game:HttpGet(requestUrl)
+		end)
+		if ok and type(response) == "string" and response ~= "" then
+			responseBody = response
+		elseif type(request) == "function" then
+			local requestOk, requestResponse = pcall(function()
+				return request({
+					Url = requestUrl,
+					Method = "GET",
+				})
+			end)
+			if requestOk and type(requestResponse) == "table" and requestResponse.Success and type(requestResponse.Body) == "string" then
+				responseBody = requestResponse.Body
+			end
+		elseif type(http_request) == "function" then
+			local requestOk, requestResponse = pcall(function()
+				return http_request({
+					Url = requestUrl,
+					Method = "GET",
+				})
+			end)
+			if requestOk and type(requestResponse) == "table" and requestResponse.Success and type(requestResponse.Body) == "string" then
+				responseBody = requestResponse.Body
+			end
+		end
+
+		if type(responseBody) ~= "string" or responseBody == "" then
+			return nil, "Unable to fetch server list."
+		end
+
+		local decodeOk, decoded = pcall(function()
+			return HttpService:JSONDecode(responseBody)
+		end)
+		if not decodeOk or type(decoded) ~= "table" then
+			return nil, "Unable to decode server list."
+		end
+
+		return decoded, nil
+	end
+
+	local function hopToLowestPopulationServer()
+		local placeId = game.PlaceId
+		local currentJobId = game.JobId
+		local bestServer = nil
+		local cursor = nil
+		local pagesChecked = 0
+
+		repeat
+			local payload, errorMessage = fetchServerPage(placeId, cursor)
+			if not payload then
+				Library:Notify(errorMessage or "Failed to fetch servers.", 3)
+				return
+			end
+
+			for _, server in ipairs(payload.data or {}) do
+				local serverId = server.id
+				local playing = tonumber(server.playing) or math.huge
+				local maxPlayers = tonumber(server.maxPlayers) or 0
+				if serverId and serverId ~= currentJobId and playing < maxPlayers then
+					if not bestServer or playing < (tonumber(bestServer.playing) or math.huge) then
+						bestServer = server
+					end
+				end
+			end
+
+			cursor = payload.nextPageCursor
+			pagesChecked += 1
+		until bestServer or not cursor or pagesChecked >= 5
+
+		if not bestServer or not bestServer.id then
+			Library:Notify("No lower-population server was found.", 3)
+			return
+		end
+
+		Library:Notify(string.format("Hopping to server with %s players...", tostring(bestServer.playing)), 3)
+		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
+	end
+
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
-	miscGroup:AddLabel("Core misc features go here.")
-	miscGroup:AddLabel("Scaffold ready.")
+	miscGroup:AddButton("Hop to Low Server", function()
+		hopToLowestPopulationServer()
+	end)
 
 	local alertsGroup = miscTab:AddLeftGroupbox("Alerts")
 	alertsGroup:AddLabel("Alerts section placeholder.")
