@@ -738,6 +738,8 @@ local function setupLocalCheatsTab()
 	local antiFallState = nil
 	local godModeState = nil
 	local godModeCreatedState = false
+	local godModeHighlight = nil
+	local godModeCreatedHighlight = false
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1168,6 +1170,17 @@ local function setupLocalCheatsTab()
 
 		godModeState = nil
 		godModeCreatedState = false
+
+		if godModeHighlight then
+			if godModeCreatedHighlight then
+				pcall(function()
+					godModeHighlight:Destroy()
+				end)
+			end
+		end
+
+		godModeHighlight = nil
+		godModeCreatedHighlight = false
 	end
 
 	local function ensureGodModeState(character)
@@ -1183,6 +1196,11 @@ local function setupLocalCheatsTab()
 		if godModeState and godModeState.Parent ~= characterState then
 			godModeState = nil
 			godModeCreatedState = false
+		end
+
+		if godModeHighlight and godModeHighlight.Parent ~= character then
+			godModeHighlight = nil
+			godModeCreatedHighlight = false
 		end
 
 		if not godModeState then
@@ -1203,6 +1221,33 @@ local function setupLocalCheatsTab()
 		if godModeState then
 			pcall(function()
 				godModeState.Value = true
+			end)
+		end
+
+		if not godModeHighlight then
+			local existingHighlight = character:FindFirstChild("IFramesHighlight")
+			if existingHighlight and existingHighlight:IsA("Highlight") then
+				godModeHighlight = existingHighlight
+				godModeCreatedHighlight = false
+			else
+				local highlight = Instance.new("Highlight")
+				highlight.Name = "IFramesHighlight"
+				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+				highlight.FillColor = Color3.fromRGB(85, 255, 127)
+				highlight.FillTransparency = 0.35
+				highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+				highlight.OutlineTransparency = 0
+				highlight.Adornee = character
+				highlight.Parent = character
+				godModeHighlight = highlight
+				godModeCreatedHighlight = true
+			end
+		end
+
+		if godModeHighlight then
+			pcall(function()
+				godModeHighlight.Adornee = character
+				godModeHighlight.Enabled = true
 			end)
 		end
 	end
