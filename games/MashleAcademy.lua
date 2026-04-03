@@ -2322,6 +2322,53 @@ local function setupEspTab()
 		end
 	end
 
+	local function ensureEntryStaminaText(entry)
+		if not entry or not drawingAvailable or entry.staminaText then
+			return
+		end
+
+		entry.staminaText = EntityESP.createDrawing(globalEspDrawings, "Text", {
+			Center = true,
+			Outline = true,
+			Size = 13,
+			Font = 2,
+			Transparency = 1,
+			Color = Color3.fromRGB(240, 200, 60),
+			Visible = false,
+		}, function()
+			return espShuttingDown
+		end)
+
+		if entry.staminaText then
+			table.insert(entry.objects, entry.staminaText)
+		end
+	end
+
+	local function setEntryText(entry, textObjectName, text, position, visible)
+		if not entry then
+			return
+		end
+
+		local textObject = entry[textObjectName]
+		if not textObject and textObjectName == "staminaText" then
+			ensureEntryStaminaText(entry)
+			textObject = entry.staminaText
+		end
+
+		if type(entry.setText) == "function" and textObject then
+			entry:setText(textObject, text, position, visible)
+			return
+		end
+
+		if not textObject then
+			return
+		end
+
+		textObject.Text = text or ""
+		textObject.Position = position or Vector2.zero
+		textObject.Visible = visible == true
+	end
+
 	local function getPlayerAcademyName(model)
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		if not ownerPlayer then
@@ -2725,8 +2772,9 @@ local function setupEspTab()
 			getToggleValue("EspShowStaminaBar", false) and staminaValue ~= nil
 		)
 
-		entry:setText(
-			entry.nameText,
+		setEntryText(
+			entry,
+			"nameText",
 			getEspDisplayName(model, targetType),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 14),
 			getToggleValue("EspShowNames", true)
@@ -2734,37 +2782,42 @@ local function setupEspTab()
 
 		local magicMarksValue = targetType == "player" and getPlayerMagicMarksValue(model) or nil
 		local rankValue = targetType == "player" and getPlayerRankValue(model) or nil
-		entry:setText(
-			entry.rankText,
+		setEntryText(
+			entry,
+			"rankText",
 			rankValue and string.format("Rank: %s", rankValue) or "",
 			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 27),
 			targetType == "player" and rankValue ~= nil and getToggleValue("EspShowRankText", false)
 		)
 
-		entry:setText(
-			entry.magicMarksText,
+		setEntryText(
+			entry,
+			"magicMarksText",
 			magicMarksValue and string.format("Mark: %d", magicMarksValue) or "",
 			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 14),
 			targetType == "player" and magicMarksValue ~= nil and getToggleValue("EspShowMagicMarks", false)
 		)
 
-		entry:setText(
-			entry.distanceText,
+		setEntryText(
+			entry,
+			"distanceText",
 			string.format("%.0f studs", distance),
 			Vector2.new(box.left + (box.width * 0.5), box.bottom + 1),
 			getToggleValue("EspShowDistance", true)
 		)
 
-		entry:setText(
-			entry.healthText,
+		setEntryText(
+			entry,
+			"healthText",
 			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 27),
 			getToggleValue("EspShowHealthText", false) and humanoid ~= nil
 		)
 
-		entry:setText(
-			entry.staminaText,
-			staminaValue and string.format("%d / %d ST", math.floor(staminaValue + 0.5), math.floor(staminaMax + 0.5)) or "",
+		setEntryText(
+			entry,
+			"staminaText",
+			staminaValue and string.format("%d/%d Stamina", math.floor(staminaValue + 0.5), math.floor(staminaMax + 0.5)) or "",
 			Vector2.new(box.left + (box.width * 0.5), box.top - 40),
 			getToggleValue("EspShowStaminaText", false) and staminaValue ~= nil and staminaMax ~= nil
 		)
@@ -2934,7 +2987,7 @@ local function setupEspTab()
 
 	espVisualGroup:AddToggle("EspShowStaminaText", {
 		Text = "Stamina Text",
-		Default = false,
+		Default = true,
 	})
 
 	espVisualGroup:AddToggle("EspShowMagicMarks", {
