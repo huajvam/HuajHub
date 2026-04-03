@@ -2335,6 +2335,54 @@ local function setupEspTab()
 		return nil
 	end
 
+	local function getPlayerRankValue(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local statsFolder = dataFolder and dataFolder:FindFirstChild("Stats")
+		local rankValue = statsFolder and statsFolder:FindFirstChild("LevelRank")
+		if rankValue and rankValue:IsA("StringValue") then
+			local value = tostring(rankValue.Value or "")
+			if value ~= "" then
+				return value
+			end
+		end
+
+		return nil
+	end
+
+	local function getEspStaminaState(model)
+		if not model or not model:IsA("Model") then
+			return nil, nil
+		end
+
+		local characterState = model:FindFirstChild("CharacterState")
+		local staminaValue = characterState and characterState:FindFirstChild("Stamina")
+		if not staminaValue or not staminaValue:IsA("NumberValue") then
+			return nil, nil
+		end
+
+		local currentValue = tonumber(staminaValue.Value)
+		if not currentValue then
+			return nil, nil
+		end
+
+		local maxValue = tonumber(staminaValue:GetAttribute("MaxValue"))
+			or tonumber(staminaValue:GetAttribute("Max"))
+			or tonumber(staminaValue:GetAttribute("Maximum"))
+			or tonumber(staminaValue:GetAttribute("Base"))
+			or 3
+
+		if maxValue <= 0 then
+			maxValue = math.max(currentValue, 3)
+		end
+
+		return math.clamp(currentValue, 0, maxValue), maxValue
+	end
+
 	local function shouldShowPlayerEsp(model)
 		local targetType = getEspTargetType(model)
 		if targetType ~= "player" then
@@ -2573,6 +2621,18 @@ local function setupEspTab()
 			getToggleValue("EspShowHealthBar", true) and humanoid ~= nil
 		)
 
+		local staminaValue, staminaMax = getEspStaminaState(model)
+		local staminaRatio = (staminaValue and staminaMax and staminaMax > 0) and math.clamp(staminaValue / staminaMax, 0, 1) or 0
+		local staminaBarX = box.right + 3
+		entry:setStaminaBar(
+			Vector2.new(staminaBarX, box.top),
+			Vector2.new(barWidth, barHeight),
+			Vector2.new(staminaBarX + 1, box.bottom - ((barHeight - 2) * staminaRatio) - 1),
+			Vector2.new(barWidth - 2, math.max((barHeight - 2) * staminaRatio, 1)),
+			Color3.fromRGB(240, 200, 60),
+			getToggleValue("EspShowStaminaBar", false) and staminaValue ~= nil
+		)
+
 		entry:setText(
 			entry.nameText,
 			getEspDisplayName(model, targetType),
@@ -2581,6 +2641,14 @@ local function setupEspTab()
 		)
 
 		local magicMarksValue = targetType == "player" and getPlayerMagicMarksValue(model) or nil
+		local rankValue = targetType == "player" and getPlayerRankValue(model) or nil
+		entry:setText(
+			entry.rankText,
+			rankValue and string.format("Rank: %s", rankValue) or "",
+			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 27),
+			targetType == "player" and rankValue ~= nil and getToggleValue("EspShowRankText", false)
+		)
+
 		entry:setText(
 			entry.magicMarksText,
 			magicMarksValue and string.format("Mark: %d", magicMarksValue) or "",
@@ -2770,9 +2838,19 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espVisualGroup:AddToggle("EspShowRankText", {
+		Text = "Rank Esp",
+		Default = false,
+	})
+
 	espVisualGroup:AddToggle("EspShowHealthBar", {
 		Text = "Health Bar",
 		Default = true,
+	})
+
+	espVisualGroup:AddToggle("EspShowStaminaBar", {
+		Text = "Stamina Bar",
+		Default = false,
 	})
 
 	espVisualGroup:AddToggle("EspShowBox", {
@@ -2842,7 +2920,15 @@ local function setupEspTab()
 		refreshEsp()
 	end)
 
+	Toggles.EspShowRankText:OnChanged(function()
+		refreshEsp()
+	end)
+
 	Toggles.EspShowHealthBar:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowStaminaBar:OnChanged(function()
 		refreshEsp()
 	end)
 
