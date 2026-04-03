@@ -719,6 +719,7 @@ local function setupLocalCheatsTab()
 	local speedHackConnection = nil
 	local flyConnection = nil
 	local noclipConnection = nil
+	local mobBringConnection = nil
 	local noclipPartStates = {}
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
@@ -901,6 +902,13 @@ local function setupLocalCheatsTab()
 		end
 		setCharacterNoclip(false)
 		table.clear(noclipPartStates)
+	end
+
+	local function stopMobBring()
+		if mobBringConnection then
+			mobBringConnection:Disconnect()
+			mobBringConnection = nil
+		end
 	end
 
 	local function stopKnockedOwnership()
@@ -1356,6 +1364,42 @@ local function setupLocalCheatsTab()
 		return humanoid, rootPart
 	end
 
+	local function isBringableMob(model)
+		if not model or not model:IsA("Model") then
+			return false
+		end
+
+		if LocalPlayer and LocalPlayer.Character == model then
+			return false
+		end
+
+		if Players:GetPlayerFromCharacter(model) then
+			return false
+		end
+
+		if not getCharacterHumanoid(model) or not getCharacterRoot(model) then
+			return false
+		end
+
+		return true
+	end
+
+	local function getBringableMobs()
+		local liveFolder = workspace:FindFirstChild("Live")
+		if not liveFolder then
+			return {}
+		end
+
+		local mobs = {}
+		for _, child in ipairs(liveFolder:GetChildren()) do
+			if isBringableMob(child) then
+				table.insert(mobs, child)
+			end
+		end
+
+		return mobs
+	end
+
 	local function getKnockedOwnershipTool(character)
 		local backpack = LocalPlayer and LocalPlayer:FindFirstChildOfClass("Backpack")
 		local handle = backpack and backpack:FindFirstChild("Handle", true)
@@ -1571,6 +1615,38 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
+	local function startMobBring()
+		stopMobBring()
+		mobBringConnection = RunService.Heartbeat:Connect(function()
+			local _, localRoot = getCharacterMovementState()
+			if not localRoot then
+				return
+			end
+
+			local distance = (Options.MobBringDistance and Options.MobBringDistance.Value) or 8
+			local height = (Options.MobBringHeight and Options.MobBringHeight.Value) or 0
+			local forward = localRoot.CFrame.LookVector
+			local right = localRoot.CFrame.RightVector
+			local anchor = localRoot.Position + (forward * distance) + Vector3.new(0, height, 0)
+			local mobs = getBringableMobs()
+
+			for index, mob in ipairs(mobs) do
+				local mobRoot = getCharacterRoot(mob)
+				if mobRoot then
+					local lateralOffset = (((index - 1) % 4) - 1.5) * 3
+					local rowOffset = math.floor((index - 1) / 4) * 3
+					local targetPosition = anchor + (right * lateralOffset) - (forward * rowOffset)
+					local displacement = targetPosition - mobRoot.Position
+
+					pcall(function()
+						mobRoot.AssemblyLinearVelocity = displacement * 10
+						mobRoot.CFrame = CFrame.new(targetPosition, localRoot.Position)
+					end)
+				end
+			end
+		end)
+	end
+
 	triggerAntiFallBypass = function(character, duration, preserveRemoteBypass)
 		local now = os.clock()
 		local appliedDuration = math.max(duration or 1.5, 0.25)
@@ -1765,6 +1841,31 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
+	combatGroup:AddLabel("Mob Manipulation")
+
+	combatGroup:AddToggle("MobBringEnabled", {
+		Text = "Mob Bring",
+		Default = false,
+	})
+
+	combatGroup:AddSlider("MobBringDistance", {
+		Text = "Bring Distance",
+		Default = 8,
+		Min = 2,
+		Max = 40,
+		Rounding = 0,
+		Suffix = " studs",
+	})
+
+	combatGroup:AddSlider("MobBringHeight", {
+		Text = "Bring Height",
+		Default = 0,
+		Min = -10,
+		Max = 25,
+		Rounding = 0,
+		Suffix = " studs",
+	})
+
 	combatGroup:AddToggle("NoStunEnabled", {
 		Text = "No Stun",
 		Default = false,
@@ -1831,6 +1932,14 @@ local function setupLocalCheatsTab()
 		end
 	end)
 
+	Toggles.MobBringEnabled:OnChanged(function()
+		if Toggles.MobBringEnabled.Value then
+			startMobBring()
+		else
+			stopMobBring()
+		end
+	end)
+
 	Toggles.NoStunEnabled:OnChanged(function()
 		if Toggles.NoStunEnabled.Value then
 			startNoStun()
@@ -1856,6 +1965,18 @@ local function setupLocalCheatsTab()
 	Options.FlyHackValue:OnChanged(function()
 		if Toggles.FlyEnabled.Value then
 			startFly()
+		end
+	end)
+
+	Options.MobBringDistance:OnChanged(function()
+		if Toggles.MobBringEnabled and Toggles.MobBringEnabled.Value then
+			startMobBring()
+		end
+	end)
+
+	Options.MobBringHeight:OnChanged(function()
+		if Toggles.MobBringEnabled and Toggles.MobBringEnabled.Value then
+			startMobBring()
 		end
 	end)
 
@@ -2059,6 +2180,7 @@ local function setupLocalCheatsTab()
 		stopSpeedHack()
 		stopFly()
 		stopNoclip()
+		stopMobBring()
 		stopAntiFall()
 		stopGodMode()
 		stopNoStun()
@@ -2069,6 +2191,7 @@ local function setupLocalCheatsTab()
 	stopSpeedHack()
 	stopFly()
 	stopNoclip()
+	stopMobBring()
 	stopAntiFall()
 	stopGodMode()
 	stopNoStun()
