@@ -3231,6 +3231,10 @@ local function setupAutoParryTab()
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
 	local deleteMakerConfigById
+	local syncAutoParryBuilderConfigsToRuntime
+	local refreshSavedConfigDropdown
+	local loadAutoParryMakerConfigsFromFile
+	local saveAutoParryMakerConfigsToFile
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
@@ -3908,7 +3912,7 @@ local function setupAutoParryTab()
 		return nil
 	end
 
-	local function syncAutoParryBuilderConfigsToRuntime()
+	syncAutoParryBuilderConfigsToRuntime = function()
 		for sourceKey, sourceConfigs in pairs(autoParryMakerConfigs) do
 			local runtimeTable = AUTO_PARRY_ANIMATION_TABLE[sourceKey]
 			if type(runtimeTable) ~= "table" then
@@ -3941,7 +3945,7 @@ local function setupAutoParryTab()
 		GLOBAL_ENV.HuajHubAutoParryAnimations = AUTO_PARRY_ANIMATION_TABLE
 	end
 
-	local function refreshSavedConfigDropdown(selectedLabel)
+	refreshSavedConfigDropdown = function(selectedLabel)
 		local labels = {"(none)"}
 		builderConfigLabelMap = {}
 
@@ -4044,7 +4048,7 @@ local function setupAutoParryTab()
 		applyDetectedEntryToBuilder(entry)
 	end
 
-	local function loadAutoParryMakerConfigsFromFile()
+	loadAutoParryMakerConfigsFromFile = function()
 		if type(isfile) ~= "function" or type(readfile) ~= "function" then
 			return
 		end
@@ -4126,7 +4130,7 @@ local function setupAutoParryTab()
 		end)
 	end
 
-	local function saveAutoParryMakerConfigsToFile()
+	saveAutoParryMakerConfigsToFile = function()
 		if type(writefile) ~= "function" then
 			Library:Notify("writefile is unavailable in this executor.", 2)
 			return false
@@ -5496,7 +5500,12 @@ local function setupAutoParryTab()
 			return
 		end
 
-		local detectedEntry = detectedAnimationEntries[detectedEntryRef.sourceKey][detectedEntryRef.animationId]
+		local sourceEntries = detectedAnimationEntries[detectedEntryRef.sourceKey]
+		if type(sourceEntries) ~= "table" then
+			return
+		end
+
+		local detectedEntry = sourceEntries[detectedEntryRef.animationId]
 		if not detectedEntry then
 			return
 		end
