@@ -1432,6 +1432,41 @@ local function setupLocalCheatsTab()
 		return closestMob, closestDistance
 	end
 
+	local function getMobAIConfigurations(mob)
+		if not mob then
+			return nil
+		end
+
+		local aiConfigurations = mob:FindFirstChild("AI_Configurations")
+		if aiConfigurations and aiConfigurations:IsA("Folder") then
+			return aiConfigurations
+		end
+
+		return nil
+	end
+
+	local function stringifyAIValue(instance)
+		if not instance then
+			return "nil"
+		end
+
+		local ok, value = pcall(function()
+			if instance:IsA("ValueBase") then
+				return instance.Value
+			end
+			return nil
+		end)
+
+		if ok then
+			if typeof(value) == "Instance" then
+				return value:GetFullName()
+			end
+			return tostring(value)
+		end
+
+		return "(unreadable)"
+	end
+
 	local function isMobProbeActive()
 		return os.clock() <= mobProbeWindowUntil
 	end
@@ -1515,6 +1550,120 @@ local function setupLocalCheatsTab()
 				Library:Notify(string.format("%s responded to local movement.", mob.Name), 3)
 			end
 		end)
+	end
+
+	local function probeClosestMobAI()
+		local mob, distance = getClosestBringableMob(150)
+		if not mob then
+			Library:Notify("No nearby bringable mob found.", 2)
+			return
+		end
+
+		local aiConfigurations = getMobAIConfigurations(mob)
+		if not aiConfigurations then
+			Library:Notify(string.format("%s has no AI_Configurations folder.", mob.Name), 2)
+			return
+		end
+
+		warn(string.format("[HuajHub MobAI] probing %s at %.1f studs", mob.Name, distance or -1))
+		for _, child in ipairs(aiConfigurations:GetChildren()) do
+			warn(string.format(
+				"[HuajHub MobAI] %s.%s (%s) = %s",
+				mob.Name,
+				child.Name,
+				child.ClassName,
+				stringifyAIValue(child)
+			))
+		end
+
+		Library:Notify(string.format("Logged AI_Configurations for %s.", mob.Name), 3)
+	end
+
+	local function trySetAIValue(valueObject, newValue)
+		if not valueObject then
+			return false, "missing"
+		end
+
+		local success = pcall(function()
+			if valueObject:IsA("ObjectValue") then
+				valueObject.Value = newValue
+			elseif valueObject:IsA("StringValue") then
+				valueObject.Value = tostring(newValue)
+			elseif valueObject:IsA("NumberValue") or valueObject:IsA("IntValue") then
+				valueObject.Value = tonumber(newValue) or valueObject.Value
+			elseif valueObject:IsA("BoolValue") then
+				valueObject.Value = not not newValue
+			elseif valueObject:IsA("Vector3Value") and typeof(newValue) == "Vector3" then
+				valueObject.Value = newValue
+			elseif valueObject:IsA("CFrameValue") and typeof(newValue) == "CFrame" then
+				valueObject.Value = newValue
+			else
+				error("unsupported type")
+			end
+		end)
+
+		return success, success and "ok" or "failed"
+	end
+
+	local function tryBringClosestMobByAI()
+		local mob = getClosestBringableMob(150)
+		if not mob then
+			Library:Notify("No nearby bringable mob found.", 2)
+			return
+		end
+
+		local character = LocalPlayer and LocalPlayer.Character
+		local localRoot = getCharacterRoot(character)
+		local aiConfigurations = getMobAIConfigurations(mob)
+		if not character or not localRoot or not aiConfigurations then
+			Library:Notify("Mob AI bring failed: missing character, root, or AI_Configurations.", 2)
+			return
+		end
+
+		local updated = {}
+		local currentAggro = aiConfigurations:FindFirstChild("CurrentAggro")
+		local startingPosition = aiConfigurations:FindFirstChild("StartingPosition")
+		local aggroRange = aiConfigurations:FindFirstChild("AggroRange")
+		local stopRange = aiConfigurations:FindFirstChild("StopRange")
+
+		if currentAggro then
+			local ok = false
+			if currentAggro:IsA("ObjectValue") then
+				ok = select(1, trySetAIValue(currentAggro, character))
+				if not ok and LocalPlayer then
+					ok = select(1, trySetAIValue(currentAggro, LocalPlayer))
+				end
+			elseif currentAggro:IsA("StringValue") then
+				ok = select(1, trySetAIValue(currentAggro, character.Name))
+			end
+			if ok then
+				table.insert(updated, "CurrentAggro")
+			end
+		end
+
+		if startingPosition then
+			local startValue = startingPosition:IsA("CFrameValue") and CFrame.new(localRoot.Position) or localRoot.Position
+			if select(1, trySetAIValue(startingPosition, startValue)) then
+				table.insert(updated, "StartingPosition")
+			end
+		end
+
+		if aggroRange and select(1, trySetAIValue(aggroRange, 9999)) then
+			table.insert(updated, "AggroRange")
+		end
+
+		local desiredStopRange = math.max((Options.MobBringDistance and Options.MobBringDistance.Value) or 8, 2)
+		if stopRange and select(1, trySetAIValue(stopRange, desiredStopRange)) then
+			table.insert(updated, "StopRange")
+		end
+
+		if #updated == 0 then
+			Library:Notify(string.format("Could not modify %s AI values.", mob.Name), 3)
+			return
+		end
+
+		warn(string.format("[HuajHub MobAI] updated %s: %s", mob.Name, table.concat(updated, ", ")))
+		Library:Notify(string.format("AI bring applied to %s.", mob.Name), 3)
 	end
 
 	local function getKnockedOwnershipTool(character)
@@ -1983,6 +2132,14 @@ local function setupLocalCheatsTab()
 
 	mobManipulationGroup:AddButton("Probe Closest Mob Ownership", function()
 		probeClosestMobOwnership()
+	end)
+
+	mobManipulationGroup:AddButton("Probe Closest Mob AI", function()
+		probeClosestMobAI()
+	end)
+
+	mobManipulationGroup:AddButton("AI Bring Closest Mob", function()
+		tryBringClosestMobByAI()
 	end)
 
 	combatGroup:AddToggle("NoStunEnabled", {
