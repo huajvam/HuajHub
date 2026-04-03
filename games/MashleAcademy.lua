@@ -994,18 +994,11 @@ local function setupLocalCheatsTab()
 
 	local function shouldBlockTeleportFallDamageRequest(instance, args)
 		if not shouldUseAntiFallProtection() then
-			if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
-				return false
-			end
+			return false
 		end
 
 		if instance == nil or typeof(instance) ~= "Instance" or not instance:IsA("RemoteEvent") then
 			return false
-		end
-
-		if instance.Name == "SpawnProtectionCheck" then
-			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
-			return remotes ~= nil and instance.Parent == remotes and Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value
 		end
 
 		if instance.Name ~= "RequestModule" then
@@ -1036,6 +1029,22 @@ local function setupLocalCheatsTab()
 		local characterState = character:FindFirstChild("CharacterState")
 		if characterState and characterState:IsA("Folder") then
 			return characterState
+		end
+
+		return nil
+	end
+
+	local function getNilInstance(name, className)
+		if type(getnilinstances) ~= "function" then
+			return nil
+		end
+
+		for _, instance in next, getnilinstances() do
+			if instance
+				and instance.Name == name
+				and instance.ClassName == className then
+				return instance
+			end
 		end
 
 		return nil
@@ -1166,45 +1175,13 @@ local function setupLocalCheatsTab()
 
 	local function removeGodModeState()
 		if godModeState then
-			if godModeCreatedState then
-				pcall(function()
-					godModeState:Destroy()
-				end)
-			else
-				pcall(function()
-					godModeState.Value = false
-				end)
-			end
+			pcall(function()
+				godModeState:Destroy()
+			end)
 		end
 
 		godModeState = nil
 		godModeCreatedState = false
-
-		if godModeSpawnProtectionState then
-			if godModeCreatedSpawnProtectionState then
-				pcall(function()
-					godModeSpawnProtectionState:Destroy()
-				end)
-			else
-				pcall(function()
-					godModeSpawnProtectionState.Value = false
-				end)
-			end
-		end
-
-		godModeSpawnProtectionState = nil
-		godModeCreatedSpawnProtectionState = false
-
-		if godModeHighlight then
-			if godModeCreatedHighlight then
-				pcall(function()
-					godModeHighlight:Destroy()
-				end)
-			end
-		end
-
-		godModeHighlight = nil
-		godModeCreatedHighlight = false
 	end
 
 	local function ensureGodModeState(character)
@@ -1222,82 +1199,33 @@ local function setupLocalCheatsTab()
 			godModeCreatedState = false
 		end
 
-		if godModeSpawnProtectionState and godModeSpawnProtectionState.Parent ~= characterState then
-			godModeSpawnProtectionState = nil
-			godModeCreatedSpawnProtectionState = false
-		end
-
-		if godModeHighlight and godModeHighlight.Parent ~= character then
-			godModeHighlight = nil
-			godModeCreatedHighlight = false
-		end
-
 		if not godModeState then
-			local existing = characterState:FindFirstChild("IFrames")
+			local existing = characterState:FindFirstChild("NotParryableStun")
 			if existing and existing:IsA("BoolValue") then
 				godModeState = existing
 				godModeCreatedState = false
 			else
-				local iFrames = Instance.new("BoolValue")
-				iFrames.Name = "IFrames"
-				iFrames.Value = true
-				iFrames.Parent = characterState
-				godModeState = iFrames
-				godModeCreatedState = true
+				local nilState = getNilInstance("NotParryableStun", "BoolValue")
+				if nilState then
+					pcall(function()
+						nilState.Parent = characterState
+					end)
+					godModeState = nilState
+					godModeCreatedState = false
+				else
+					local stunState = Instance.new("BoolValue")
+					stunState.Name = "NotParryableStun"
+					stunState.Value = true
+					stunState.Parent = characterState
+					godModeState = stunState
+					godModeCreatedState = true
+				end
 			end
 		end
 
 		if godModeState then
 			pcall(function()
 				godModeState.Value = true
-			end)
-		end
-
-		if not godModeSpawnProtectionState then
-			local existingSpawnProtection = characterState:FindFirstChild("SpawnProtection")
-			if existingSpawnProtection and existingSpawnProtection:IsA("BoolValue") then
-				godModeSpawnProtectionState = existingSpawnProtection
-				godModeCreatedSpawnProtectionState = false
-			else
-				local spawnProtection = Instance.new("BoolValue")
-				spawnProtection.Name = "SpawnProtection"
-				spawnProtection.Value = true
-				spawnProtection.Parent = characterState
-				godModeSpawnProtectionState = spawnProtection
-				godModeCreatedSpawnProtectionState = true
-			end
-		end
-
-		if godModeSpawnProtectionState then
-			pcall(function()
-				godModeSpawnProtectionState.Value = true
-			end)
-		end
-
-		if not godModeHighlight then
-			local existingHighlight = character:FindFirstChild("IFramesHighlight")
-			if existingHighlight and existingHighlight:IsA("Highlight") then
-				godModeHighlight = existingHighlight
-				godModeCreatedHighlight = false
-			else
-				local highlight = Instance.new("Highlight")
-				highlight.Name = "IFramesHighlight"
-				highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-				highlight.FillColor = Color3.fromRGB(85, 255, 127)
-				highlight.FillTransparency = 0.35
-				highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
-				highlight.OutlineTransparency = 0
-				highlight.Adornee = character
-				highlight.Parent = character
-				godModeHighlight = highlight
-				godModeCreatedHighlight = true
-			end
-		end
-
-		if godModeHighlight then
-			pcall(function()
-				godModeHighlight.Adornee = character
-				godModeHighlight.Enabled = true
 			end)
 		end
 	end
