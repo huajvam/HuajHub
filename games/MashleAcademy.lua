@@ -1885,7 +1885,8 @@ local function setupLocalCheatsTab()
 		stopMobBring()
 		mobBringConnection = RunService.Heartbeat:Connect(function()
 			local _, localRoot = getCharacterMovementState()
-			if not localRoot then
+			local character = LocalPlayer and LocalPlayer.Character
+			if not localRoot or not character then
 				return
 			end
 
@@ -1897,17 +1898,56 @@ local function setupLocalCheatsTab()
 			local mobs = getBringableMobs()
 
 			for index, mob in ipairs(mobs) do
-				local mobRoot = getCharacterRoot(mob)
-				if mobRoot then
+				local aiConfigurations = getMobAIConfigurations(mob)
+				if aiConfigurations then
 					local lateralOffset = (((index - 1) % 4) - 1.5) * 3
 					local rowOffset = math.floor((index - 1) / 4) * 3
 					local targetPosition = anchor + (right * lateralOffset) - (forward * rowOffset)
-					local displacement = targetPosition - mobRoot.Position
+					local currentAggro = aiConfigurations:FindFirstChild("CurrentAggro")
+					local startingPosition = aiConfigurations:FindFirstChild("StartingPosition")
+					local aggroRange = aiConfigurations:FindFirstChild("AggroRange")
+					local stopRange = aiConfigurations:FindFirstChild("StopRange")
+					local aiState = aiConfigurations:FindFirstChild("AI_State")
 
-					pcall(function()
-						mobRoot.AssemblyLinearVelocity = displacement * 10
-						mobRoot.CFrame = CFrame.new(targetPosition, localRoot.Position)
-					end)
+					if currentAggro then
+						if currentAggro:IsA("ObjectValue") then
+							pcall(function()
+								currentAggro.Value = character
+							end)
+						elseif currentAggro:IsA("StringValue") then
+							pcall(function()
+								currentAggro.Value = character.Name
+							end)
+						end
+					end
+
+					if startingPosition then
+						pcall(function()
+							if startingPosition:IsA("Vector3Value") then
+								startingPosition.Value = targetPosition
+							elseif startingPosition:IsA("CFrameValue") then
+								startingPosition.Value = CFrame.new(targetPosition)
+							end
+						end)
+					end
+
+					if aggroRange and (aggroRange:IsA("NumberValue") or aggroRange:IsA("IntValue")) then
+						pcall(function()
+							aggroRange.Value = 9999
+						end)
+					end
+
+					if stopRange and (stopRange:IsA("NumberValue") or stopRange:IsA("IntValue")) then
+						pcall(function()
+							stopRange.Value = math.max(distance, 2)
+						end)
+					end
+
+					if aiState and aiState:IsA("StringValue") then
+						pcall(function()
+							aiState.Value = "Aggroed"
+						end)
+					end
 				end
 			end
 		end)
