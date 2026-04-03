@@ -744,6 +744,7 @@ local function setupLocalCheatsTab()
 	local GOD_MODE_REMOTE_INTERVAL = 0.05
 	local GOD_MODE_REMOTE_BURST = 3
 	local GOD_MODE_INFINITE_HEALTH_THRESHOLD = 1e12
+	local godModeActive = false
 	local godModeSavedHealth = nil
 	local godModeSavedMaxHealth = nil
 	local antiFallProtectedUntil = 0
@@ -1249,7 +1250,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function ensureGodModeState(character)
-		if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
+		if not godModeActive then
 			return
 		end
 
@@ -1269,6 +1270,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function stopGodMode()
+		godModeActive = false
 		godModeLoopToken += 1
 		if godModeHeartbeatConnection then
 			godModeHeartbeatConnection:Disconnect()
@@ -1284,6 +1286,7 @@ local function setupLocalCheatsTab()
 
 	local function startGodMode()
 		stopGodMode()
+		godModeActive = true
 		godModeLoopToken += 1
 		godModeSavedHealth = nil
 		godModeSavedMaxHealth = nil
@@ -1305,7 +1308,7 @@ local function setupLocalCheatsTab()
 
 		godModeCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
 			task.defer(function()
-				if Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value then
+				if godModeActive then
 					hookCharacter(character)
 				end
 			end)
@@ -1320,7 +1323,7 @@ local function setupLocalCheatsTab()
 
 		task.spawn(function()
 			while loopToken == godModeLoopToken do
-				if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
+				if not godModeActive then
 					break
 				end
 
@@ -1328,6 +1331,7 @@ local function setupLocalCheatsTab()
 				if humanoid then
 					updateGodModeSavedHealth(humanoid)
 					if isHumanoidHealthInfinite(humanoid) then
+						godModeActive = false
 						break
 					end
 				end
@@ -1761,11 +1765,6 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	combatGroup:AddToggle("GodModeEnabled", {
-		Text = "God Mode",
-		Default = false,
-	})
-
 	combatGroup:AddToggle("NoStunEnabled", {
 		Text = "No Stun",
 		Default = false,
@@ -1775,6 +1774,10 @@ local function setupLocalCheatsTab()
 		Text = "Knocked Ownership",
 		Default = false,
 	})
+
+	combatGroup:AddButton("God Mode", function()
+		startGodMode()
+	end)
 
 	teleportGroup:AddDropdown("TeleportDestination", {
 		Text = "Destination",
@@ -1825,14 +1828,6 @@ local function setupLocalCheatsTab()
 			startAntiFall()
 		else
 			stopAntiFall()
-		end
-	end)
-
-	Toggles.GodModeEnabled:OnChanged(function()
-		if Toggles.GodModeEnabled.Value then
-			startGodMode()
-		else
-			stopGodMode()
 		end
 	end)
 
