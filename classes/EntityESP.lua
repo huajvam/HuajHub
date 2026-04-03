@@ -106,6 +106,17 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.healthText)
 
+	self.magicMarksText = EntityESP.createDrawing(registry, "Text", {
+		Center = false,
+		Outline = true,
+		Size = 13,
+		Font = 2,
+		Transparency = 1,
+		Color = Color3.fromRGB(190, 110, 255),
+		Visible = false,
+	}, shuttingDownFlag)
+	table.insert(self.objects, self.magicMarksText)
+
 	self.tracerLine = EntityESP.createDrawing(registry, "Line", {
 		Thickness = 1,
 		Transparency = 1,
@@ -228,6 +239,9 @@ function EntityESP:hide()
 	end
 	if self.healthText then
 		self.healthText.Visible = false
+	end
+	if self.magicMarksText then
+		self.magicMarksText.Visible = false
 	end
 	if self.tracerLine then
 		self.tracerLine.Visible = false

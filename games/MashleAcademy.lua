@@ -2317,6 +2317,24 @@ local function setupEspTab()
 		return Color3.fromRGB(190, 190, 190)
 	end
 
+	local function getPlayerMagicMarksValue(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local magicMarksValue = dataFolder and dataFolder:FindFirstChild("MagicMarks")
+		if magicMarksValue and magicMarksValue:IsA("NumberValue") then
+			local value = tonumber(magicMarksValue.Value)
+			if value then
+				return math.floor(value + 0.5)
+			end
+		end
+
+		return nil
+	end
+
 	local function shouldShowPlayerEsp(model)
 		local targetType = getEspTargetType(model)
 		if targetType ~= "player" then
@@ -2562,6 +2580,14 @@ local function setupEspTab()
 			getToggleValue("EspShowNames", true)
 		)
 
+		local magicMarksValue = targetType == "player" and getPlayerMagicMarksValue(model) or nil
+		entry:setText(
+			entry.magicMarksText,
+			magicMarksValue and string.format("Mark: %d", magicMarksValue) or "",
+			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 14),
+			targetType == "player" and magicMarksValue ~= nil and getToggleValue("EspShowMagicMarks", false)
+		)
+
 		entry:setText(
 			entry.distanceText,
 			string.format("%.0f studs", distance),
@@ -2738,6 +2764,11 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espVisualGroup:AddToggle("EspShowMagicMarks", {
+		Text = "Magic Marks",
+		Default = false,
+	})
+
 	espVisualGroup:AddToggle("EspShowHealthBar", {
 		Text = "Health Bar",
 		Default = true,
@@ -2803,6 +2834,10 @@ local function setupEspTab()
 	end)
 
 	Toggles.EspShowHealthText:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowMagicMarks:OnChanged(function()
 		refreshEsp()
 	end)
 
