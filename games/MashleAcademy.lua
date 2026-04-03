@@ -5257,6 +5257,9 @@ local function setupMiscTab()
 	local fpsBoostMeshTextureStates = {}
 	local blurEffectStates = {}
 	local effectEnabledStates = {}
+	local staffDetectorPlayerAddedConnection = nil
+	local staffDetectorTriggered = false
+	local STAFF_GROUP_ID = 32643289
 
 	local function setBlurEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
@@ -5549,6 +5552,148 @@ local function setupMiscTab()
 		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
 	end
 
+	local function stopStaffDetector()
+		if staffDetectorPlayerAddedConnection then
+			staffDetectorPlayerAddedConnection:Disconnect()
+			staffDetectorPlayerAddedConnection = nil
+		end
+		staffDetectorTriggered = false
+	end
+
+	local function getStaffDetectionReason(player)
+		if not player or player == LocalPlayer then
+			return nil
+		end
+
+		local rankOk, rank = pcall(function()
+			return player:GetRankInGroup(STAFF_GROUP_ID)
+		end)
+		if not rankOk or tonumber(rank) == nil or rank <= 0 then
+			return nil
+		end
+
+		local role = "Unknown"
+		pcall(function()
+			role = player:GetRoleInGroup(STAFF_GROUP_ID)
+		end)
+
+		return string.format("group rank %s (%s)", tostring(rank), tostring(role))
+	end
+
+	local function handleDetectedStaffPlayer(player)
+		if staffDetectorTriggered then
+			return
+		end
+
+		local reason = getStaffDetectionReason(player)
+		if not reason then
+			return
+		end
+
+		staffDetectorTriggered = true
+		Library:Notify(string.format("Staff detected: %s [%s]", player.Name, reason), 4)
+		task.delay(0.2, function()
+			pcall(function()
+				LocalPlayer:Kick(string.format("Staff detected: %s [%s]", player.Name, reason))
+			end)
+		end)
+	end
+
+	local function startStaffDetector()
+		stopStaffDetector()
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			handleDetectedStaffPlayer(player)
+			if staffDetectorTriggered then
+				return
+			end
+		end
+
+		staffDetectorPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+			handleDetectedStaffPlayer(player)
+		end)
+	end
+
+	local inventoryPlayerMap = {}
+	local inventoryPlayerLabels = {"(none)"}
+	local inventoryListLabel
+
+	local function buildInventoryPlayerLabels()
+		table.clear(inventoryPlayerMap)
+		inventoryPlayerLabels = {"(none)"}
+
+		local playersList = Players:GetPlayers()
+		table.sort(playersList, function(left, right)
+			return left.Name:lower() < right.Name:lower()
+		end)
+
+		for _, player in ipairs(playersList) do
+			local label = player.Name
+			inventoryPlayerMap[label] = player
+			table.insert(inventoryPlayerLabels, label)
+		end
+	end
+
+	local function setInventoryViewerText(text)
+		if inventoryListLabel and type(inventoryListLabel.SetText) == "function" then
+			inventoryListLabel:SetText(text)
+		end
+	end
+
+	local function renderSelectedInventory()
+		local selectedName = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
+		local selectedPlayer = selectedName and inventoryPlayerMap[selectedName]
+		if not selectedPlayer then
+			setInventoryViewerText("Select a player to view inventory folders.")
+			return
+		end
+
+		local dataFolder = selectedPlayer:FindFirstChild("Data")
+		local inventoryFolder = dataFolder and dataFolder:FindFirstChild("Inventory")
+		if not inventoryFolder or not inventoryFolder:IsA("Folder") then
+			setInventoryViewerText(string.format("%s has no readable Data.Inventory folder.", selectedPlayer.Name))
+			return
+		end
+
+		local folderNames = {}
+		for _, child in ipairs(inventoryFolder:GetChildren()) do
+			if child:IsA("Folder") then
+				table.insert(folderNames, child.Name)
+			end
+		end
+		table.sort(folderNames, function(left, right)
+			return left:lower() < right:lower()
+		end)
+
+		if #folderNames == 0 then
+			setInventoryViewerText(string.format("%s inventory has no folders.", selectedPlayer.Name))
+			return
+		end
+
+		setInventoryViewerText(string.format(
+			"%s Inventory:\n%s",
+			selectedPlayer.Name,
+			table.concat(folderNames, "\n")
+		))
+	end
+
+	local function refreshInventoryViewerDropdown(preferredSelection)
+		buildInventoryPlayerLabels()
+
+		if Options.InventoryViewerPlayer then
+			Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
+			local currentSelection = preferredSelection
+				or Options.InventoryViewerPlayer.Value
+				or (inventoryPlayerLabels[2] or "(none)")
+			if not inventoryPlayerMap[currentSelection] then
+				currentSelection = inventoryPlayerLabels[2] or "(none)"
+			end
+			Options.InventoryViewerPlayer:SetValue(currentSelection)
+		end
+
+		renderSelectedInventory()
+	end
+
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
 	miscGroup:AddButton("Hop to Low Server", function()
 		hopToLowestPopulationServer()
@@ -5558,8 +5703,10 @@ local function setupMiscTab()
 	end)
 
 	local alertsGroup = miscTab:AddLeftGroupbox("Alerts")
-	alertsGroup:AddLabel("Alerts section placeholder.")
-	alertsGroup:AddLabel("Features will be added later.")
+	alertsGroup:AddToggle("StaffDetectorEnabled", {
+		Text = "Mod/Admin Detector",
+		Default = false,
+	})
 
 	local visualsGroup = miscTab:AddLeftGroupbox("Visuals")
 	visualsGroup:AddToggle("MiscFpsBoostEnabled", {
@@ -5590,8 +5737,13 @@ local function setupMiscTab()
 	lootGroup:AddLabel("Features will be added later.")
 
 	local inventoryGroup = miscTab:AddRightGroupbox("Inventory")
-	inventoryGroup:AddLabel("Inventory section placeholder.")
-	inventoryGroup:AddLabel("Features will be added later.")
+	inventoryGroup:AddDropdown("InventoryViewerPlayer", {
+		Text = "Player",
+		Values = inventoryPlayerLabels,
+		Default = 1,
+		Multi = false,
+	})
+	inventoryListLabel = inventoryGroup:AddLabel("Select a player to view inventory folders.", true)
 
 	local farmsGroup = miscTab:AddRightGroupbox("Farms")
 	farmsGroup:AddLabel("Farms section placeholder.")
@@ -5601,8 +5753,28 @@ local function setupMiscTab()
 	Toggles.MiscChunkLoaderEnabled:OnChanged(applyVisualSettings)
 	Toggles.MiscDisableShadowsEnabled:OnChanged(applyVisualSettings)
 	Options.MiscRenderDistance:OnChanged(applyVisualSettings)
+	Toggles.StaffDetectorEnabled:OnChanged(function()
+		if Toggles.StaffDetectorEnabled.Value then
+			startStaffDetector()
+		else
+			stopStaffDetector()
+		end
+	end)
+	Options.InventoryViewerPlayer:OnChanged(function()
+		renderSelectedInventory()
+	end)
+	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
+		refreshInventoryViewerDropdown(player.Name)
+	end))
+	maid:GiveTask(Players.PlayerRemoving:Connect(function(player)
+		local currentSelection = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
+		local preferredSelection = currentSelection ~= player.Name and currentSelection or nil
+		refreshInventoryViewerDropdown(preferredSelection)
+	end))
+	refreshInventoryViewerDropdown()
 
 	registerLibraryUnloadCallback(function()
+		stopStaffDetector()
 		pcall(function()
 			Lighting.GlobalShadows = originalVisualSettings.globalShadows
 		end)
