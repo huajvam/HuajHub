@@ -723,6 +723,8 @@ local function setupLocalCheatsTab()
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
 	local antiFallCharacterConnection = nil
+	local godModeHeartbeatConnection = nil
+	local godModeCharacterConnection = nil
 	local noStunHeartbeatConnection = nil
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
@@ -734,6 +736,8 @@ local function setupLocalCheatsTab()
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
+	local godModeState = nil
+	local godModeCreatedState = false
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1147,6 +1151,101 @@ local function setupLocalCheatsTab()
 		antiFallProtectedUntil = 0
 		teleportAntiFallUntil = 0
 		removeAntiFallState()
+	end
+
+	local function removeGodModeState()
+		if godModeState then
+			if godModeCreatedState then
+				pcall(function()
+					godModeState:Destroy()
+				end)
+			else
+				pcall(function()
+					godModeState.Value = false
+				end)
+			end
+		end
+
+		godModeState = nil
+		godModeCreatedState = false
+	end
+
+	local function ensureGodModeState(character)
+		if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
+			return
+		end
+
+		local characterState = getCharacterStateFolder(character)
+		if not characterState then
+			return
+		end
+
+		if godModeState and godModeState.Parent ~= characterState then
+			godModeState = nil
+			godModeCreatedState = false
+		end
+
+		if not godModeState then
+			local existing = characterState:FindFirstChild("IFrames")
+			if existing and existing:IsA("BoolValue") then
+				godModeState = existing
+				godModeCreatedState = false
+			else
+				local iFrames = Instance.new("BoolValue")
+				iFrames.Name = "IFrames"
+				iFrames.Value = true
+				iFrames.Parent = characterState
+				godModeState = iFrames
+				godModeCreatedState = true
+			end
+		end
+
+		if godModeState then
+			pcall(function()
+				godModeState.Value = true
+			end)
+		end
+	end
+
+	local function stopGodMode()
+		if godModeHeartbeatConnection then
+			godModeHeartbeatConnection:Disconnect()
+			godModeHeartbeatConnection = nil
+		end
+		if godModeCharacterConnection then
+			godModeCharacterConnection:Disconnect()
+			godModeCharacterConnection = nil
+		end
+
+		removeGodModeState()
+	end
+
+	local function startGodMode()
+		stopGodMode()
+
+		local function hookCharacter(character)
+			ensureGodModeState(character)
+		end
+
+		local currentCharacter = LocalPlayer and LocalPlayer.Character
+		if currentCharacter then
+			hookCharacter(currentCharacter)
+		end
+
+		godModeCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+			task.defer(function()
+				if Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value then
+					hookCharacter(character)
+				end
+			end)
+		end)
+
+		godModeHeartbeatConnection = RunService.Heartbeat:Connect(function()
+			local character = LocalPlayer and LocalPlayer.Character
+			if character then
+				ensureGodModeState(character)
+			end
+		end)
 	end
 
 	local function getCharacterMovementState()
@@ -1569,6 +1668,11 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
+	combatGroup:AddToggle("GodModeEnabled", {
+		Text = "God Mode",
+		Default = false,
+	})
+
 	combatGroup:AddToggle("NoStunEnabled", {
 		Text = "No Stun",
 		Default = false,
@@ -1628,6 +1732,14 @@ local function setupLocalCheatsTab()
 			startAntiFall()
 		else
 			stopAntiFall()
+		end
+	end)
+
+	Toggles.GodModeEnabled:OnChanged(function()
+		if Toggles.GodModeEnabled.Value then
+			startGodMode()
+		else
+			stopGodMode()
 		end
 	end)
 
@@ -1860,6 +1972,7 @@ local function setupLocalCheatsTab()
 		stopFly()
 		stopNoclip()
 		stopAntiFall()
+		stopGodMode()
 		stopNoStun()
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
@@ -1869,6 +1982,7 @@ local function setupLocalCheatsTab()
 	stopFly()
 	stopNoclip()
 	stopAntiFall()
+	stopGodMode()
 	stopNoStun()
 	stopKnockedOwnership()
 end
