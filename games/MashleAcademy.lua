@@ -841,7 +841,15 @@ local function setupLocalCheatsTab()
 			return
 		end
 
-		applyTeleportAntiFallProtection(character, 2)
+		local protectionDuration = 2
+		applyTeleportAntiFallProtection(character, protectionDuration)
+		installFallDamageBlockHook()
+		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+		task.delay(protectionDuration + 0.2, function()
+			if not isTeleportAntiFallActive() then
+				GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
+			end
+		end)
 		root.AssemblyLinearVelocity = Vector3.zero
 		root.CFrame = targetCFrame
 		Library:Notify("Teleported to " .. tostring(targetLabel) .. ".", 2)
@@ -998,7 +1006,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function shouldBlockTeleportFallDamageRequest(instance, args)
-		if not shouldUseAntiFallProtection() then
+		if not isTeleportAntiFallActive() then
 			return false
 		end
 
