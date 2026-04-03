@@ -736,12 +736,10 @@ local function setupLocalCheatsTab()
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
-	local godModeState = nil
-	local godModeCreatedState = false
-	local godModeSpawnProtectionState = nil
-	local godModeCreatedSpawnProtectionState = false
-	local godModeHighlight = nil
-	local godModeCreatedHighlight = false
+	local godModeStates = {}
+	local GOD_MODE_STATE_NAMES = {"NotParryableStun", "Ragdoll"}
+	local GOD_MODE_BURST_PER_HEARTBEAT = 6
+	local GOD_MODE_MAX_STATES = 180
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1174,14 +1172,42 @@ local function setupLocalCheatsTab()
 	end
 
 	local function removeGodModeState()
-		if godModeState then
-			pcall(function()
-				godModeState:Destroy()
+		for index = #godModeStates, 1, -1 do
+			local stateValue = godModeStates[index]
+			if stateValue then
+				pcall(function()
+					stateValue:Destroy()
+				end)
+			end
+			godModeStates[index] = nil
+		end
+	end
+
+	local function createGodModeState(characterState, stateName)
+		local template = getNilInstance(stateName, "BoolValue")
+		local stateValue = nil
+		if template then
+			local ok, clone = pcall(function()
+				return template:Clone()
 			end)
+			if ok and clone and clone:IsA("BoolValue") then
+				stateValue = clone
+			end
 		end
 
-		godModeState = nil
-		godModeCreatedState = false
+		if not stateValue then
+			stateValue = Instance.new("BoolValue")
+			stateValue.Name = stateName
+		end
+
+		stateValue.Name = stateName
+		stateValue.Value = true
+		pcall(function()
+			stateValue:SetAttribute("Lifetime", 1)
+		end)
+		stateValue.Parent = characterState
+		table.insert(godModeStates, stateValue)
+		return stateValue
 	end
 
 	local function ensureGodModeState(character)
@@ -1194,39 +1220,32 @@ local function setupLocalCheatsTab()
 			return
 		end
 
-		if godModeState and godModeState.Parent ~= characterState then
-			godModeState = nil
-			godModeCreatedState = false
-		end
-
-		if not godModeState then
-			local existing = characterState:FindFirstChild("NotParryableStun")
-			if existing and existing:IsA("BoolValue") then
-				godModeState = existing
-				godModeCreatedState = false
+		for index = #godModeStates, 1, -1 do
+			local stateValue = godModeStates[index]
+			if not stateValue or stateValue.Parent ~= characterState then
+				table.remove(godModeStates, index)
 			else
-				local nilState = getNilInstance("NotParryableStun", "BoolValue")
-				if nilState then
-					pcall(function()
-						nilState.Parent = characterState
-					end)
-					godModeState = nilState
-					godModeCreatedState = false
-				else
-					local stunState = Instance.new("BoolValue")
-					stunState.Name = "NotParryableStun"
-					stunState.Value = true
-					stunState.Parent = characterState
-					godModeState = stunState
-					godModeCreatedState = true
-				end
+				pcall(function()
+					stateValue.Value = true
+					stateValue:SetAttribute("Lifetime", 1)
+				end)
 			end
 		end
 
-		if godModeState then
-			pcall(function()
-				godModeState.Value = true
-			end)
+		if #godModeStates >= GOD_MODE_MAX_STATES then
+			return
+		end
+
+		for _, stateName in ipairs(GOD_MODE_STATE_NAMES) do
+			for _ = 1, GOD_MODE_BURST_PER_HEARTBEAT do
+				if #godModeStates >= GOD_MODE_MAX_STATES then
+					return
+				end
+
+				pcall(function()
+					createGodModeState(characterState, stateName)
+				end)
+			end
 		end
 	end
 
