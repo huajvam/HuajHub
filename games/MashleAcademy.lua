@@ -5505,9 +5505,50 @@ local function setupMiscTab()
 		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
 	end
 
+	local function hopToHighestPopulationServer()
+		local placeId = game.PlaceId
+		local currentJobId = game.JobId
+		local bestServer = nil
+		local cursor = nil
+		local pagesChecked = 0
+
+		repeat
+			local payload, errorMessage = fetchServerPage(placeId, cursor)
+			if not payload then
+				Library:Notify(errorMessage or "Failed to fetch servers.", 3)
+				return
+			end
+
+			for _, server in ipairs(payload.data or {}) do
+				local serverId = server.id
+				local playing = tonumber(server.playing) or -1
+				local maxPlayers = tonumber(server.maxPlayers) or 0
+				if serverId and serverId ~= currentJobId and playing < maxPlayers then
+					if not bestServer or playing > (tonumber(bestServer.playing) or -1) then
+						bestServer = server
+					end
+				end
+			end
+
+			cursor = payload.nextPageCursor
+			pagesChecked += 1
+		until not cursor or pagesChecked >= 5
+
+		if not bestServer or not bestServer.id then
+			Library:Notify("No higher-population server was found.", 3)
+			return
+		end
+
+		Library:Notify(string.format("Hopping to server with %s players...", tostring(bestServer.playing)), 3)
+		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
+	end
+
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
 	miscGroup:AddButton("Hop to Low Server", function()
 		hopToLowestPopulationServer()
+	end)
+	miscGroup:AddButton("Hop to High Server", function()
+		hopToHighestPopulationServer()
 	end)
 
 	local alertsGroup = miscTab:AddLeftGroupbox("Alerts")
