@@ -5509,6 +5509,7 @@ local function setupMiscTab()
 		local placeId = game.PlaceId
 		local currentJobId = game.JobId
 		local bestServer = nil
+		local bestScore = -1
 		local cursor = nil
 		local pagesChecked = 0
 
@@ -5523,9 +5524,14 @@ local function setupMiscTab()
 				local serverId = server.id
 				local playing = tonumber(server.playing) or -1
 				local maxPlayers = tonumber(server.maxPlayers) or 0
-				if serverId and serverId ~= currentJobId and playing < maxPlayers then
-					if not bestServer or playing > (tonumber(bestServer.playing) or -1) then
+				local openSlots = maxPlayers - playing
+				if serverId and serverId ~= currentJobId and openSlots > 0 then
+					local fillRatio = maxPlayers > 0 and (playing / maxPlayers) or 0
+					local preferredOpenSlotPenalty = math.abs(openSlots - 1) * 0.05
+					local score = fillRatio - preferredOpenSlotPenalty
+					if score > bestScore then
 						bestServer = server
+						bestScore = score
 					end
 				end
 			end
