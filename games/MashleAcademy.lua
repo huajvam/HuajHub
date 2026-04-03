@@ -5623,13 +5623,10 @@ local function setupMiscTab()
 		inventoryPlayerLabels = {"(none)"}
 
 		local playersList = {}
-		for _, child in ipairs(Players:GetChildren()) do
+		for _, child in ipairs(game:GetService("Players"):GetChildren()) do
 			if child:IsA("Player") then
 				table.insert(playersList, child)
 			end
-		end
-		if #playersList == 0 then
-			playersList = Players:GetPlayers()
 		end
 		table.sort(playersList, function(left, right)
 			return left.Name:lower() < right.Name:lower()

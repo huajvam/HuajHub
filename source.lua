@@ -6,6 +6,7 @@ local REPO_OWNER = GLOBAL_ENV.HuajHubRepoOwner or "huajvam"
 local REPO_NAME = GLOBAL_ENV.HuajHubRepoName or "HuajHub"
 local REPO_BRANCH = GLOBAL_ENV.HuajHubRepoBranch or "main"
 local RAW_BASE_URL = ("https://raw.githubusercontent.com/%s/%s/%s/"):format(REPO_OWNER, REPO_NAME, REPO_BRANCH)
+local LOCAL_REPO_BASE_DIR = "C:\\Users\\kevvu\\Desktop\\HuajHub"
 
 GLOBAL_ENV.HuajHubRawBaseUrl = RAW_BASE_URL
 
@@ -221,6 +222,17 @@ local function canReadLocalFile(path)
 end
 
 local function readModuleSource(path)
+	local localCandidates = {
+		path,
+		LOCAL_REPO_BASE_DIR .. "\\" .. path:gsub("/", "\\"),
+	}
+
+	for _, candidate in ipairs(localCandidates) do
+		if canReadLocalFile(candidate) then
+			return readfile(candidate), candidate
+		end
+	end
+
 	if canReadLocalFile(path) then
 		return readfile(path), "local"
 	end
