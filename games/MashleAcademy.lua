@@ -738,6 +738,8 @@ local function setupLocalCheatsTab()
 	local antiFallState = nil
 	local godModeState = nil
 	local godModeCreatedState = false
+	local godModeSpawnProtectionState = nil
+	local godModeCreatedSpawnProtectionState = false
 	local godModeHighlight = nil
 	local godModeCreatedHighlight = false
 	local antiFallProtectedUntil = 0
@@ -992,11 +994,18 @@ local function setupLocalCheatsTab()
 
 	local function shouldBlockTeleportFallDamageRequest(instance, args)
 		if not shouldUseAntiFallProtection() then
-			return false
+			if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
+				return false
+			end
 		end
 
 		if instance == nil or typeof(instance) ~= "Instance" or not instance:IsA("RemoteEvent") then
 			return false
+		end
+
+		if instance.Name == "SpawnProtectionCheck" then
+			local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+			return remotes ~= nil and instance.Parent == remotes and Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value
 		end
 
 		if instance.Name ~= "RequestModule" then
@@ -1171,6 +1180,21 @@ local function setupLocalCheatsTab()
 		godModeState = nil
 		godModeCreatedState = false
 
+		if godModeSpawnProtectionState then
+			if godModeCreatedSpawnProtectionState then
+				pcall(function()
+					godModeSpawnProtectionState:Destroy()
+				end)
+			else
+				pcall(function()
+					godModeSpawnProtectionState.Value = false
+				end)
+			end
+		end
+
+		godModeSpawnProtectionState = nil
+		godModeCreatedSpawnProtectionState = false
+
 		if godModeHighlight then
 			if godModeCreatedHighlight then
 				pcall(function()
@@ -1198,6 +1222,11 @@ local function setupLocalCheatsTab()
 			godModeCreatedState = false
 		end
 
+		if godModeSpawnProtectionState and godModeSpawnProtectionState.Parent ~= characterState then
+			godModeSpawnProtectionState = nil
+			godModeCreatedSpawnProtectionState = false
+		end
+
 		if godModeHighlight and godModeHighlight.Parent ~= character then
 			godModeHighlight = nil
 			godModeCreatedHighlight = false
@@ -1221,6 +1250,27 @@ local function setupLocalCheatsTab()
 		if godModeState then
 			pcall(function()
 				godModeState.Value = true
+			end)
+		end
+
+		if not godModeSpawnProtectionState then
+			local existingSpawnProtection = characterState:FindFirstChild("SpawnProtection")
+			if existingSpawnProtection and existingSpawnProtection:IsA("BoolValue") then
+				godModeSpawnProtectionState = existingSpawnProtection
+				godModeCreatedSpawnProtectionState = false
+			else
+				local spawnProtection = Instance.new("BoolValue")
+				spawnProtection.Name = "SpawnProtection"
+				spawnProtection.Value = true
+				spawnProtection.Parent = characterState
+				godModeSpawnProtectionState = spawnProtection
+				godModeCreatedSpawnProtectionState = true
+			end
+		end
+
+		if godModeSpawnProtectionState then
+			pcall(function()
+				godModeSpawnProtectionState.Value = true
 			end)
 		end
 
