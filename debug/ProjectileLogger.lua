@@ -113,6 +113,43 @@ local function isUnderLikelyProjectileFolder(instance)
 	return false
 end
 
+local function getProjectileRepresentative(instance)
+	if not instance then
+		return nil
+	end
+
+	if instance:IsA("ParticleEmitter") or instance:IsA("Beam") or instance:IsA("Trail") then
+		local attachmentParent = instance.Parent
+		local effectParent = attachmentParent and attachmentParent.Parent
+		if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
+			return effectParent
+		end
+		if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
+			return attachmentParent
+		end
+	end
+
+	if instance:IsA("Attachment") then
+		local attachmentParent = instance.Parent
+		local effectParent = attachmentParent and attachmentParent.Parent
+		if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
+			return effectParent
+		end
+		if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart")) then
+			return attachmentParent
+		end
+	end
+
+	if instance:IsA("BasePart") then
+		local modelAncestor = instance:FindFirstAncestorWhichIsA("Model")
+		if modelAncestor and modelAncestor ~= workspace then
+			return modelAncestor
+		end
+	end
+
+	return instance
+end
+
 local function getBasePart(instance)
 	if not instance then
 		return nil
@@ -239,21 +276,22 @@ local function shouldTrackInstance(instance)
 end
 
 local function addTrackedInstance(instance, reason)
-	if tracked[instance] then
+	local representative = getProjectileRepresentative(instance)
+	if not representative or tracked[representative] then
 		return
 	end
 
-	local distance = getDistanceToLocalPlayer(instance)
+	local distance = getDistanceToLocalPlayer(representative)
 	if distance and distance > getMaxDistance() then
 		return
 	end
 
-	tracked[instance] = {
+	tracked[representative] = {
 		addedAt = os.clock(),
 		reason = reason or "matched",
 	}
 
-	pushLog(string.format("track %s | reason=%s", describeInstance(instance), tostring(reason or "matched")))
+	pushLog(string.format("track %s | reason=%s", describeInstance(representative), tostring(reason or "matched")))
 end
 
 local function scanExisting()
