@@ -2276,7 +2276,60 @@ local function setupEspTab()
 		end
 
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		return humanoid == nil or humanoid.Health > 0
+		if humanoid ~= nil and humanoid.Health <= 0 then
+			return false
+		end
+
+		local academyName = getPlayerAcademyName(model)
+		return isAcademyEspEnabled(academyName)
+	end
+
+	local function getPlayerAcademyName(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local academyValue = dataFolder and dataFolder:FindFirstChild("Academy")
+		if academyValue and academyValue:IsA("StringValue") then
+			local academyName = tostring(academyValue.Value or "")
+			if academyName ~= "" then
+				return academyName
+			end
+		end
+
+		return nil
+	end
+
+	local function isAcademyEspEnabled(academyName)
+		local normalizedName = string.lower(tostring(academyName or ""))
+		if normalizedName == "walkis" then
+			return getToggleValue("EspShowWalkisAcademy", true)
+		end
+		if normalizedName == "saint ars" then
+			return getToggleValue("EspShowSaintArsAcademy", true)
+		end
+		if normalizedName == "easton" then
+			return getToggleValue("EspShowEastonAcademy", true)
+		end
+
+		return false
+	end
+
+	local function getPlayerEspAccentColor(model)
+		local normalizedName = string.lower(tostring(getPlayerAcademyName(model) or ""))
+		if normalizedName == "walkis" then
+			return Color3.fromRGB(255, 70, 70)
+		end
+		if normalizedName == "saint ars" then
+			return Color3.fromRGB(80, 255, 120)
+		end
+		if normalizedName == "easton" then
+			return Color3.fromRGB(40, 170, 255)
+		end
+
+		return Color3.fromRGB(190, 190, 190)
 	end
 
 	local function shouldShowMobEsp(model)
@@ -2547,13 +2600,14 @@ local function setupEspTab()
 		for _, model in ipairs(iterEspCandidateModels()) do
 			if shouldShowPlayerEsp(model) and shouldRenderEspModel(model, "player") then
 				validModels[model] = true
+				local accentColor = getPlayerEspAccentColor(model)
 				local entry = ensureEspEntry(
 					playerEspEntries,
 					model,
-					Color3.fromRGB(40, 170, 255)
+					accentColor
 				)
 				if entry then
-					updateEspEntry(entry, model, "player", Color3.fromRGB(40, 170, 255))
+					updateEspEntry(entry, model, "player", accentColor)
 				end
 			end
 		end
@@ -2631,6 +2685,21 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espGroup:AddToggle("EspShowWalkisAcademy", {
+		Text = "Walkis Academy",
+		Default = true,
+	})
+
+	espGroup:AddToggle("EspShowSaintArsAcademy", {
+		Text = "Saint Ars Academy",
+		Default = true,
+	})
+
+	espGroup:AddToggle("EspShowEastonAcademy", {
+		Text = "Easton Academy",
+		Default = true,
+	})
+
 	espGroup:AddToggle("MobEspEnabled", {
 		Text = "Mob ESP",
 		Default = false,
@@ -2694,6 +2763,18 @@ local function setupEspTab()
 			forceClearEsp()
 			return
 		end
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowWalkisAcademy:OnChanged(function()
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowSaintArsAcademy:OnChanged(function()
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowEastonAcademy:OnChanged(function()
 		updatePlayerEsp()
 	end)
 
@@ -5714,11 +5795,9 @@ local function setupMiscTab()
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
 			end)
-			local currentSelection = preferredSelection
-				or Options.InventoryViewerPlayer.Value
-				or (inventoryPlayerLabels[2] or "(none)")
+			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value or "(none)"
 			if not inventoryPlayerMap[currentSelection] then
-				currentSelection = inventoryPlayerLabels[2] or "(none)"
+				currentSelection = "(none)"
 			end
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValue(currentSelection)
@@ -5803,14 +5882,14 @@ local function setupMiscTab()
 		renderSelectedInventory()
 	end)
 	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
-		refreshInventoryViewerDropdown(player.Name)
+		refreshInventoryViewerDropdown("(none)")
 	end))
 	maid:GiveTask(Players.PlayerRemoving:Connect(function(player)
 		local currentSelection = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
-		local preferredSelection = currentSelection ~= player.Name and currentSelection or nil
+		local preferredSelection = currentSelection ~= player.Name and currentSelection or "(none)"
 		refreshInventoryViewerDropdown(preferredSelection)
 	end))
-	refreshInventoryViewerDropdown()
+	refreshInventoryViewerDropdown("(none)")
 
 	registerLibraryUnloadCallback(function()
 		stopStaffDetector()
