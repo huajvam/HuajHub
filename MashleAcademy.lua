@@ -11,7 +11,7 @@ local AdaptiveTimingUtils = sharedRequire("@utils/AdaptiveTimingUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
 local TrackedAnimatorRegistry = sharedRequire("classes/TrackedAnimatorRegistry.lua")
 
-local Players, ContextActionService, HttpService, Lighting, MarketplaceService, ReplicatedStorage, RunService, Stats, UserInputService, VirtualInputManager = Services:Get(
+local Players, ContextActionService, HttpService, Lighting, MarketplaceService, ReplicatedStorage, RunService, Stats, TeleportService, UserInputService, VirtualInputManager = Services:Get(
 	"Players",
 	"ContextActionService",
 	"HttpService",
@@ -20,6 +20,7 @@ local Players, ContextActionService, HttpService, Lighting, MarketplaceService, 
 	"ReplicatedStorage",
 	"RunService",
 	"Stats",
+	"TeleportService",
 	"UserInputService",
 	"VirtualInputManager"
 )
@@ -218,7 +219,6 @@ local function installFallDamageBlockHook()
 	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
 		local args = table.pack(...)
 		local callback = GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY]
-
 		local isCallerCheckAvailable = type(checkcaller) == "function"
 
 		if (not isCallerCheckAvailable or not checkcaller())
@@ -723,16 +723,30 @@ local function setupLocalCheatsTab()
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
 	local antiFallCharacterConnection = nil
+	local godModeHeartbeatConnection = nil
+	local godModeCharacterConnection = nil
+	local godModeLoopToken = 0
 	local noStunHeartbeatConnection = nil
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
 	local noStunHumanoidConnection = nil
+	local noStunNeutralizedStates = {}
 	local knockedOwnershipCharacterConnection = nil
 	local knockedOwnershipStateAddedConnection = nil
 	local knockedOwnershipStateRemovedConnection = nil
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
+	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
+		FallDamageValueTotal = -math.huge,
+		FallDamage = -math.huge,
+	}
+	local GOD_MODE_REMOTE_INTERVAL = 0.05
+	local GOD_MODE_REMOTE_BURST = 3
+	local GOD_MODE_INFINITE_HEALTH_THRESHOLD = 1e12
+	local godModeActive = false
+	local godModeSavedHealth = nil
+	local godModeSavedMaxHealth = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -923,8 +937,31 @@ local function setupLocalCheatsTab()
 		end
 
 		pcall(function()
-			valueObject:Destroy()
+			if not noStunNeutralizedStates[valueObject] then
+				noStunNeutralizedStates[valueObject] = {
+					name = valueObject.Name,
+					value = valueObject.Value,
+				}
+			end
+
+			valueObject.Value = false
+			valueObject.Name = "__HuajHubBlocked_" .. tostring(noStunNeutralizedStates[valueObject].name)
 		end)
+	end
+
+	local function restoreNoStunValues()
+		for valueObject, state in pairs(noStunNeutralizedStates) do
+			if valueObject and valueObject.Parent and type(state) == "table" then
+				pcall(function()
+					valueObject.Name = state.name or valueObject.Name
+					if state.value ~= nil then
+						valueObject.Value = state.value
+					end
+				end)
+			end
+		end
+
+		table.clear(noStunNeutralizedStates)
 	end
 
 	local function stopNoStun()
@@ -944,6 +981,8 @@ local function setupLocalCheatsTab()
 			noStunHumanoidConnection:Disconnect()
 			noStunHumanoidConnection = nil
 		end
+
+		restoreNoStunValues()
 	end
 
 	local function isAntiFallActive()
@@ -980,7 +1019,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function shouldMaintainLocalAntiFallState()
-		return isAntiFallActive() and os.clock() <= antiFallProtectedUntil
+		return false
 	end
 
 	local function shouldMaintainAntiFallState()
@@ -995,6 +1034,22 @@ local function setupLocalCheatsTab()
 		local characterState = character:FindFirstChild("CharacterState")
 		if characterState and characterState:IsA("Folder") then
 			return characterState
+		end
+
+		return nil
+	end
+
+	local function getNilInstance(name, className)
+		if type(getnilinstances) ~= "function" then
+			return nil
+		end
+
+		for _, instance in next, getnilinstances() do
+			if instance
+				and instance.Name == name
+				and instance.ClassName == className then
+				return instance
+			end
 		end
 
 		return nil
@@ -1123,6 +1178,173 @@ local function setupLocalCheatsTab()
 		removeAntiFallState()
 	end
 
+	local function removeGodModeState()
+		local humanoid = getCharacterHumanoid(LocalPlayer and LocalPlayer.Character)
+		if not humanoid then
+			godModeSavedHealth = nil
+			godModeSavedMaxHealth = nil
+			return
+		end
+
+		local restoredMaxHealth = godModeSavedMaxHealth
+		local restoredHealth = godModeSavedHealth
+
+		godModeSavedHealth = nil
+		godModeSavedMaxHealth = nil
+
+		if restoredMaxHealth and restoredMaxHealth > 0 then
+			pcall(function()
+				humanoid.MaxHealth = restoredMaxHealth
+			end)
+		end
+
+		if restoredHealth and restoredHealth > 0 then
+			pcall(function()
+				local maxHealth = humanoid.MaxHealth
+				humanoid.Health = math.clamp(restoredHealth, 0, maxHealth > 0 and maxHealth or restoredHealth)
+			end)
+		end
+	end
+
+	local function isHumanoidHealthInfinite(humanoid)
+		if not humanoid then
+			return false
+		end
+
+		local health = humanoid.Health
+		local maxHealth = humanoid.MaxHealth
+		if health == math.huge or maxHealth == math.huge then
+			return true
+		end
+
+		if health >= GOD_MODE_INFINITE_HEALTH_THRESHOLD or maxHealth >= GOD_MODE_INFINITE_HEALTH_THRESHOLD then
+			return true
+		end
+
+		return false
+	end
+
+	local function updateGodModeSavedHealth(humanoid)
+		if not humanoid then
+			return
+		end
+
+		if godModeSavedHealth == nil and godModeSavedMaxHealth == nil and not isHumanoidHealthInfinite(humanoid) then
+			godModeSavedHealth = humanoid.Health
+			godModeSavedMaxHealth = humanoid.MaxHealth
+		end
+	end
+
+	local function fireGodModeFallDamageRemote()
+		local requestModule = getRequestModuleRemote()
+		if not requestModule then
+			return
+		end
+
+		pcall(function()
+			requestModule:FireServer("Misc", "FallDamage", nil, {
+				FallDamageValueTotal = GOD_MODE_FALL_DAMAGE_PAYLOAD.FallDamageValueTotal,
+				FallDamage = GOD_MODE_FALL_DAMAGE_PAYLOAD.FallDamage,
+			})
+		end)
+	end
+
+	local function ensureGodModeState(character)
+		if not godModeActive then
+			return
+		end
+
+		if not character then
+			return
+		end
+
+		local humanoid = getCharacterHumanoid(character)
+		if humanoid then
+			updateGodModeSavedHealth(humanoid)
+			if isHumanoidHealthInfinite(humanoid) then
+				return
+			end
+		end
+
+		fireGodModeFallDamageRemote()
+	end
+
+	local function stopGodMode()
+		godModeActive = false
+		godModeLoopToken += 1
+		if godModeHeartbeatConnection then
+			godModeHeartbeatConnection:Disconnect()
+			godModeHeartbeatConnection = nil
+		end
+		if godModeCharacterConnection then
+			godModeCharacterConnection:Disconnect()
+			godModeCharacterConnection = nil
+		end
+
+		removeGodModeState()
+	end
+
+	local function startGodMode()
+		stopGodMode()
+		godModeActive = true
+		godModeLoopToken += 1
+		godModeSavedHealth = nil
+		godModeSavedMaxHealth = nil
+		local loopToken = godModeLoopToken
+
+		local function hookCharacter(character)
+			local humanoid = getCharacterHumanoid(character)
+			if humanoid then
+				godModeSavedHealth = humanoid.Health
+				godModeSavedMaxHealth = humanoid.MaxHealth
+			end
+			ensureGodModeState(character)
+		end
+
+		local currentCharacter = LocalPlayer and LocalPlayer.Character
+		if currentCharacter then
+			hookCharacter(currentCharacter)
+		end
+
+		godModeCharacterConnection = LocalPlayer.CharacterAdded:Connect(function(character)
+			task.defer(function()
+				if godModeActive then
+					hookCharacter(character)
+				end
+			end)
+		end)
+
+		godModeHeartbeatConnection = RunService.Heartbeat:Connect(function()
+			local character = LocalPlayer and LocalPlayer.Character
+			if character then
+				ensureGodModeState(character)
+			end
+		end)
+
+		task.spawn(function()
+			while loopToken == godModeLoopToken do
+				if not godModeActive then
+					break
+				end
+
+				local humanoid = getCharacterHumanoid(LocalPlayer and LocalPlayer.Character)
+				if humanoid then
+					updateGodModeSavedHealth(humanoid)
+					if isHumanoidHealthInfinite(humanoid) then
+						godModeActive = false
+						break
+					end
+				end
+
+				for _ = 1, GOD_MODE_REMOTE_BURST do
+					fireGodModeFallDamageRemote()
+				end
+
+				task.wait(GOD_MODE_REMOTE_INTERVAL)
+			end
+		end)
+	end
+
 	local function getCharacterMovementState()
 		local character = LocalPlayer and LocalPlayer.Character
 		local humanoid = getCharacterHumanoid(character)
@@ -1132,6 +1354,26 @@ local function setupLocalCheatsTab()
 		end
 
 		return humanoid, rootPart
+	end
+
+	local function isBringableMob(model)
+		if not model or not model:IsA("Model") then
+			return false
+		end
+
+		if LocalPlayer and LocalPlayer.Character == model then
+			return false
+		end
+
+		if Players:GetPlayerFromCharacter(model) then
+			return false
+		end
+
+		if not getCharacterHumanoid(model) or not getCharacterRoot(model) then
+			return false
+		end
+
+		return true
 	end
 
 	local function getKnockedOwnershipTool(character)
@@ -1553,6 +1795,10 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
+	combatGroup:AddButton("God Mode", function()
+		startGodMode()
+	end)
+
 	teleportGroup:AddDropdown("TeleportDestination", {
 		Text = "Destination",
 		Values = teleportLabels,
@@ -1568,8 +1814,7 @@ local function setupLocalCheatsTab()
 		teleportToSelectedDestination()
 	end)
 
-	installFallDamageBlockHook()
-	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
@@ -1834,6 +2079,7 @@ local function setupLocalCheatsTab()
 		stopFly()
 		stopNoclip()
 		stopAntiFall()
+		stopGodMode()
 		stopNoStun()
 		stopKnockedOwnership()
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
@@ -1843,6 +2089,7 @@ local function setupLocalCheatsTab()
 	stopFly()
 	stopNoclip()
 	stopAntiFall()
+	stopGodMode()
 	stopNoStun()
 	stopKnockedOwnership()
 end
@@ -2021,6 +2268,229 @@ local function setupEspTab()
 		return entry
 	end
 
+	local function ensureEntryStaminaBar(entry)
+		if not entry or not drawingAvailable then
+			return
+		end
+
+		if not entry.staminaBarOutline then
+			entry.staminaBarOutline = EntityESP.createDrawing(globalEspDrawings, "Square", {
+				Filled = false,
+				Thickness = 1,
+				Transparency = 1,
+				Color = Color3.fromRGB(20, 20, 20),
+				Visible = false,
+			}, function()
+				return espShuttingDown
+			end)
+			table.insert(entry.objects, entry.staminaBarOutline)
+		end
+
+		if not entry.staminaBarFill then
+			entry.staminaBarFill = EntityESP.createDrawing(globalEspDrawings, "Square", {
+				Filled = true,
+				Thickness = 1,
+				Transparency = 1,
+				Color = Color3.fromRGB(240, 200, 60),
+				Visible = false,
+			}, function()
+				return espShuttingDown
+			end)
+			table.insert(entry.objects, entry.staminaBarFill)
+		end
+	end
+
+	local function setEntryStaminaBar(entry, position, size, fillPosition, fillSize, fillColor, visible)
+		if not entry then
+			return
+		end
+
+		ensureEntryStaminaBar(entry)
+
+		if entry.staminaBarOutline then
+			entry.staminaBarOutline.Position = position
+			entry.staminaBarOutline.Size = size
+			entry.staminaBarOutline.Visible = visible == true
+		end
+
+		if entry.staminaBarFill then
+			entry.staminaBarFill.Position = fillPosition
+			entry.staminaBarFill.Size = fillSize
+			entry.staminaBarFill.Color = fillColor or entry.staminaBarFill.Color
+			entry.staminaBarFill.Visible = visible == true
+		end
+	end
+
+	local function ensureEntryStaminaText(entry)
+		if not entry or not drawingAvailable or entry.staminaText then
+			return
+		end
+
+		entry.staminaText = EntityESP.createDrawing(globalEspDrawings, "Text", {
+			Center = true,
+			Outline = true,
+			Size = 13,
+			Font = 2,
+			Transparency = 1,
+			Color = Color3.fromRGB(240, 200, 60),
+			Visible = false,
+		}, function()
+			return espShuttingDown
+		end)
+
+		if entry.staminaText then
+			table.insert(entry.objects, entry.staminaText)
+		end
+	end
+
+	local function setEntryText(entry, textObjectName, text, position, visible)
+		if not entry then
+			return
+		end
+
+		local textObject = entry[textObjectName]
+		if not textObject and textObjectName == "staminaText" then
+			ensureEntryStaminaText(entry)
+			textObject = entry.staminaText
+		end
+
+		if type(entry.setText) == "function" and textObject then
+			entry:setText(textObject, text, position, visible)
+			return
+		end
+
+		if not textObject then
+			return
+		end
+
+		textObject.Text = text or ""
+		textObject.Position = position or Vector2.zero
+		textObject.Visible = visible == true
+	end
+
+	local function getPlayerAcademyName(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local academyValue = dataFolder and dataFolder:FindFirstChild("Academy")
+		if academyValue and academyValue:IsA("StringValue") then
+			local academyName = tostring(academyValue.Value or "")
+			if academyName ~= "" then
+				return academyName
+			end
+		end
+
+		return nil
+	end
+
+	local function isAcademyEspEnabled(academyName)
+		local normalizedName = string.lower(tostring(academyName or ""))
+		if normalizedName == "walkis" then
+			return getToggleValue("EspShowWalkisAcademy", true)
+		end
+		if normalizedName == "saint ars" then
+			return getToggleValue("EspShowSaintArsAcademy", true)
+		end
+		if normalizedName == "easton" then
+			return getToggleValue("EspShowEastonAcademy", true)
+		end
+
+		return false
+	end
+
+	local function getPlayerEspAccentColor(model)
+		local normalizedName = string.lower(tostring(getPlayerAcademyName(model) or ""))
+		if normalizedName == "walkis" then
+			return Color3.fromRGB(255, 70, 70)
+		end
+		if normalizedName == "saint ars" then
+			return Color3.fromRGB(80, 255, 120)
+		end
+		if normalizedName == "easton" then
+			return Color3.fromRGB(40, 170, 255)
+		end
+
+		return Color3.fromRGB(190, 190, 190)
+	end
+
+	local function getPlayerMagicMarksValue(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local magicMarksValue = dataFolder and dataFolder:FindFirstChild("MagicMarks")
+		if magicMarksValue and magicMarksValue:IsA("NumberValue") then
+			local value = tonumber(magicMarksValue.Value)
+			if value then
+				return math.floor(value + 0.5)
+			end
+		end
+
+		return nil
+	end
+
+	local function getPlayerRankValue(model)
+		local ownerPlayer = Players:GetPlayerFromCharacter(model)
+		if not ownerPlayer then
+			return nil
+		end
+
+		local dataFolder = ownerPlayer:FindFirstChild("Data")
+		local statsFolder = dataFolder and dataFolder:FindFirstChild("Stats")
+		local rankValue = statsFolder and statsFolder:FindFirstChild("LevelRank")
+		if rankValue and rankValue:IsA("StringValue") then
+			local value = tostring(rankValue.Value or "")
+			if value ~= "" then
+				return value
+			end
+		end
+
+		return nil
+	end
+
+	local function getEspStaminaState(model)
+		if not model or not model:IsA("Model") then
+			return nil, nil
+		end
+
+		local characterState = model:FindFirstChild("CharacterState")
+		if not characterState then
+			local ownerPlayer = Players:GetPlayerFromCharacter(model)
+			local liveFolder = getEspLiveFolder()
+			local liveModel = liveFolder and ownerPlayer and liveFolder:FindFirstChild(ownerPlayer.Name)
+			characterState = liveModel and liveModel:FindFirstChild("CharacterState")
+		end
+
+		local staminaValue = characterState and characterState:FindFirstChild("Stamina")
+		if not staminaValue or not staminaValue:IsA("NumberValue") then
+			return nil, nil
+		end
+
+		local currentValue = tonumber(staminaValue.Value)
+		if not currentValue then
+			return nil, nil
+		end
+
+		local staminaMaxValue = characterState and characterState:FindFirstChild("StaminaMax")
+		local maxValue = tonumber(staminaMaxValue and staminaMaxValue:IsA("NumberValue") and staminaMaxValue.Value)
+			or tonumber(staminaValue:GetAttribute("MaxValue"))
+			or tonumber(staminaValue:GetAttribute("Max"))
+			or tonumber(staminaValue:GetAttribute("Maximum"))
+			or tonumber(staminaValue:GetAttribute("Base"))
+			or 3
+
+		if maxValue <= 0 then
+			maxValue = math.max(currentValue, 3)
+		end
+
+		return math.clamp(currentValue, 0, maxValue), maxValue
+	end
+
 	local function shouldShowPlayerEsp(model)
 		local targetType = getEspTargetType(model)
 		if targetType ~= "player" then
@@ -2028,7 +2498,12 @@ local function setupEspTab()
 		end
 
 		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		return humanoid == nil or humanoid.Health > 0
+		if humanoid ~= nil and humanoid.Health <= 0 then
+			return false
+		end
+
+		local academyName = getPlayerAcademyName(model)
+		return isAcademyEspEnabled(academyName)
 	end
 
 	local function shouldShowMobEsp(model)
@@ -2204,8 +2679,44 @@ local function setupEspTab()
 		entry:hideSkeletonFrom(lineIndex)
 	end
 
+	local function hideDrawingObject(object)
+		if not object then
+			return
+		end
+
+		pcall(function()
+			object.Visible = false
+		end)
+	end
+
 	local function hideEspEntry(entry)
-		entry:hide()
+		if not entry then
+			return
+		end
+
+		if entry.boxLines then
+			for _, line in ipairs(entry.boxLines) do
+				hideDrawingObject(line)
+			end
+		end
+
+		if entry.skeletonLines then
+			for _, line in ipairs(entry.skeletonLines) do
+				hideDrawingObject(line)
+			end
+		end
+
+		hideDrawingObject(entry.healthBarOutline)
+		hideDrawingObject(entry.healthBarFill)
+		hideDrawingObject(entry.staminaBarOutline)
+		hideDrawingObject(entry.staminaBarFill)
+		hideDrawingObject(entry.nameText)
+		hideDrawingObject(entry.distanceText)
+		hideDrawingObject(entry.healthText)
+		hideDrawingObject(entry.staminaText)
+		hideDrawingObject(entry.magicMarksText)
+		hideDrawingObject(entry.rankText)
+		hideDrawingObject(entry.tracerLine)
 	end
 
 	local function updateEspEntry(entry, model, targetType, accentColor)
@@ -2254,25 +2765,67 @@ local function setupEspTab()
 			getToggleValue("EspShowHealthBar", true) and humanoid ~= nil
 		)
 
-		entry:setText(
-			entry.nameText,
+		local staminaValue, staminaMax = getEspStaminaState(model)
+		local staminaRatio = (staminaValue and staminaMax and staminaMax > 0) and math.clamp(staminaValue / staminaMax, 0, 1) or 0
+		local staminaBarX = box.right + 3
+		setEntryStaminaBar(
+			entry,
+			Vector2.new(staminaBarX, box.top),
+			Vector2.new(barWidth, barHeight),
+			Vector2.new(staminaBarX + 1, box.bottom - ((barHeight - 2) * staminaRatio) - 1),
+			Vector2.new(barWidth - 2, math.max((barHeight - 2) * staminaRatio, 1)),
+			Color3.fromRGB(240, 200, 60),
+			getToggleValue("EspShowStaminaBar", false) and staminaValue ~= nil
+		)
+
+		setEntryText(
+			entry,
+			"nameText",
 			getEspDisplayName(model, targetType),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 14),
 			getToggleValue("EspShowNames", true)
 		)
 
-		entry:setText(
-			entry.distanceText,
+		local magicMarksValue = targetType == "player" and getPlayerMagicMarksValue(model) or nil
+		local rankValue = targetType == "player" and getPlayerRankValue(model) or nil
+		setEntryText(
+			entry,
+			"rankText",
+			rankValue and string.format("Rank: %s", rankValue) or "",
+			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 27),
+			targetType == "player" and rankValue ~= nil and getToggleValue("EspShowRankText", false)
+		)
+
+		setEntryText(
+			entry,
+			"magicMarksText",
+			magicMarksValue and string.format("Mark: %d", magicMarksValue) or "",
+			Vector2.new(box.left + (box.width * 0.5) + 42, box.top - 14),
+			targetType == "player" and magicMarksValue ~= nil and getToggleValue("EspShowMagicMarks", false)
+		)
+
+		setEntryText(
+			entry,
+			"distanceText",
 			string.format("%.0f studs", distance),
 			Vector2.new(box.left + (box.width * 0.5), box.bottom + 1),
 			getToggleValue("EspShowDistance", true)
 		)
 
-		entry:setText(
-			entry.healthText,
+		setEntryText(
+			entry,
+			"healthText",
 			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 27),
 			getToggleValue("EspShowHealthText", false) and humanoid ~= nil
+		)
+
+		setEntryText(
+			entry,
+			"staminaText",
+			staminaValue and string.format("%d/%d Stamina", math.floor(staminaValue + 0.5), math.floor(staminaMax + 0.5)) or "",
+			Vector2.new(box.left + (box.width * 0.5), box.top - 40),
+			getToggleValue("EspShowStaminaText", false) and staminaValue ~= nil and staminaMax ~= nil
 		)
 
 		entry:setTracer(tracerStart, tracerEnd, accentColor, getToggleValue("EspShowTracers", true))
@@ -2299,13 +2852,14 @@ local function setupEspTab()
 		for _, model in ipairs(iterEspCandidateModels()) do
 			if shouldShowPlayerEsp(model) and shouldRenderEspModel(model, "player") then
 				validModels[model] = true
+				local accentColor = getPlayerEspAccentColor(model)
 				local entry = ensureEspEntry(
 					playerEspEntries,
 					model,
-					Color3.fromRGB(40, 170, 255)
+					accentColor
 				)
 				if entry then
-					updateEspEntry(entry, model, "player", Color3.fromRGB(40, 170, 255))
+					updateEspEntry(entry, model, "player", accentColor)
 				end
 			end
 		end
@@ -2332,13 +2886,14 @@ local function setupEspTab()
 		for _, model in ipairs(iterEspCandidateModels()) do
 			if shouldShowMobEsp(model) and shouldRenderEspModel(model, "mob") then
 				validModels[model] = true
+				local accentColor = Color3.fromRGB(255, 255, 255)
 				local entry = ensureEspEntry(
 					mobEspEntries,
 					model,
-					Color3.fromRGB(80, 255, 140)
+					accentColor
 				)
 				if entry then
-					updateEspEntry(entry, model, "mob", Color3.fromRGB(80, 255, 140))
+					updateEspEntry(entry, model, "mob", accentColor)
 				end
 			end
 		end
@@ -2383,6 +2938,21 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espGroup:AddToggle("EspShowWalkisAcademy", {
+		Text = "Walkis Academy",
+		Default = true,
+	})
+
+	espGroup:AddToggle("EspShowSaintArsAcademy", {
+		Text = "Saint Ars Academy",
+		Default = true,
+	})
+
+	espGroup:AddToggle("EspShowEastonAcademy", {
+		Text = "Easton Academy",
+		Default = true,
+	})
+
 	espGroup:AddToggle("MobEspEnabled", {
 		Text = "Mob ESP",
 		Default = false,
@@ -2421,9 +2991,29 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espVisualGroup:AddToggle("EspShowStaminaText", {
+		Text = "Stamina Text",
+		Default = true,
+	})
+
+	espVisualGroup:AddToggle("EspShowMagicMarks", {
+		Text = "Magic Marks",
+		Default = false,
+	})
+
+	espVisualGroup:AddToggle("EspShowRankText", {
+		Text = "Rank Esp",
+		Default = false,
+	})
+
 	espVisualGroup:AddToggle("EspShowHealthBar", {
 		Text = "Health Bar",
 		Default = true,
+	})
+
+	espVisualGroup:AddToggle("EspShowStaminaBar", {
+		Text = "Stamina Bar",
+		Default = false,
 	})
 
 	espVisualGroup:AddToggle("EspShowBox", {
@@ -2446,6 +3036,18 @@ local function setupEspTab()
 			forceClearEsp()
 			return
 		end
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowWalkisAcademy:OnChanged(function()
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowSaintArsAcademy:OnChanged(function()
+		updatePlayerEsp()
+	end)
+
+	Toggles.EspShowEastonAcademy:OnChanged(function()
 		updatePlayerEsp()
 	end)
 
@@ -2477,7 +3079,23 @@ local function setupEspTab()
 		refreshEsp()
 	end)
 
+	Toggles.EspShowStaminaText:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowMagicMarks:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowRankText:OnChanged(function()
+		refreshEsp()
+	end)
+
 	Toggles.EspShowHealthBar:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowStaminaBar:OnChanged(function()
 		refreshEsp()
 	end)
 
@@ -2612,6 +3230,7 @@ local function setupAutoParryTab()
 	local onCreateMakerConfig
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
+	local deleteMakerConfigById
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
@@ -2647,6 +3266,7 @@ local function setupAutoParryTab()
 		trackedTargets = {},
 		handledTracks = {},
 		queuedTracks = {},
+		recentAnimationActions = {},
 		inputBlockUntil = 0,
 		inputBlockActive = false,
 		lastParryAt = 0,
@@ -2661,6 +3281,7 @@ local function setupAutoParryTab()
 		lastManualDashAnimationId = nil,
 		lastManualDashAssetUrl = nil,
 		manualBlockCaptureStartedAt = 0,
+		manualBlockCaptureConsumed = false,
 		pendingParryFailCheck = nil,
 		pendingManualParryDebugMessage = nil,
 		pendingManualDashDebugMessage = nil,
@@ -2923,17 +3544,45 @@ local function setupAutoParryTab()
 		Rounding = 0,
 		Suffix = " studs",
 	})
-	local createMakerConfigButton = autoParryMakerGroup:AddButton("Create Config", function()
+	autoParryMakerGroup:AddButton("Create Config", function()
 		if onCreateMakerConfig then
 			onCreateMakerConfig()
 		end
 	end)
-	local saveMakerConfigButton = createMakerConfigButton:AddButton("Save Config", function()
+	autoParryMakerGroup:AddButton("Save Config", function()
 		if onSaveMakerConfig then
 			onSaveMakerConfig()
 		end
 	end)
-	local autoGetMakerConfigButton = autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
+	autoParryMakerGroup:AddButton("Delete Config", function()
+		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
+		local configId = autoParryState.currentBuilderConfigId
+		if (not configId or configId == "") and Options and Options.AutoParryMakerSavedConfig then
+			local selectedLabel = Options.AutoParryMakerSavedConfig.Value
+			local configRef = selectedLabel and builderConfigLabelMap[selectedLabel]
+			if configRef then
+				sourceKey = configRef.sourceKey or sourceKey
+				configId = configRef.configId
+			end
+		end
+
+		if not configId or configId == "" then
+			Library:Notify("Select a saved config before deleting it.", 2)
+			return
+		end
+
+		if not deleteMakerConfigById(sourceKey, configId) then
+			Library:Notify("Could not find that saved config.", 2)
+			return
+		end
+
+		autoParryState.currentBuilderConfigId = nil
+		refreshSavedConfigDropdown("(none)")
+		syncAutoParryBuilderConfigsToRuntime()
+		saveAutoParryMakerConfigsToFile()
+		Library:Notify("Deleted Auto Parry config.", 2)
+	end)
+	autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
 		if onAutoGetMakerConfig then
 			onAutoGetMakerConfig()
 		end
@@ -3111,6 +3760,23 @@ local function setupAutoParryTab()
 		end
 
 		return nil
+	end
+
+	deleteMakerConfigById = function(sourceKey, configId)
+		if type(configId) ~= "string" or configId == "" then
+			return false
+		end
+
+		local sourceConfigs = getMakerConfigList(sourceKey)
+		for index = #sourceConfigs, 1, -1 do
+			local configData = sourceConfigs[index]
+			if type(configData) == "table" and tostring(configData.configId or "") == configId then
+				table.remove(sourceConfigs, index)
+				return true
+			end
+		end
+
+		return false
 	end
 
 	local function findMakerConfigByAnimationId(sourceKey, animationId)
@@ -3819,6 +4485,13 @@ local function setupAutoParryTab()
 				autoParryState.handledTracks[track] = nil
 			end
 		end
+
+		local now = os.clock()
+		for recentKey, recentTimestamp in pairs(autoParryState.recentAnimationActions) do
+			if now - (tonumber(recentTimestamp) or 0) >= 0.45 then
+				autoParryState.recentAnimationActions[recentKey] = nil
+			end
+		end
 	end
 
 	local function removeQueuedMoveActionForTrack(track)
@@ -3851,6 +4524,57 @@ local function setupAutoParryTab()
 		return false
 	end
 
+	local function getRecentAnimationActionKey(targetCharacter, animationId)
+		local normalizedAnimationId = normalizeAnimationId(animationId)
+		if not targetCharacter or not normalizedAnimationId or normalizedAnimationId == "" then
+			return nil
+		end
+
+		local targetDebugId = targetCharacter:GetDebugId()
+		if not targetDebugId or targetDebugId == "" then
+			targetDebugId = tostring(targetCharacter)
+		end
+
+		return string.format("%s::%s", targetDebugId, normalizedAnimationId)
+	end
+
+	local function wasAnimationRecentlyHandled(targetCharacter, animationId)
+		local recentKey = getRecentAnimationActionKey(targetCharacter, animationId)
+		if not recentKey then
+			return false
+		end
+
+		local recentState = autoParryState.recentAnimationActions[recentKey]
+		if not recentState then
+			return false
+		end
+
+		local expiresAt
+		if type(recentState) == "table" then
+			expiresAt = tonumber(recentState.expiresAt)
+		else
+			expiresAt = (tonumber(recentState) or 0) + 0.45
+		end
+
+		if os.clock() < (expiresAt or 0) then
+			return true
+		end
+
+		autoParryState.recentAnimationActions[recentKey] = nil
+		return false
+	end
+
+	local function markAnimationRecentlyHandled(targetCharacter, animationId, durationSeconds)
+		local recentKey = getRecentAnimationActionKey(targetCharacter, animationId)
+		if recentKey then
+			local duration = math.clamp(tonumber(durationSeconds) or 0.9, 0.45, 3)
+			autoParryState.recentAnimationActions[recentKey] = {
+				recordedAt = os.clock(),
+				expiresAt = os.clock() + duration,
+			}
+		end
+	end
+
 	local function queueAutoParryTrack(targetCharacter, track)
 		if not targetCharacter or not track or autoParryState.handledTracks[track] or autoParryState.queuedTracks[track] then
 			return false
@@ -3871,6 +4595,10 @@ local function setupAutoParryTab()
 		local debugType = getAutoParryTargetDebugType(targetCharacter)
 
 		if hasQueuedMoveActionForAnimation(targetCharacter, normalizedAnimationId) then
+			return false
+		end
+
+		if wasAnimationRecentlyHandled(targetCharacter, normalizedAnimationId) then
 			return false
 		end
 
@@ -4066,6 +4794,13 @@ local function setupAutoParryTab()
 			return
 		end
 
+		local handledDuration = math.max(
+			resolveConfiguredTiming(activeMoveConfig) or 0,
+			getMoveConfigDelaySeconds(activeMoveConfig),
+			getMoveConfigRepeatDelaySeconds(activeMoveConfig)
+		) + 0.75
+		markAnimationRecentlyHandled(targetCharacter, animationId, handledDuration)
+
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
 			and not (getToggleValue("AutoParryDontBlatantDashPlayers", false) and targetType == "player")
@@ -4226,6 +4961,7 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
+			table.clear(autoParryState.recentAnimationActions)
 			setAutoParryTrackingText("disabled.")
 			return
 		end
@@ -4236,6 +4972,7 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
+			table.clear(autoParryState.recentAnimationActions)
 			setAutoParryTrackingText("remote not found.")
 			if not autoParryState.lastState.remoteMissing then
 				autoParryState.lastState.remoteMissing = true
@@ -4779,8 +5516,17 @@ local function setupAutoParryTab()
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
-			if inputObject.UserInputType == Enum.UserInputType.MouseButton2 then
-				autoParryState.manualBlockCaptureStartedAt = os.clock()
+			if inputObject.UserInputType == Enum.UserInputType.MouseButton1 then
+				local startedAt = tonumber(autoParryState.manualBlockCaptureStartedAt) or 0
+				if startedAt > 0 and (os.clock() - startedAt) <= 0.5 then
+					autoParryState.manualBlockCaptureConsumed = true
+					if os.clock() >= autoParryState.manualParryInputSuppressUntil then
+						local captureRequestedAt = os.clock()
+						task.defer(function()
+							pcall(reportManualActionDebug, "manual parry", captureRequestedAt)
+						end)
+					end
+				end
 			end
 			return
 		end
@@ -4790,14 +5536,13 @@ local function setupAutoParryTab()
 		end
 
 		if inputObject.KeyCode == Enum.KeyCode.F then
-			if os.clock() < autoParryState.manualParryInputSuppressUntil then
+			local now = os.clock()
+			if now < autoParryState.manualParryInputSuppressUntil then
 				return
 			end
 
-			local captureRequestedAt = os.clock()
-			task.defer(function()
-				pcall(reportManualActionDebug, "manual parry", captureRequestedAt)
-			end)
+			autoParryState.manualBlockCaptureStartedAt = now
+			autoParryState.manualBlockCaptureConsumed = false
 			return
 		end
 
@@ -4824,13 +5569,19 @@ local function setupAutoParryTab()
 	end))
 
 	maid:GiveTask(UserInputService.InputEnded:Connect(function(inputObject)
-		if inputObject.UserInputType ~= Enum.UserInputType.MouseButton2 then
+		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard or inputObject.KeyCode ~= Enum.KeyCode.F then
 			return
 		end
 
 		local startedAt = tonumber(autoParryState.manualBlockCaptureStartedAt) or 0
+		local consumed = autoParryState.manualBlockCaptureConsumed == true
 		autoParryState.manualBlockCaptureStartedAt = 0
+		autoParryState.manualBlockCaptureConsumed = false
 		if startedAt <= 0 then
+			return
+		end
+
+		if consumed then
 			return
 		end
 
@@ -4952,6 +5703,10 @@ local function setupMiscTab()
 	local fpsBoostStudsPerTileStates = {}
 	local fpsBoostMeshTextureStates = {}
 	local blurEffectStates = {}
+	local effectEnabledStates = {}
+	local staffDetectorPlayerAddedConnection = nil
+	local staffDetectorTriggered = false
+	local STAFF_GROUP_ID = 32643289
 
 	local function setBlurEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
@@ -5047,13 +5802,42 @@ local function setupMiscTab()
 
 	local function setEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
-			if (descendant:IsA("PostEffect") and not descendant:IsA("BlurEffect"))
-				or descendant:IsA("Atmosphere")
-				or descendant:IsA("Sky")
-				or descendant:IsA("Clouds")
-			then
+			if descendant:IsA("PostEffect") and not descendant:IsA("BlurEffect") then
+				if effectEnabledStates[descendant] == nil then
+					effectEnabledStates[descendant] = descendant.Enabled
+				end
+
 				pcall(function()
-					descendant.Enabled = enabled
+					descendant.Enabled = enabled and effectEnabledStates[descendant] or false
+				end)
+			elseif descendant:IsA("Atmosphere") then
+				if effectEnabledStates[descendant] == nil then
+					effectEnabledStates[descendant] = {
+						Density = descendant.Density,
+						Haze = descendant.Haze,
+						Glare = descendant.Glare,
+					}
+				end
+
+				pcall(function()
+					local state = effectEnabledStates[descendant]
+					if enabled and type(state) == "table" then
+						descendant.Density = state.Density
+						descendant.Haze = state.Haze
+						descendant.Glare = state.Glare
+					else
+						descendant.Density = 0
+						descendant.Haze = 0
+						descendant.Glare = 0
+					end
+				end)
+			elseif descendant:IsA("Sky") or descendant:IsA("Clouds") then
+				if effectEnabledStates[descendant] == nil then
+					effectEnabledStates[descendant] = descendant.Parent
+				end
+
+				pcall(function()
+					descendant.Parent = enabled and Lighting or nil
 				end)
 			end
 		end
@@ -5109,13 +5893,316 @@ local function setupMiscTab()
 		end)
 	end
 
+	local function fetchServerPage(placeId, cursor)
+		local requestUrl = string.format(
+			"https://games.roblox.com/v1/games/%d/servers/Public?sortOrder=Asc&limit=100&excludeFullGames=true%s",
+			placeId,
+			cursor and ("&cursor=" .. HttpService:UrlEncode(cursor)) or ""
+		)
+
+		local responseBody
+		local ok, response = pcall(function()
+			return game:HttpGet(requestUrl)
+		end)
+		if ok and type(response) == "string" and response ~= "" then
+			responseBody = response
+		elseif type(request) == "function" then
+			local requestOk, requestResponse = pcall(function()
+				return request({
+					Url = requestUrl,
+					Method = "GET",
+				})
+			end)
+			if requestOk and type(requestResponse) == "table" and requestResponse.Success and type(requestResponse.Body) == "string" then
+				responseBody = requestResponse.Body
+			end
+		elseif type(http_request) == "function" then
+			local requestOk, requestResponse = pcall(function()
+				return http_request({
+					Url = requestUrl,
+					Method = "GET",
+				})
+			end)
+			if requestOk and type(requestResponse) == "table" and requestResponse.Success and type(requestResponse.Body) == "string" then
+				responseBody = requestResponse.Body
+			end
+		end
+
+		if type(responseBody) ~= "string" or responseBody == "" then
+			return nil, "Unable to fetch server list."
+		end
+
+		local decodeOk, decoded = pcall(function()
+			return HttpService:JSONDecode(responseBody)
+		end)
+		if not decodeOk or type(decoded) ~= "table" then
+			return nil, "Unable to decode server list."
+		end
+
+		return decoded, nil
+	end
+
+	local function hopToLowestPopulationServer()
+		local placeId = game.PlaceId
+		local currentJobId = game.JobId
+		local bestServer = nil
+		local cursor = nil
+		local pagesChecked = 0
+
+		repeat
+			local payload, errorMessage = fetchServerPage(placeId, cursor)
+			if not payload then
+				Library:Notify(errorMessage or "Failed to fetch servers.", 3)
+				return
+			end
+
+			for _, server in ipairs(payload.data or {}) do
+				local serverId = server.id
+				local playing = tonumber(server.playing) or math.huge
+				local maxPlayers = tonumber(server.maxPlayers) or 0
+				if serverId and serverId ~= currentJobId and playing < maxPlayers then
+					if not bestServer or playing < (tonumber(bestServer.playing) or math.huge) then
+						bestServer = server
+					end
+				end
+			end
+
+			cursor = payload.nextPageCursor
+			pagesChecked += 1
+		until bestServer or not cursor or pagesChecked >= 5
+
+		if not bestServer or not bestServer.id then
+			Library:Notify("No lower-population server was found.", 3)
+			return
+		end
+
+		Library:Notify(string.format("Hopping to server with %s players...", tostring(bestServer.playing)), 3)
+		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
+	end
+
+	local function hopToHighestPopulationServer()
+		local placeId = game.PlaceId
+		local currentJobId = game.JobId
+		local bestServer = nil
+		local bestScore = -1
+		local cursor = nil
+		local pagesChecked = 0
+
+		repeat
+			local payload, errorMessage = fetchServerPage(placeId, cursor)
+			if not payload then
+				Library:Notify(errorMessage or "Failed to fetch servers.", 3)
+				return
+			end
+
+			for _, server in ipairs(payload.data or {}) do
+				local serverId = server.id
+				local playing = tonumber(server.playing) or -1
+				local maxPlayers = tonumber(server.maxPlayers) or 0
+				local openSlots = maxPlayers - playing
+				if serverId and serverId ~= currentJobId and openSlots > 0 then
+					local fillRatio = maxPlayers > 0 and (playing / maxPlayers) or 0
+					local preferredOpenSlotPenalty = math.abs(openSlots - 1) * 0.05
+					local score = fillRatio - preferredOpenSlotPenalty
+					if score > bestScore then
+						bestServer = server
+						bestScore = score
+					end
+				end
+			end
+
+			cursor = payload.nextPageCursor
+			pagesChecked += 1
+		until not cursor or pagesChecked >= 5
+
+		if not bestServer or not bestServer.id then
+			Library:Notify("No higher-population server was found.", 3)
+			return
+		end
+
+		Library:Notify(string.format("Hopping to server with %s players...", tostring(bestServer.playing)), 3)
+		TeleportService:TeleportToPlaceInstance(placeId, bestServer.id, LocalPlayer)
+	end
+
+	local function stopStaffDetector()
+		if staffDetectorPlayerAddedConnection then
+			staffDetectorPlayerAddedConnection:Disconnect()
+			staffDetectorPlayerAddedConnection = nil
+		end
+		staffDetectorTriggered = false
+	end
+
+	local function getStaffDetectionReason(player)
+		if not player or player == LocalPlayer then
+			return nil
+		end
+
+		local rankOk, rank = pcall(function()
+			return player:GetRankInGroup(STAFF_GROUP_ID)
+		end)
+		if not rankOk or tonumber(rank) == nil or rank <= 0 then
+			return nil
+		end
+
+		local role = "Unknown"
+		pcall(function()
+			role = player:GetRoleInGroup(STAFF_GROUP_ID)
+		end)
+
+		return string.format("group rank %s (%s)", tostring(rank), tostring(role))
+	end
+
+	local function handleDetectedStaffPlayer(player)
+		if staffDetectorTriggered then
+			return
+		end
+
+		local reason = getStaffDetectionReason(player)
+		if not reason then
+			return
+		end
+
+		staffDetectorTriggered = true
+		Library:Notify(string.format("Staff detected: %s [%s]", player.Name, reason), 4)
+		task.delay(0.2, function()
+			pcall(function()
+				LocalPlayer:Kick(string.format("Staff detected: %s [%s]", player.Name, reason))
+			end)
+		end)
+	end
+
+	local function startStaffDetector()
+		stopStaffDetector()
+
+		for _, player in ipairs(Players:GetPlayers()) do
+			handleDetectedStaffPlayer(player)
+			if staffDetectorTriggered then
+				return
+			end
+		end
+
+		staffDetectorPlayerAddedConnection = Players.PlayerAdded:Connect(function(player)
+			handleDetectedStaffPlayer(player)
+		end)
+	end
+
+	local inventoryPlayerMap = {}
+	local inventoryPlayerLabels = {"(none)"}
+	local inventoryListLabel
+
+	local function buildInventoryPlayerLabels()
+		table.clear(inventoryPlayerMap)
+		inventoryPlayerLabels = {"(none)"}
+
+		local playersList = {}
+		local ok, livePlayers = pcall(function()
+			return Players:GetPlayers()
+		end)
+		if ok and type(livePlayers) == "table" then
+			playersList = livePlayers
+		end
+
+		if #playersList == 0 then
+			local childrenOk, children = pcall(function()
+				return game:GetService("Players"):GetChildren()
+			end)
+			if childrenOk and type(children) == "table" then
+				for _, child in ipairs(children) do
+					if child and type(child.Name) == "string" and child.Name ~= "" then
+						table.insert(playersList, child)
+					end
+				end
+			end
+		end
+
+		table.sort(playersList, function(left, right)
+			return left.Name:lower() < right.Name:lower()
+		end)
+
+		for _, player in ipairs(playersList) do
+			local label = player.Name
+			inventoryPlayerMap[label] = player
+			table.insert(inventoryPlayerLabels, label)
+		end
+	end
+
+	local function setInventoryViewerText(text)
+		if inventoryListLabel and type(inventoryListLabel.SetText) == "function" then
+			inventoryListLabel:SetText(tostring(text or ""))
+		end
+	end
+
+	local function renderSelectedInventory()
+		local selectedName = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
+		local selectedPlayer = selectedName and inventoryPlayerMap[selectedName]
+		if not selectedPlayer then
+			setInventoryViewerText("Select a player to view inventory folders.")
+			return
+		end
+
+		local dataFolder = selectedPlayer:FindFirstChild("Data")
+		local inventoryFolder = dataFolder and dataFolder:FindFirstChild("Inventory")
+		if not inventoryFolder or not inventoryFolder:IsA("Folder") then
+			setInventoryViewerText(string.format("%s has no readable Data.Inventory folder.", selectedPlayer.Name))
+			return
+		end
+
+		local folderNames = {}
+		for _, child in ipairs(inventoryFolder:GetChildren()) do
+			if child:IsA("Folder") then
+				table.insert(folderNames, child.Name)
+			end
+		end
+		table.sort(folderNames, function(left, right)
+			return left:lower() < right:lower()
+		end)
+
+		if #folderNames == 0 then
+			setInventoryViewerText(string.format("%s inventory has no folders.", selectedPlayer.Name))
+			return
+		end
+
+		setInventoryViewerText(string.format(
+			"%s Inventory:\n%s",
+			selectedPlayer.Name,
+			table.concat(folderNames, "\n")
+		))
+	end
+
+	local function refreshInventoryViewerDropdown(preferredSelection)
+		buildInventoryPlayerLabels()
+
+		if Options.InventoryViewerPlayer then
+			pcall(function()
+				Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
+			end)
+			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value or "(none)"
+			if not inventoryPlayerMap[currentSelection] then
+				currentSelection = "(none)"
+			end
+			pcall(function()
+				Options.InventoryViewerPlayer:SetValue(currentSelection)
+			end)
+		end
+
+		renderSelectedInventory()
+	end
+
+	buildInventoryPlayerLabels()
+
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
-	miscGroup:AddLabel("Core misc features go here.")
-	miscGroup:AddLabel("Scaffold ready.")
+	miscGroup:AddButton("Hop to Low Server", function()
+		hopToLowestPopulationServer()
+	end)
+	miscGroup:AddButton("Hop to High Server", function()
+		hopToHighestPopulationServer()
+	end)
 
 	local alertsGroup = miscTab:AddLeftGroupbox("Alerts")
-	alertsGroup:AddLabel("Alerts section placeholder.")
-	alertsGroup:AddLabel("Features will be added later.")
+	alertsGroup:AddToggle("StaffDetectorEnabled", {
+		Text = "Mod/Admin Detector",
+		Default = false,
+	})
 
 	local visualsGroup = miscTab:AddLeftGroupbox("Visuals")
 	visualsGroup:AddToggle("MiscFpsBoostEnabled", {
@@ -5146,8 +6233,16 @@ local function setupMiscTab()
 	lootGroup:AddLabel("Features will be added later.")
 
 	local inventoryGroup = miscTab:AddRightGroupbox("Inventory")
-	inventoryGroup:AddLabel("Inventory section placeholder.")
-	inventoryGroup:AddLabel("Features will be added later.")
+	inventoryGroup:AddDropdown("InventoryViewerPlayer", {
+		Text = "Player",
+		Values = inventoryPlayerLabels,
+		Default = "(none)",
+		Multi = false,
+	})
+	inventoryGroup:AddButton("Refresh Player List", function()
+		refreshInventoryViewerDropdown()
+	end)
+	inventoryListLabel = inventoryGroup:AddLabel("Select a player to view inventory folders.", true)
 
 	local farmsGroup = miscTab:AddRightGroupbox("Farms")
 	farmsGroup:AddLabel("Farms section placeholder.")
@@ -5157,8 +6252,28 @@ local function setupMiscTab()
 	Toggles.MiscChunkLoaderEnabled:OnChanged(applyVisualSettings)
 	Toggles.MiscDisableShadowsEnabled:OnChanged(applyVisualSettings)
 	Options.MiscRenderDistance:OnChanged(applyVisualSettings)
+	Toggles.StaffDetectorEnabled:OnChanged(function()
+		if Toggles.StaffDetectorEnabled.Value then
+			startStaffDetector()
+		else
+			stopStaffDetector()
+		end
+	end)
+	Options.InventoryViewerPlayer:OnChanged(function()
+		renderSelectedInventory()
+	end)
+	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
+		refreshInventoryViewerDropdown("(none)")
+	end))
+	maid:GiveTask(Players.PlayerRemoving:Connect(function(player)
+		local currentSelection = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
+		local preferredSelection = currentSelection ~= player.Name and currentSelection or "(none)"
+		refreshInventoryViewerDropdown(preferredSelection)
+	end))
+	refreshInventoryViewerDropdown("(none)")
 
 	registerLibraryUnloadCallback(function()
+		stopStaffDetector()
 		pcall(function()
 			Lighting.GlobalShadows = originalVisualSettings.globalShadows
 		end)
@@ -5185,11 +6300,16 @@ local function setupMiscTab()
 		setBlurEffectsEnabled(true)
 	end)
 end
-setupMiscTab()
+local miscSetupOk = pcall(setupMiscTab)
+if not miscSetupOk then
+	local miscFallback = Tabs["Misc"]:AddLeftGroupbox("Misc")
+	miscFallback:AddLabel("Misc failed to build.")
+	miscFallback:AddLabel("Using fallback view.")
+end
 
 local function setupSettingsTab()
 	local settingsTab = Tabs["Settings"]
-	local menuGroup = settingsTab:AddRightGroupbox("Menu")
+	local menuGroup = settingsTab:AddLeftGroupbox("Menu")
 
 	menuGroup:AddButton("Unload", function()
 		Library:Unload()
@@ -5203,7 +6323,11 @@ local function setupSettingsTab()
 
 	Library.ToggleKeybind = Options.MenuKeybind
 end
-setupSettingsTab()
+local settingsSetupOk = pcall(setupSettingsTab)
+if not settingsSetupOk then
+	local settingsFallback = Tabs["Settings"]:AddLeftGroupbox("Menu")
+	settingsFallback:AddLabel("Settings failed to build.")
+end
 
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
@@ -5213,9 +6337,24 @@ SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 
 ThemeManager:SetFolder("HuajHub")
 SaveManager:SetFolder("HuajHub/" .. GAME_KEY)
+local saveManagerOk, saveManagerErr = pcall(function()
+	SaveManager:BuildConfigSection(Tabs["Settings"])
+end)
 
-SaveManager:BuildConfigSection(Tabs["Settings"])
-ThemeManager:ApplyToTab(Tabs["Settings"])
+local themeManagerOk, themeManagerErr = pcall(function()
+	ThemeManager:ApplyToTab(Tabs["Settings"])
+end)
+
+if not saveManagerOk or not themeManagerOk then
+	local diagnosticsGroup = Tabs["Settings"]:AddRightGroupbox("Settings Status")
+	diagnosticsGroup:AddLabel("Some settings sections failed to load.")
+	if not saveManagerOk then
+		diagnosticsGroup:AddLabel("Config section failed.")
+	end
+	if not themeManagerOk then
+		diagnosticsGroup:AddLabel("Theme section failed.")
+	end
+end
 pcall(function()
 	ContextActionService:UnbindAction("HuajHubAutoParryInputBlock")
 end)
