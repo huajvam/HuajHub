@@ -2460,6 +2460,13 @@ local function setupEspTab()
 		end
 
 		local characterState = model:FindFirstChild("CharacterState")
+		if not characterState then
+			local ownerPlayer = Players:GetPlayerFromCharacter(model)
+			local liveFolder = getEspLiveFolder()
+			local liveModel = liveFolder and ownerPlayer and liveFolder:FindFirstChild(ownerPlayer.Name)
+			characterState = liveModel and liveModel:FindFirstChild("CharacterState")
+		end
+
 		local staminaValue = characterState and characterState:FindFirstChild("Stamina")
 		if not staminaValue or not staminaValue:IsA("NumberValue") then
 			return nil, nil
