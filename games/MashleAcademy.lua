@@ -3853,7 +3853,9 @@ local function setupAutoParryTab()
 			actionType = actionType,
 			delay = getOptionValue("AutoParryMakerDelay", "Off") == "On",
 			delayRange = tonumber(getOptionValue("AutoParryMakerDelayRange", 0)) or 0,
-			blockHold = tonumber(getOptionValue("AutoParryMakerBlockHold", autoParryBlockHoldDuration)) or autoParryBlockHoldDuration,
+			blockHold = actionType == "Block"
+				and (tonumber(getOptionValue("AutoParryMakerBlockHold", autoParryBlockHoldDuration)) or autoParryBlockHoldDuration)
+				or nil,
 			range = tonumber(getOptionValue("AutoParryMakerRange", 16)) or 16,
 		}
 	end
