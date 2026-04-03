@@ -2269,6 +2269,59 @@ local function setupEspTab()
 		return entry
 	end
 
+	local function ensureEntryStaminaBar(entry)
+		if not entry or not drawingAvailable then
+			return
+		end
+
+		if not entry.staminaBarOutline then
+			entry.staminaBarOutline = EntityESP.createDrawing(globalEspDrawings, "Square", {
+				Filled = false,
+				Thickness = 1,
+				Transparency = 1,
+				Color = Color3.fromRGB(20, 20, 20),
+				Visible = false,
+			}, function()
+				return espShuttingDown
+			end)
+			table.insert(entry.objects, entry.staminaBarOutline)
+		end
+
+		if not entry.staminaBarFill then
+			entry.staminaBarFill = EntityESP.createDrawing(globalEspDrawings, "Square", {
+				Filled = true,
+				Thickness = 1,
+				Transparency = 1,
+				Color = Color3.fromRGB(240, 200, 60),
+				Visible = false,
+			}, function()
+				return espShuttingDown
+			end)
+			table.insert(entry.objects, entry.staminaBarFill)
+		end
+	end
+
+	local function setEntryStaminaBar(entry, position, size, fillPosition, fillSize, fillColor, visible)
+		if not entry then
+			return
+		end
+
+		ensureEntryStaminaBar(entry)
+
+		if entry.staminaBarOutline then
+			entry.staminaBarOutline.Position = position
+			entry.staminaBarOutline.Size = size
+			entry.staminaBarOutline.Visible = visible == true
+		end
+
+		if entry.staminaBarFill then
+			entry.staminaBarFill.Position = fillPosition
+			entry.staminaBarFill.Size = fillSize
+			entry.staminaBarFill.Color = fillColor or entry.staminaBarFill.Color
+			entry.staminaBarFill.Visible = visible == true
+		end
+	end
+
 	local function getPlayerAcademyName(model)
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		if not ownerPlayer then
@@ -2571,8 +2624,43 @@ local function setupEspTab()
 		entry:hideSkeletonFrom(lineIndex)
 	end
 
+	local function hideDrawingObject(object)
+		if not object then
+			return
+		end
+
+		pcall(function()
+			object.Visible = false
+		end)
+	end
+
 	local function hideEspEntry(entry)
-		entry:hide()
+		if not entry then
+			return
+		end
+
+		if entry.boxLines then
+			for _, line in ipairs(entry.boxLines) do
+				hideDrawingObject(line)
+			end
+		end
+
+		if entry.skeletonLines then
+			for _, line in ipairs(entry.skeletonLines) do
+				hideDrawingObject(line)
+			end
+		end
+
+		hideDrawingObject(entry.healthBarOutline)
+		hideDrawingObject(entry.healthBarFill)
+		hideDrawingObject(entry.staminaBarOutline)
+		hideDrawingObject(entry.staminaBarFill)
+		hideDrawingObject(entry.nameText)
+		hideDrawingObject(entry.distanceText)
+		hideDrawingObject(entry.healthText)
+		hideDrawingObject(entry.magicMarksText)
+		hideDrawingObject(entry.rankText)
+		hideDrawingObject(entry.tracerLine)
 	end
 
 	local function updateEspEntry(entry, model, targetType, accentColor)
@@ -2624,7 +2712,8 @@ local function setupEspTab()
 		local staminaValue, staminaMax = getEspStaminaState(model)
 		local staminaRatio = (staminaValue and staminaMax and staminaMax > 0) and math.clamp(staminaValue / staminaMax, 0, 1) or 0
 		local staminaBarX = box.right + 3
-		entry:setStaminaBar(
+		setEntryStaminaBar(
+			entry,
 			Vector2.new(staminaBarX, box.top),
 			Vector2.new(barWidth, barHeight),
 			Vector2.new(staminaBarX + 1, box.bottom - ((barHeight - 2) * staminaRatio) - 1),
