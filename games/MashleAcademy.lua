@@ -33,7 +33,6 @@ local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY = "__huaj_hub_fall_damage_block_callback_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY = "__huaj_hub_fall_damage_block_hook_v1"
-local HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY = "__huaj_hub_mob_remote_probe_callback_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
@@ -219,17 +218,11 @@ local function installFallDamageBlockHook()
 	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
 		local args = table.pack(...)
 		local callback = GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY]
-		local probeCallback = GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY]
-
 		local isCallerCheckAvailable = type(checkcaller) == "function"
 
 		if (not isCallerCheckAvailable or not checkcaller())
 			and getnamecallmethod() == "FireServer"
 		then
-			if type(probeCallback) == "function" then
-				pcall(probeCallback, self, args)
-			end
-
 			if type(callback) == "function" then
 				local ok, shouldBlock = pcall(callback, self, args)
 				if ok and shouldBlock == true then
@@ -721,12 +714,10 @@ end
 local function setupLocalCheatsTab()
 	local mainTab = Tabs["Local Cheats"]
 	local combatGroup = mainTab:AddLeftGroupbox("Local Cheats")
-	local mobManipulationGroup = mainTab:AddLeftGroupbox("Mob Manipulation")
 	local teleportGroup = mainTab:AddRightGroupbox("Teleports")
 	local speedHackConnection = nil
 	local flyConnection = nil
 	local noclipConnection = nil
-	local mobBringConnection = nil
 	local noclipPartStates = {}
 	local antiFallConnection = nil
 	local antiFallHeartbeatConnection = nil
@@ -755,9 +746,6 @@ local function setupLocalCheatsTab()
 	local godModeActive = false
 	local godModeSavedHealth = nil
 	local godModeSavedMaxHealth = nil
-	local mobProbeWindowUntil = 0
-	local mobProbeRemoteLogBudget = 0
-	local mobProbeTargetName = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -912,13 +900,6 @@ local function setupLocalCheatsTab()
 		end
 		setCharacterNoclip(false)
 		table.clear(noclipPartStates)
-	end
-
-	local function stopMobBring()
-		if mobBringConnection then
-			mobBringConnection:Disconnect()
-			mobBringConnection = nil
-		end
 	end
 
 	local function stopKnockedOwnership()
@@ -1394,278 +1375,6 @@ local function setupLocalCheatsTab()
 		return true
 	end
 
-	local function getBringableMobs()
-		local liveFolder = workspace:FindFirstChild("Live")
-		if not liveFolder then
-			return {}
-		end
-
-		local mobs = {}
-		for _, child in ipairs(liveFolder:GetChildren()) do
-			if isBringableMob(child) then
-				table.insert(mobs, child)
-			end
-		end
-
-		return mobs
-	end
-
-	local function getClosestBringableMob(maxDistance)
-		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
-		if not localRoot then
-			return nil
-		end
-
-		local closestMob
-		local closestDistance = maxDistance or math.huge
-		for _, mob in ipairs(getBringableMobs()) do
-			local mobRoot = getCharacterRoot(mob)
-			if mobRoot then
-				local distance = (mobRoot.Position - localRoot.Position).Magnitude
-				if distance < closestDistance then
-					closestDistance = distance
-					closestMob = mob
-				end
-			end
-		end
-
-		return closestMob, closestDistance
-	end
-
-	local function getMobAIConfigurations(mob)
-		if not mob then
-			return nil
-		end
-
-		local aiConfigurations = mob:FindFirstChild("AI_Configurations")
-		if aiConfigurations and aiConfigurations:IsA("Folder") then
-			return aiConfigurations
-		end
-
-		return nil
-	end
-
-	local function stringifyAIValue(instance)
-		if not instance then
-			return "nil"
-		end
-
-		local ok, value = pcall(function()
-			if instance:IsA("ValueBase") then
-				return instance.Value
-			end
-			return nil
-		end)
-
-		if ok then
-			if typeof(value) == "Instance" then
-				return value:GetFullName()
-			end
-			return tostring(value)
-		end
-
-		return "(unreadable)"
-	end
-
-	local function isMobProbeActive()
-		return os.clock() <= mobProbeWindowUntil
-	end
-
-	local function logMobProbe(message)
-		warn("[HuajHub MobProbe] " .. tostring(message))
-	end
-
-	local function handleMobRemoteProbe(instance, args)
-		if not isMobProbeActive() or mobProbeRemoteLogBudget <= 0 then
-			return
-		end
-
-		if typeof(instance) ~= "Instance" or not instance:IsDescendantOf(ReplicatedStorage) then
-			return
-		end
-
-		mobProbeRemoteLogBudget -= 1
-		local firstArg = args and args[1]
-		local secondArg = args and args[2]
-		logMobProbe(string.format(
-			"remote=%s arg1=%s arg2=%s target=%s",
-			instance:GetFullName(),
-			tostring(firstArg),
-			tostring(secondArg),
-			tostring(mobProbeTargetName or "?")
-		))
-	end
-
-	local function probeClosestMobOwnership()
-		local mob, distance = getClosestBringableMob(150)
-		if not mob then
-			Library:Notify("No nearby bringable mob found.", 2)
-			return
-		end
-
-		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
-		local mobRoot = getCharacterRoot(mob)
-		if not localRoot or not mobRoot then
-			Library:Notify("Mob probe failed: missing root part.", 2)
-			return
-		end
-
-		local probeLift = Vector3.new(0, 6, 0)
-		local originalPosition = mobRoot.Position
-		local probePosition = originalPosition + probeLift
-		mobProbeTargetName = mob.Name
-		mobProbeWindowUntil = os.clock() + 2
-		mobProbeRemoteLogBudget = 12
-		logMobProbe(string.format("probing %s at %.1f studs", mob.Name, distance or -1))
-		Library:Notify(string.format("Probing %s ownership...", mob.Name), 2)
-
-		pcall(function()
-			mobRoot.AssemblyLinearVelocity = Vector3.new(0, 45, 0)
-			mobRoot.CFrame = CFrame.new(probePosition, localRoot.Position)
-		end)
-
-		task.delay(0.2, function()
-			if not mobRoot or not mobRoot.Parent then
-				logMobProbe(string.format("%s probe ended: root missing", mob.Name))
-				return
-			end
-
-			local movedDistance = (mobRoot.Position - probePosition).Magnitude
-			local snappedBackDistance = (mobRoot.Position - originalPosition).Magnitude
-			if movedDistance <= 4 or snappedBackDistance > 3 then
-				logMobProbe(string.format(
-					"%s likely server-owned: movedDelta=%.2f snapDelta=%.2f",
-					mob.Name,
-					movedDistance,
-					snappedBackDistance
-				))
-				Library:Notify(string.format("%s likely snapped back; ownership does not stick.", mob.Name), 3)
-			else
-				logMobProbe(string.format(
-					"%s likely client-influenced: movedDelta=%.2f snapDelta=%.2f",
-					mob.Name,
-					movedDistance,
-					snappedBackDistance
-				))
-				Library:Notify(string.format("%s responded to local movement.", mob.Name), 3)
-			end
-		end)
-	end
-
-	local function probeClosestMobAI()
-		local mob, distance = getClosestBringableMob(150)
-		if not mob then
-			Library:Notify("No nearby bringable mob found.", 2)
-			return
-		end
-
-		local aiConfigurations = getMobAIConfigurations(mob)
-		if not aiConfigurations then
-			Library:Notify(string.format("%s has no AI_Configurations folder.", mob.Name), 2)
-			return
-		end
-
-		warn(string.format("[HuajHub MobAI] probing %s at %.1f studs", mob.Name, distance or -1))
-		for _, child in ipairs(aiConfigurations:GetChildren()) do
-			warn(string.format(
-				"[HuajHub MobAI] %s.%s (%s) = %s",
-				mob.Name,
-				child.Name,
-				child.ClassName,
-				stringifyAIValue(child)
-			))
-		end
-
-		Library:Notify(string.format("Logged AI_Configurations for %s.", mob.Name), 3)
-	end
-
-	local function trySetAIValue(valueObject, newValue)
-		if not valueObject then
-			return false, "missing"
-		end
-
-		local success = pcall(function()
-			if valueObject:IsA("ObjectValue") then
-				valueObject.Value = newValue
-			elseif valueObject:IsA("StringValue") then
-				valueObject.Value = tostring(newValue)
-			elseif valueObject:IsA("NumberValue") or valueObject:IsA("IntValue") then
-				valueObject.Value = tonumber(newValue) or valueObject.Value
-			elseif valueObject:IsA("BoolValue") then
-				valueObject.Value = not not newValue
-			elseif valueObject:IsA("Vector3Value") and typeof(newValue) == "Vector3" then
-				valueObject.Value = newValue
-			elseif valueObject:IsA("CFrameValue") and typeof(newValue) == "CFrame" then
-				valueObject.Value = newValue
-			else
-				error("unsupported type")
-			end
-		end)
-
-		return success, success and "ok" or "failed"
-	end
-
-	local function tryBringClosestMobByAI()
-		local mob = getClosestBringableMob(150)
-		if not mob then
-			Library:Notify("No nearby bringable mob found.", 2)
-			return
-		end
-
-		local character = LocalPlayer and LocalPlayer.Character
-		local localRoot = getCharacterRoot(character)
-		local aiConfigurations = getMobAIConfigurations(mob)
-		if not character or not localRoot or not aiConfigurations then
-			Library:Notify("Mob AI bring failed: missing character, root, or AI_Configurations.", 2)
-			return
-		end
-
-		local updated = {}
-		local currentAggro = aiConfigurations:FindFirstChild("CurrentAggro")
-		local startingPosition = aiConfigurations:FindFirstChild("StartingPosition")
-		local aggroRange = aiConfigurations:FindFirstChild("AggroRange")
-		local stopRange = aiConfigurations:FindFirstChild("StopRange")
-
-		if currentAggro then
-			local ok = false
-			if currentAggro:IsA("ObjectValue") then
-				ok = select(1, trySetAIValue(currentAggro, character))
-				if not ok and LocalPlayer then
-					ok = select(1, trySetAIValue(currentAggro, LocalPlayer))
-				end
-			elseif currentAggro:IsA("StringValue") then
-				ok = select(1, trySetAIValue(currentAggro, character.Name))
-			end
-			if ok then
-				table.insert(updated, "CurrentAggro")
-			end
-		end
-
-		if startingPosition then
-			local startValue = startingPosition:IsA("CFrameValue") and CFrame.new(localRoot.Position) or localRoot.Position
-			if select(1, trySetAIValue(startingPosition, startValue)) then
-				table.insert(updated, "StartingPosition")
-			end
-		end
-
-		if aggroRange and select(1, trySetAIValue(aggroRange, 9999)) then
-			table.insert(updated, "AggroRange")
-		end
-
-		local desiredStopRange = math.max((Options.MobBringDistance and Options.MobBringDistance.Value) or 8, 2)
-		if stopRange and select(1, trySetAIValue(stopRange, desiredStopRange)) then
-			table.insert(updated, "StopRange")
-		end
-
-		if #updated == 0 then
-			Library:Notify(string.format("Could not modify %s AI values.", mob.Name), 3)
-			return
-		end
-
-		warn(string.format("[HuajHub MobAI] updated %s: %s", mob.Name, table.concat(updated, ", ")))
-		Library:Notify(string.format("AI bring applied to %s.", mob.Name), 3)
-	end
-
 	local function getKnockedOwnershipTool(character)
 		local backpack = LocalPlayer and LocalPlayer:FindFirstChildOfClass("Backpack")
 		local handle = backpack and backpack:FindFirstChild("Handle", true)
@@ -1881,78 +1590,6 @@ local function setupLocalCheatsTab()
 		end)
 	end
 
-	local function startMobBring()
-		stopMobBring()
-		mobBringConnection = RunService.Heartbeat:Connect(function()
-			local _, localRoot = getCharacterMovementState()
-			local character = LocalPlayer and LocalPlayer.Character
-			if not localRoot or not character then
-				return
-			end
-
-			local distance = (Options.MobBringDistance and Options.MobBringDistance.Value) or 8
-			local height = (Options.MobBringHeight and Options.MobBringHeight.Value) or 0
-			local forward = localRoot.CFrame.LookVector
-			local right = localRoot.CFrame.RightVector
-			local anchor = localRoot.Position + (forward * distance) + Vector3.new(0, height, 0)
-			local mobs = getBringableMobs()
-
-			for index, mob in ipairs(mobs) do
-				local aiConfigurations = getMobAIConfigurations(mob)
-				if aiConfigurations then
-					local lateralOffset = (((index - 1) % 4) - 1.5) * 3
-					local rowOffset = math.floor((index - 1) / 4) * 3
-					local targetPosition = anchor + (right * lateralOffset) - (forward * rowOffset)
-					local currentAggro = aiConfigurations:FindFirstChild("CurrentAggro")
-					local startingPosition = aiConfigurations:FindFirstChild("StartingPosition")
-					local aggroRange = aiConfigurations:FindFirstChild("AggroRange")
-					local stopRange = aiConfigurations:FindFirstChild("StopRange")
-					local aiState = aiConfigurations:FindFirstChild("AI_State")
-
-					if currentAggro then
-						if currentAggro:IsA("ObjectValue") then
-							pcall(function()
-								currentAggro.Value = character
-							end)
-						elseif currentAggro:IsA("StringValue") then
-							pcall(function()
-								currentAggro.Value = character.Name
-							end)
-						end
-					end
-
-					if startingPosition then
-						pcall(function()
-							if startingPosition:IsA("Vector3Value") then
-								startingPosition.Value = targetPosition
-							elseif startingPosition:IsA("CFrameValue") then
-								startingPosition.Value = CFrame.new(targetPosition)
-							end
-						end)
-					end
-
-					if aggroRange and (aggroRange:IsA("NumberValue") or aggroRange:IsA("IntValue")) then
-						pcall(function()
-							aggroRange.Value = 9999
-						end)
-					end
-
-					if stopRange and (stopRange:IsA("NumberValue") or stopRange:IsA("IntValue")) then
-						pcall(function()
-							stopRange.Value = math.max(distance, 2)
-						end)
-					end
-
-					if aiState and aiState:IsA("StringValue") then
-						pcall(function()
-							aiState.Value = "Aggroed"
-						end)
-					end
-				end
-			end
-		end)
-	end
-
 	triggerAntiFallBypass = function(character, duration, preserveRemoteBypass)
 		local now = os.clock()
 		local appliedDuration = math.max(duration or 1.5, 0.25)
@@ -2147,41 +1784,6 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	mobManipulationGroup:AddToggle("MobBringEnabled", {
-		Text = "Mob Bring",
-		Default = false,
-	})
-
-	mobManipulationGroup:AddSlider("MobBringDistance", {
-		Text = "Bring Distance",
-		Default = 8,
-		Min = 2,
-		Max = 40,
-		Rounding = 0,
-		Suffix = " studs",
-	})
-
-	mobManipulationGroup:AddSlider("MobBringHeight", {
-		Text = "Bring Height",
-		Default = 0,
-		Min = -10,
-		Max = 25,
-		Rounding = 0,
-		Suffix = " studs",
-	})
-
-	mobManipulationGroup:AddButton("Probe Closest Mob Ownership", function()
-		probeClosestMobOwnership()
-	end)
-
-	mobManipulationGroup:AddButton("Probe Closest Mob AI", function()
-		probeClosestMobAI()
-	end)
-
-	mobManipulationGroup:AddButton("AI Bring Closest Mob", function()
-		tryBringClosestMobByAI()
-	end)
-
 	combatGroup:AddToggle("NoStunEnabled", {
 		Text = "No Stun",
 		Default = false,
@@ -2213,7 +1815,6 @@ local function setupLocalCheatsTab()
 
 	installFallDamageBlockHook()
 	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
-	GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY] = handleMobRemoteProbe
 	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
@@ -2249,14 +1850,6 @@ local function setupLocalCheatsTab()
 		end
 	end)
 
-	Toggles.MobBringEnabled:OnChanged(function()
-		if Toggles.MobBringEnabled.Value then
-			startMobBring()
-		else
-			stopMobBring()
-		end
-	end)
-
 	Toggles.NoStunEnabled:OnChanged(function()
 		if Toggles.NoStunEnabled.Value then
 			startNoStun()
@@ -2282,18 +1875,6 @@ local function setupLocalCheatsTab()
 	Options.FlyHackValue:OnChanged(function()
 		if Toggles.FlyEnabled.Value then
 			startFly()
-		end
-	end)
-
-	Options.MobBringDistance:OnChanged(function()
-		if Toggles.MobBringEnabled and Toggles.MobBringEnabled.Value then
-			startMobBring()
-		end
-	end)
-
-	Options.MobBringHeight:OnChanged(function()
-		if Toggles.MobBringEnabled and Toggles.MobBringEnabled.Value then
-			startMobBring()
 		end
 	end)
 
@@ -2497,19 +2078,16 @@ local function setupLocalCheatsTab()
 		stopSpeedHack()
 		stopFly()
 		stopNoclip()
-		stopMobBring()
 		stopAntiFall()
 		stopGodMode()
 		stopNoStun()
 		stopKnockedOwnership()
-		GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY] = nil
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
 
 	stopSpeedHack()
 	stopFly()
 	stopNoclip()
-	stopMobBring()
 	stopAntiFall()
 	stopGodMode()
 	stopNoStun()
