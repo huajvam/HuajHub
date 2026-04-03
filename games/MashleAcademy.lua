@@ -2269,21 +2269,6 @@ local function setupEspTab()
 		return entry
 	end
 
-	local function shouldShowPlayerEsp(model)
-		local targetType = getEspTargetType(model)
-		if targetType ~= "player" then
-			return false
-		end
-
-		local humanoid = model:FindFirstChildOfClass("Humanoid")
-		if humanoid ~= nil and humanoid.Health <= 0 then
-			return false
-		end
-
-		local academyName = getPlayerAcademyName(model)
-		return isAcademyEspEnabled(academyName)
-	end
-
 	local function getPlayerAcademyName(model)
 		local ownerPlayer = Players:GetPlayerFromCharacter(model)
 		if not ownerPlayer then
@@ -2330,6 +2315,21 @@ local function setupEspTab()
 		end
 
 		return Color3.fromRGB(190, 190, 190)
+	end
+
+	local function shouldShowPlayerEsp(model)
+		local targetType = getEspTargetType(model)
+		if targetType ~= "player" then
+			return false
+		end
+
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		if humanoid ~= nil and humanoid.Health <= 0 then
+			return false
+		end
+
+		local academyName = getPlayerAcademyName(model)
+		return isAcademyEspEnabled(academyName)
 	end
 
 	local function shouldShowMobEsp(model)
