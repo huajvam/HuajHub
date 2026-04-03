@@ -33,6 +33,7 @@ local HUAJ_HUB_MANUAL_ACTION_SUPPRESS_KEY = "__huaj_hub_manual_action_suppress_v
 local HUAJ_HUB_REQUEST_MODULE_FIRESERVER_HOOK_KEY = "__huaj_hub_requestmodule_fireserver_hook_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY = "__huaj_hub_fall_damage_block_callback_v1"
 local HUAJ_HUB_FALL_DAMAGE_BLOCK_HOOK_KEY = "__huaj_hub_fall_damage_block_hook_v1"
+local HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY = "__huaj_hub_mob_remote_probe_callback_v1"
 local HUAJ_HUB_ESP_DRAWINGS_KEY = "__huaj_hub_esp_drawings_v1"
 local HUAJ_HUB_MASHLE_INIT_KEY = "__huaj_hub_mashle_initialized_v1"
 local HUAJ_HUB_MASHLE_LIBRARY_KEY = "__huaj_hub_mashle_library_v1"
@@ -218,12 +219,17 @@ local function installFallDamageBlockHook()
 	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
 		local args = table.pack(...)
 		local callback = GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY]
+		local probeCallback = GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY]
 
 		local isCallerCheckAvailable = type(checkcaller) == "function"
 
 		if (not isCallerCheckAvailable or not checkcaller())
 			and getnamecallmethod() == "FireServer"
 		then
+			if type(probeCallback) == "function" then
+				pcall(probeCallback, self, args)
+			end
+
 			if type(callback) == "function" then
 				local ok, shouldBlock = pcall(callback, self, args)
 				if ok and shouldBlock == true then
@@ -715,6 +721,7 @@ end
 local function setupLocalCheatsTab()
 	local mainTab = Tabs["Local Cheats"]
 	local combatGroup = mainTab:AddLeftGroupbox("Local Cheats")
+	local mobManipulationGroup = mainTab:AddLeftGroupbox("Mob Manipulation")
 	local teleportGroup = mainTab:AddRightGroupbox("Teleports")
 	local speedHackConnection = nil
 	local flyConnection = nil
@@ -748,6 +755,9 @@ local function setupLocalCheatsTab()
 	local godModeActive = false
 	local godModeSavedHealth = nil
 	local godModeSavedMaxHealth = nil
+	local mobProbeWindowUntil = 0
+	local mobProbeRemoteLogBudget = 0
+	local mobProbeTargetName = nil
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1400,6 +1410,113 @@ local function setupLocalCheatsTab()
 		return mobs
 	end
 
+	local function getClosestBringableMob(maxDistance)
+		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+		if not localRoot then
+			return nil
+		end
+
+		local closestMob
+		local closestDistance = maxDistance or math.huge
+		for _, mob in ipairs(getBringableMobs()) do
+			local mobRoot = getCharacterRoot(mob)
+			if mobRoot then
+				local distance = (mobRoot.Position - localRoot.Position).Magnitude
+				if distance < closestDistance then
+					closestDistance = distance
+					closestMob = mob
+				end
+			end
+		end
+
+		return closestMob, closestDistance
+	end
+
+	local function isMobProbeActive()
+		return os.clock() <= mobProbeWindowUntil
+	end
+
+	local function logMobProbe(message)
+		warn("[HuajHub MobProbe] " .. tostring(message))
+	end
+
+	local function handleMobRemoteProbe(instance, args)
+		if not isMobProbeActive() or mobProbeRemoteLogBudget <= 0 then
+			return
+		end
+
+		if typeof(instance) ~= "Instance" or not instance:IsDescendantOf(ReplicatedStorage) then
+			return
+		end
+
+		mobProbeRemoteLogBudget -= 1
+		local firstArg = args and args[1]
+		local secondArg = args and args[2]
+		logMobProbe(string.format(
+			"remote=%s arg1=%s arg2=%s target=%s",
+			instance:GetFullName(),
+			tostring(firstArg),
+			tostring(secondArg),
+			tostring(mobProbeTargetName or "?")
+		))
+	end
+
+	local function probeClosestMobOwnership()
+		local mob, distance = getClosestBringableMob(150)
+		if not mob then
+			Library:Notify("No nearby bringable mob found.", 2)
+			return
+		end
+
+		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+		local mobRoot = getCharacterRoot(mob)
+		if not localRoot or not mobRoot then
+			Library:Notify("Mob probe failed: missing root part.", 2)
+			return
+		end
+
+		local probeLift = Vector3.new(0, 6, 0)
+		local originalPosition = mobRoot.Position
+		local probePosition = originalPosition + probeLift
+		mobProbeTargetName = mob.Name
+		mobProbeWindowUntil = os.clock() + 2
+		mobProbeRemoteLogBudget = 12
+		logMobProbe(string.format("probing %s at %.1f studs", mob.Name, distance or -1))
+		Library:Notify(string.format("Probing %s ownership...", mob.Name), 2)
+
+		pcall(function()
+			mobRoot.AssemblyLinearVelocity = Vector3.new(0, 45, 0)
+			mobRoot.CFrame = CFrame.new(probePosition, localRoot.Position)
+		end)
+
+		task.delay(0.2, function()
+			if not mobRoot or not mobRoot.Parent then
+				logMobProbe(string.format("%s probe ended: root missing", mob.Name))
+				return
+			end
+
+			local movedDistance = (mobRoot.Position - probePosition).Magnitude
+			local snappedBackDistance = (mobRoot.Position - originalPosition).Magnitude
+			if movedDistance <= 4 or snappedBackDistance > 3 then
+				logMobProbe(string.format(
+					"%s likely server-owned: movedDelta=%.2f snapDelta=%.2f",
+					mob.Name,
+					movedDistance,
+					snappedBackDistance
+				))
+				Library:Notify(string.format("%s likely snapped back; ownership does not stick.", mob.Name), 3)
+			else
+				logMobProbe(string.format(
+					"%s likely client-influenced: movedDelta=%.2f snapDelta=%.2f",
+					mob.Name,
+					movedDistance,
+					snappedBackDistance
+				))
+				Library:Notify(string.format("%s responded to local movement.", mob.Name), 3)
+			end
+		end)
+	end
+
 	local function getKnockedOwnershipTool(character)
 		local backpack = LocalPlayer and LocalPlayer:FindFirstChildOfClass("Backpack")
 		local handle = backpack and backpack:FindFirstChild("Handle", true)
@@ -1841,14 +1958,12 @@ local function setupLocalCheatsTab()
 		Default = false,
 	})
 
-	combatGroup:AddLabel("Mob Manipulation")
-
-	combatGroup:AddToggle("MobBringEnabled", {
+	mobManipulationGroup:AddToggle("MobBringEnabled", {
 		Text = "Mob Bring",
 		Default = false,
 	})
 
-	combatGroup:AddSlider("MobBringDistance", {
+	mobManipulationGroup:AddSlider("MobBringDistance", {
 		Text = "Bring Distance",
 		Default = 8,
 		Min = 2,
@@ -1857,7 +1972,7 @@ local function setupLocalCheatsTab()
 		Suffix = " studs",
 	})
 
-	combatGroup:AddSlider("MobBringHeight", {
+	mobManipulationGroup:AddSlider("MobBringHeight", {
 		Text = "Bring Height",
 		Default = 0,
 		Min = -10,
@@ -1865,6 +1980,10 @@ local function setupLocalCheatsTab()
 		Rounding = 0,
 		Suffix = " studs",
 	})
+
+	mobManipulationGroup:AddButton("Probe Closest Mob Ownership", function()
+		probeClosestMobOwnership()
+	end)
 
 	combatGroup:AddToggle("NoStunEnabled", {
 		Text = "No Stun",
@@ -1897,6 +2016,7 @@ local function setupLocalCheatsTab()
 
 	installFallDamageBlockHook()
 	GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = shouldBlockTeleportFallDamageRequest
+	GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY] = handleMobRemoteProbe
 	refreshTeleportLocations()
 
 	Toggles.SpeedHackEnabled:OnChanged(function()
@@ -2185,6 +2305,7 @@ local function setupLocalCheatsTab()
 		stopGodMode()
 		stopNoStun()
 		stopKnockedOwnership()
+		GLOBAL_ENV[HUAJ_HUB_MOB_REMOTE_PROBE_CALLBACK_KEY] = nil
 		GLOBAL_ENV[HUAJ_HUB_FALL_DAMAGE_BLOCK_CALLBACK_KEY] = nil
 	end)
 
