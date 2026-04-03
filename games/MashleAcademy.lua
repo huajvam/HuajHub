@@ -725,6 +725,7 @@ local function setupLocalCheatsTab()
 	local antiFallCharacterConnection = nil
 	local godModeHeartbeatConnection = nil
 	local godModeCharacterConnection = nil
+	local godModeLoopToken = 0
 	local noStunHeartbeatConnection = nil
 	local noStunCharacterConnection = nil
 	local noStunStateAddedConnection = nil
@@ -740,6 +741,8 @@ local function setupLocalCheatsTab()
 		FallDamageValueTotal = -1,
 		FallDamage = -100,
 	}
+	local GOD_MODE_REMOTE_INTERVAL = 0.05
+	local GOD_MODE_REMOTE_BURST = 3
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1202,6 +1205,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function stopGodMode()
+		godModeLoopToken += 1
 		if godModeHeartbeatConnection then
 			godModeHeartbeatConnection:Disconnect()
 			godModeHeartbeatConnection = nil
@@ -1216,6 +1220,8 @@ local function setupLocalCheatsTab()
 
 	local function startGodMode()
 		stopGodMode()
+		godModeLoopToken += 1
+		local loopToken = godModeLoopToken
 
 		local function hookCharacter(character)
 			ensureGodModeState(character)
@@ -1238,6 +1244,20 @@ local function setupLocalCheatsTab()
 			local character = LocalPlayer and LocalPlayer.Character
 			if character then
 				ensureGodModeState(character)
+			end
+		end)
+
+		task.spawn(function()
+			while loopToken == godModeLoopToken do
+				if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
+					break
+				end
+
+				for _ = 1, GOD_MODE_REMOTE_BURST do
+					fireGodModeFallDamageRemote()
+				end
+
+				task.wait(GOD_MODE_REMOTE_INTERVAL)
 			end
 		end)
 	end
