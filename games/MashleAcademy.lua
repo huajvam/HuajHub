@@ -2423,7 +2423,9 @@ local function setupEspTab()
 			return nil, nil
 		end
 
-		local maxValue = tonumber(staminaValue:GetAttribute("MaxValue"))
+		local staminaMaxValue = characterState and characterState:FindFirstChild("StaminaMax")
+		local maxValue = tonumber(staminaMaxValue and staminaMaxValue:IsA("NumberValue") and staminaMaxValue.Value)
+			or tonumber(staminaValue:GetAttribute("MaxValue"))
 			or tonumber(staminaValue:GetAttribute("Max"))
 			or tonumber(staminaValue:GetAttribute("Maximum"))
 			or tonumber(staminaValue:GetAttribute("Base"))
@@ -2658,6 +2660,7 @@ local function setupEspTab()
 		hideDrawingObject(entry.nameText)
 		hideDrawingObject(entry.distanceText)
 		hideDrawingObject(entry.healthText)
+		hideDrawingObject(entry.staminaText)
 		hideDrawingObject(entry.magicMarksText)
 		hideDrawingObject(entry.rankText)
 		hideDrawingObject(entry.tracerLine)
@@ -2757,6 +2760,13 @@ local function setupEspTab()
 			string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
 			Vector2.new(box.left + (box.width * 0.5), box.top - 27),
 			getToggleValue("EspShowHealthText", false) and humanoid ~= nil
+		)
+
+		entry:setText(
+			entry.staminaText,
+			staminaValue and string.format("%d / %d ST", math.floor(staminaValue + 0.5), math.floor(staminaMax + 0.5)) or "",
+			Vector2.new(box.left + (box.width * 0.5), box.top - 40),
+			getToggleValue("EspShowStaminaText", false) and staminaValue ~= nil and staminaMax ~= nil
 		)
 
 		entry:setTracer(tracerStart, tracerEnd, accentColor, getToggleValue("EspShowTracers", true))
@@ -2922,6 +2932,11 @@ local function setupEspTab()
 		Default = false,
 	})
 
+	espVisualGroup:AddToggle("EspShowStaminaText", {
+		Text = "Stamina Text",
+		Default = false,
+	})
+
 	espVisualGroup:AddToggle("EspShowMagicMarks", {
 		Text = "Magic Marks",
 		Default = false,
@@ -3002,6 +3017,10 @@ local function setupEspTab()
 	end)
 
 	Toggles.EspShowHealthText:OnChanged(function()
+		refreshEsp()
+	end)
+
+	Toggles.EspShowStaminaText:OnChanged(function()
 		refreshEsp()
 	end)
 
