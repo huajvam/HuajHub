@@ -5729,11 +5729,26 @@ local function setupMiscTab()
 		inventoryPlayerLabels = {"(none)"}
 
 		local playersList = {}
-		for _, child in ipairs(game:GetService("Players"):GetChildren()) do
-			if child and type(child.Name) == "string" and child.Name ~= "" then
-				table.insert(playersList, child)
+		local ok, livePlayers = pcall(function()
+			return Players:GetPlayers()
+		end)
+		if ok and type(livePlayers) == "table" then
+			playersList = livePlayers
+		end
+
+		if #playersList == 0 then
+			local childrenOk, children = pcall(function()
+				return game:GetService("Players"):GetChildren()
+			end)
+			if childrenOk and type(children) == "table" then
+				for _, child in ipairs(children) do
+					if child and type(child.Name) == "string" and child.Name ~= "" then
+						table.insert(playersList, child)
+					end
+				end
 			end
 		end
+
 		table.sort(playersList, function(left, right)
 			return left.Name:lower() < right.Name:lower()
 		end)
