@@ -737,8 +737,8 @@ local function setupLocalCheatsTab()
 	local flyVelocity = nil
 	local antiFallState = nil
 	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
-		FallDamageValueTotal = 2.686142883300781,
-		FallDamage = 84.30714416503906,
+		FallDamageValueTotal = -1,
+		FallDamage = -100,
 	}
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
