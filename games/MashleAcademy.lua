@@ -736,10 +736,6 @@ local function setupLocalCheatsTab()
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
-	local godModeStates = {}
-	local GOD_MODE_STATE_NAMES = {"NotParryableStun", "Ragdoll"}
-	local GOD_MODE_BURST_PER_HEARTBEAT = 6
-	local GOD_MODE_MAX_STATES = 180
 	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
 		FallDamageValueTotal = 2.686142883300781,
 		FallDamage = 84.30714416503906,
@@ -1176,42 +1172,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function removeGodModeState()
-		for index = #godModeStates, 1, -1 do
-			local stateValue = godModeStates[index]
-			if stateValue then
-				pcall(function()
-					stateValue:Destroy()
-				end)
-			end
-			godModeStates[index] = nil
-		end
-	end
-
-	local function createGodModeState(characterState, stateName)
-		local template = getNilInstance(stateName, "BoolValue")
-		local stateValue = nil
-		if template then
-			local ok, clone = pcall(function()
-				return template:Clone()
-			end)
-			if ok and clone and clone:IsA("BoolValue") then
-				stateValue = clone
-			end
-		end
-
-		if not stateValue then
-			stateValue = Instance.new("BoolValue")
-			stateValue.Name = stateName
-		end
-
-		stateValue.Name = stateName
-		stateValue.Value = true
-		pcall(function()
-			stateValue:SetAttribute("Lifetime", 1)
-		end)
-		stateValue.Parent = characterState
-		table.insert(godModeStates, stateValue)
-		return stateValue
+		return
 	end
 
 	local function fireGodModeFallDamageRemote()
@@ -1233,40 +1194,11 @@ local function setupLocalCheatsTab()
 			return
 		end
 
-		local characterState = getCharacterStateFolder(character)
-		if not characterState then
+		if not character then
 			return
 		end
 
-		for index = #godModeStates, 1, -1 do
-			local stateValue = godModeStates[index]
-			if not stateValue or stateValue.Parent ~= characterState then
-				table.remove(godModeStates, index)
-			else
-				pcall(function()
-					stateValue.Value = true
-					stateValue:SetAttribute("Lifetime", 1)
-				end)
-				fireGodModeFallDamageRemote()
-			end
-		end
-
-		if #godModeStates >= GOD_MODE_MAX_STATES then
-			return
-		end
-
-		for _, stateName in ipairs(GOD_MODE_STATE_NAMES) do
-			for _ = 1, GOD_MODE_BURST_PER_HEARTBEAT do
-				if #godModeStates >= GOD_MODE_MAX_STATES then
-					return
-				end
-
-				pcall(function()
-					createGodModeState(characterState, stateName)
-				end)
-				fireGodModeFallDamageRemote()
-			end
-		end
+		fireGodModeFallDamageRemote()
 	end
 
 	local function stopGodMode()
