@@ -746,7 +746,6 @@ local function setupLocalCheatsTab()
 	local GOD_MODE_INFINITE_HEALTH_THRESHOLD = 1e12
 	local godModeSavedHealth = nil
 	local godModeSavedMaxHealth = nil
-	local godModeReachedInfiniteHealth = false
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1183,14 +1182,12 @@ local function setupLocalCheatsTab()
 		if not humanoid then
 			godModeSavedHealth = nil
 			godModeSavedMaxHealth = nil
-			godModeReachedInfiniteHealth = false
 			return
 		end
 
 		local restoredMaxHealth = godModeSavedMaxHealth
 		local restoredHealth = godModeSavedHealth
 
-		godModeReachedInfiniteHealth = false
 		godModeSavedHealth = nil
 		godModeSavedMaxHealth = nil
 
@@ -1227,11 +1224,11 @@ local function setupLocalCheatsTab()
 	end
 
 	local function updateGodModeSavedHealth(humanoid)
-		if not humanoid or godModeReachedInfiniteHealth then
+		if not humanoid then
 			return
 		end
 
-		if not isHumanoidHealthInfinite(humanoid) then
+		if godModeSavedHealth == nil and godModeSavedMaxHealth == nil and not isHumanoidHealthInfinite(humanoid) then
 			godModeSavedHealth = humanoid.Health
 			godModeSavedMaxHealth = humanoid.MaxHealth
 		end
@@ -1264,7 +1261,6 @@ local function setupLocalCheatsTab()
 		if humanoid then
 			updateGodModeSavedHealth(humanoid)
 			if isHumanoidHealthInfinite(humanoid) then
-				godModeReachedInfiniteHealth = true
 				return
 			end
 		end
@@ -1289,7 +1285,8 @@ local function setupLocalCheatsTab()
 	local function startGodMode()
 		stopGodMode()
 		godModeLoopToken += 1
-		godModeReachedInfiniteHealth = false
+		godModeSavedHealth = nil
+		godModeSavedMaxHealth = nil
 		local loopToken = godModeLoopToken
 
 		local function hookCharacter(character)
@@ -1331,7 +1328,6 @@ local function setupLocalCheatsTab()
 				if humanoid then
 					updateGodModeSavedHealth(humanoid)
 					if isHumanoidHealthInfinite(humanoid) then
-						godModeReachedInfiniteHealth = true
 						break
 					end
 				end
