@@ -2660,13 +2660,14 @@ local function setupEspTab()
 		for _, model in ipairs(iterEspCandidateModels()) do
 			if shouldShowMobEsp(model) and shouldRenderEspModel(model, "mob") then
 				validModels[model] = true
+				local accentColor = Color3.fromRGB(255, 255, 255)
 				local entry = ensureEspEntry(
 					mobEspEntries,
 					model,
-					Color3.fromRGB(80, 255, 140)
+					accentColor
 				)
 				if entry then
-					updateEspEntry(entry, model, "mob", Color3.fromRGB(80, 255, 140))
+					updateEspEntry(entry, model, "mob", accentColor)
 				end
 			end
 		end
