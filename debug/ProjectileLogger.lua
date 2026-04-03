@@ -8,6 +8,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G
 local GLOBAL_KEY = "__huaj_hub_projectile_logger_v1"
 local MAX_LOG_LINES = 32
 local TRACK_LIFETIME = 4
+local DEFAULT_MAX_DISTANCE = 60
 
 if GLOBAL_ENV[GLOBAL_KEY] and type(GLOBAL_ENV[GLOBAL_KEY].Unload) == "function" then
 	pcall(GLOBAL_ENV[GLOBAL_KEY].Unload)
@@ -20,6 +21,10 @@ local frame
 local statusLabel
 local logLabel
 local targetLabel
+local distanceBox
+local rangeIndicator
+local rangeEnabled = true
+local maxDistance = DEFAULT_MAX_DISTANCE
 local logLines = {}
 local dragState = {
 	dragging = false,
@@ -152,6 +157,10 @@ local function getDistanceToLocalPlayer(instance)
 	return (position - localRoot.Position).Magnitude
 end
 
+local function getMaxDistance()
+	return math.max(tonumber(maxDistance) or DEFAULT_MAX_DISTANCE, 1)
+end
+
 local function findOwnerHint(instance)
 	local current = instance
 	while current do
@@ -211,6 +220,11 @@ local function shouldTrackInstance(instance)
 	end
 
 	if instance:IsA("BasePart") or instance:IsA("Model") then
+		local distance = getDistanceToLocalPlayer(instance)
+		if distance and distance > getMaxDistance() then
+			return false
+		end
+
 		local speed = getSpeed(instance)
 		if speed >= 30 then
 			return true
@@ -226,6 +240,11 @@ end
 
 local function addTrackedInstance(instance, reason)
 	if tracked[instance] then
+		return
+	end
+
+	local distance = getDistanceToLocalPlayer(instance)
+	if distance and distance > getMaxDistance() then
 		return
 	end
 
@@ -254,6 +273,13 @@ local function unload()
 	table.clear(connections)
 	table.clear(tracked)
 
+	if rangeIndicator then
+		pcall(function()
+			rangeIndicator:Destroy()
+		end)
+		rangeIndicator = nil
+	end
+
 	if gui then
 		pcall(function()
 			gui:Destroy()
@@ -262,6 +288,31 @@ local function unload()
 	end
 
 	GLOBAL_ENV[GLOBAL_KEY] = nil
+end
+
+local function parseDistance(text)
+	local value = tonumber(text)
+	if not value then
+		return DEFAULT_MAX_DISTANCE
+	end
+	return math.max(value, 1)
+end
+
+local function updateRangeIndicator()
+	if not rangeIndicator then
+		return
+	end
+
+	local character = getCharacter()
+	local root = getRoot(character)
+	if not rangeEnabled or not root then
+		rangeIndicator.Transparency = 1
+		return
+	end
+
+	rangeIndicator.Size = Vector3.new(getMaxDistance() * 2, 0.15, getMaxDistance() * 2)
+	rangeIndicator.CFrame = CFrame.new(root.Position.X, root.Position.Y - 2.8, root.Position.Z) * CFrame.Angles(math.rad(90), 0, 0)
+	rangeIndicator.Transparency = 0.65
 end
 
 local function createLabel(parent, text, position, size, color, wrapped)
@@ -294,6 +345,22 @@ local function createButton(parent, text, position, size, color)
 	return button
 end
 
+local function createBox(parent, text, position, size)
+	local box = Instance.new("TextBox")
+	box.Size = size
+	box.Position = position
+	box.BackgroundColor3 = Color3.fromRGB(24, 24, 24)
+	box.BorderColor3 = Color3.fromRGB(60, 60, 60)
+	box.ClearTextOnFocus = false
+	box.Font = Enum.Font.Code
+	box.PlaceholderColor3 = Color3.fromRGB(130, 130, 130)
+	box.TextColor3 = Color3.fromRGB(255, 255, 255)
+	box.TextSize = 15
+	box.Text = text
+	box.Parent = parent
+	return box
+end
+
 gui = Instance.new("ScreenGui")
 gui.Name = "HuajHubProjectileLogger"
 gui.ResetOnSpawn = false
@@ -316,21 +383,24 @@ createLabel(frame, "Projectile Logger", UDim2.new(0, 12, 0, 8), UDim2.new(1, -10
 
 local exitButton = createButton(frame, "Exit", UDim2.new(1, -76, 0, 10), UDim2.new(0, 64, 0, 24), Color3.fromRGB(120, 30, 30))
 local rescanButton = createButton(frame, "Rescan", UDim2.new(1, -152, 0, 10), UDim2.new(0, 64, 0, 24), Color3.fromRGB(45, 95, 60))
+local visualizerButton = createButton(frame, "Visualizer", UDim2.new(1, -238, 0, 10), UDim2.new(0, 78, 0, 24), Color3.fromRGB(65, 65, 105))
 
 targetLabel = createLabel(
 	frame,
-	"Watching workspace for fast-moving / projectile-like instances under FX, Live, or projectile-named objects.",
+	"Watching nearby projectile-like instances under FX, Live, or projectile-named objects.",
 	UDim2.new(0, 12, 0, 40),
 	UDim2.new(1, -24, 0, 36),
 	Color3.fromRGB(185, 185, 185),
 	true
 )
 
-statusLabel = createLabel(frame, "Status: Starting...", UDim2.new(0, 12, 0, 80), UDim2.new(1, -24, 0, 18), Color3.fromRGB(110, 200, 255))
+createLabel(frame, "Distance", UDim2.new(0, 12, 0, 80), UDim2.new(0, 80, 0, 18), Color3.fromRGB(220, 220, 220))
+distanceBox = createBox(frame, tostring(DEFAULT_MAX_DISTANCE), UDim2.new(0, 82, 0, 76), UDim2.new(0, 70, 0, 24))
+statusLabel = createLabel(frame, "Status: Starting...", UDim2.new(0, 12, 0, 108), UDim2.new(1, -24, 0, 18), Color3.fromRGB(110, 200, 255))
 
 local logFrame = Instance.new("Frame")
 logFrame.Size = UDim2.new(1, -24, 1, -120)
-logFrame.Position = UDim2.new(0, 12, 0, 108)
+logFrame.Position = UDim2.new(0, 12, 0, 136)
 logFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 10)
 logFrame.BorderColor3 = Color3.fromRGB(40, 40, 40)
 logFrame.Parent = frame
@@ -348,6 +418,18 @@ trackConnection(exitButton.MouseButton1Click:Connect(unload))
 trackConnection(rescanButton.MouseButton1Click:Connect(function()
 	table.clear(tracked)
 	pushLog("manual rescan started")
+	scanExisting()
+end))
+trackConnection(visualizerButton.MouseButton1Click:Connect(function()
+	rangeEnabled = not rangeEnabled
+	visualizerButton.Text = rangeEnabled and "Visualizer" or "Visualizer Off"
+	updateRangeIndicator()
+end))
+trackConnection(distanceBox.FocusLost:Connect(function()
+	maxDistance = parseDistance(distanceBox.Text)
+	distanceBox.Text = tostring(math.floor(getMaxDistance() + 0.5))
+	table.clear(tracked)
+	pushLog("distance set to " .. tostring(distanceBox.Text))
 	scanExisting()
 end))
 
@@ -390,11 +472,14 @@ trackConnection(RunService.Heartbeat:Connect(function()
 	for instance, state in pairs(tracked) do
 		if not instance or not instance.Parent then
 			tracked[instance] = nil
+		elseif (getDistanceToLocalPlayer(instance) or math.huge) > getMaxDistance() then
+			tracked[instance] = nil
 		elseif now - (state.addedAt or now) > TRACK_LIFETIME then
 			tracked[instance] = nil
 		end
 	end
 
+	updateRangeIndicator()
 	setStatus(string.format("Tracking %d recent projectile-like instance(s)", (function()
 		local count = 0
 		for _ in pairs(tracked) do
@@ -406,6 +491,19 @@ end))
 
 pushLog("logger started")
 scanExisting()
+
+rangeIndicator = Instance.new("Part")
+rangeIndicator.Name = "HuajHubProjectileLoggerRange"
+rangeIndicator.Anchored = true
+rangeIndicator.CanCollide = false
+rangeIndicator.CanQuery = false
+rangeIndicator.CanTouch = false
+rangeIndicator.Material = Enum.Material.ForceField
+rangeIndicator.Color = Color3.fromRGB(120, 90, 255)
+rangeIndicator.Shape = Enum.PartType.Cylinder
+rangeIndicator.Transparency = 0.65
+rangeIndicator.Parent = workspace
+updateRangeIndicator()
 
 GLOBAL_ENV[GLOBAL_KEY] = {
 	Unload = unload,
