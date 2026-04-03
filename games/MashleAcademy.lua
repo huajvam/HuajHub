@@ -5622,7 +5622,15 @@ local function setupMiscTab()
 		table.clear(inventoryPlayerMap)
 		inventoryPlayerLabels = {"(none)"}
 
-		local playersList = Players:GetPlayers()
+		local playersList = {}
+		for _, child in ipairs(Players:GetChildren()) do
+			if child:IsA("Player") then
+				table.insert(playersList, child)
+			end
+		end
+		if #playersList == 0 then
+			playersList = Players:GetPlayers()
+		end
 		table.sort(playersList, function(left, right)
 			return left.Name:lower() < right.Name:lower()
 		end)
@@ -5743,6 +5751,9 @@ local function setupMiscTab()
 		Default = 1,
 		Multi = false,
 	})
+	inventoryGroup:AddButton("Refresh Player List", function()
+		refreshInventoryViewerDropdown()
+	end)
 	inventoryListLabel = inventoryGroup:AddLabel("Select a player to view inventory folders.", true)
 
 	local farmsGroup = miscTab:AddRightGroupbox("Farms")
