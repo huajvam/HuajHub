@@ -740,6 +740,10 @@ local function setupLocalCheatsTab()
 	local GOD_MODE_STATE_NAMES = {"NotParryableStun", "Ragdoll"}
 	local GOD_MODE_BURST_PER_HEARTBEAT = 6
 	local GOD_MODE_MAX_STATES = 180
+	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
+		FallDamageValueTotal = 2.686142883300781,
+		FallDamage = 84.30714416503906,
+	}
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1210,6 +1214,20 @@ local function setupLocalCheatsTab()
 		return stateValue
 	end
 
+	local function fireGodModeFallDamageRemote()
+		local requestModule = getRequestModuleRemote()
+		if not requestModule then
+			return
+		end
+
+		pcall(function()
+			requestModule:FireServer("Misc", "FallDamage", nil, {
+				FallDamageValueTotal = GOD_MODE_FALL_DAMAGE_PAYLOAD.FallDamageValueTotal,
+				FallDamage = GOD_MODE_FALL_DAMAGE_PAYLOAD.FallDamage,
+			})
+		end)
+	end
+
 	local function ensureGodModeState(character)
 		if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
 			return
@@ -1229,6 +1247,7 @@ local function setupLocalCheatsTab()
 					stateValue.Value = true
 					stateValue:SetAttribute("Lifetime", 1)
 				end)
+				fireGodModeFallDamageRemote()
 			end
 		end
 
@@ -1245,6 +1264,7 @@ local function setupLocalCheatsTab()
 				pcall(function()
 					createGodModeState(characterState, stateName)
 				end)
+				fireGodModeFallDamageRemote()
 			end
 		end
 	end
