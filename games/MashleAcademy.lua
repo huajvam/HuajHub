@@ -3544,17 +3544,17 @@ local function setupAutoParryTab()
 		Rounding = 0,
 		Suffix = " studs",
 	})
-	local createMakerConfigButton = autoParryMakerGroup:AddButton("Create Config", function()
+	autoParryMakerGroup:AddButton("Create Config", function()
 		if onCreateMakerConfig then
 			onCreateMakerConfig()
 		end
 	end)
-	local saveMakerConfigButton = createMakerConfigButton:AddButton("Save Config", function()
+	autoParryMakerGroup:AddButton("Save Config", function()
 		if onSaveMakerConfig then
 			onSaveMakerConfig()
 		end
 	end)
-	local deleteMakerConfigButton = saveMakerConfigButton:AddButton("Delete Config", function()
+	autoParryMakerGroup:AddButton("Delete Config", function()
 		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
 		local configId = autoParryState.currentBuilderConfigId
 		if (not configId or configId == "") and Options and Options.AutoParryMakerSavedConfig then
@@ -3582,7 +3582,7 @@ local function setupAutoParryTab()
 		saveAutoParryMakerConfigsToFile()
 		Library:Notify("Deleted Auto Parry config.", 2)
 	end)
-	local autoGetMakerConfigButton = autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
+	autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
 		if onAutoGetMakerConfig then
 			onAutoGetMakerConfig()
 		end
@@ -6092,7 +6092,7 @@ local function setupMiscTab()
 
 	local function buildInventoryPlayerLabels()
 		table.clear(inventoryPlayerMap)
-		inventoryPlayerLabels = {"(none)"}
+		inventoryPlayerLabels = {}
 
 		local playersList = {}
 		local ok, livePlayers = pcall(function()
@@ -6134,7 +6134,7 @@ local function setupMiscTab()
 
 	local function renderSelectedInventory()
 		local selectedName = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
-		local selectedPlayer = selectedName and inventoryPlayerMap[selectedName]
+		local selectedPlayer = (type(selectedName) == "string" and selectedName ~= "" and inventoryPlayerMap[selectedName]) or nil
 		if not selectedPlayer then
 			setInventoryViewerText("Select a player to view inventory folders.")
 			return
@@ -6176,9 +6176,9 @@ local function setupMiscTab()
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
 			end)
-			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value or "(none)"
+			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value
 			if not inventoryPlayerMap[currentSelection] then
-				currentSelection = "(none)"
+				currentSelection = nil
 			end
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValue(currentSelection)
@@ -6236,7 +6236,8 @@ local function setupMiscTab()
 	inventoryGroup:AddDropdown("InventoryViewerPlayer", {
 		Text = "Player",
 		Values = inventoryPlayerLabels,
-		Default = "(none)",
+		AllowNull = true,
+		Default = nil,
 		Multi = false,
 	})
 	inventoryGroup:AddButton("Refresh Player List", function()
@@ -6263,14 +6264,14 @@ local function setupMiscTab()
 		renderSelectedInventory()
 	end)
 	maid:GiveTask(Players.PlayerAdded:Connect(function(player)
-		refreshInventoryViewerDropdown("(none)")
+		refreshInventoryViewerDropdown(nil)
 	end))
 	maid:GiveTask(Players.PlayerRemoving:Connect(function(player)
 		local currentSelection = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
-		local preferredSelection = currentSelection ~= player.Name and currentSelection or "(none)"
+		local preferredSelection = currentSelection ~= player.Name and currentSelection or nil
 		refreshInventoryViewerDropdown(preferredSelection)
 	end))
-	refreshInventoryViewerDropdown("(none)")
+	refreshInventoryViewerDropdown(nil)
 
 	registerLibraryUnloadCallback(function()
 		stopStaffDetector()
@@ -6300,11 +6301,12 @@ local function setupMiscTab()
 		setBlurEffectsEnabled(true)
 	end)
 end
-local miscSetupOk = pcall(setupMiscTab)
+local miscSetupOk, miscSetupErr = pcall(setupMiscTab)
 if not miscSetupOk then
 	local miscFallback = Tabs["Misc"]:AddLeftGroupbox("Misc")
 	miscFallback:AddLabel("Misc failed to build.")
 	miscFallback:AddLabel("Using fallback view.")
+	miscFallback:AddLabel(tostring(miscSetupErr or "Unknown misc error."), true)
 end
 
 local function setupSettingsTab()
@@ -6323,10 +6325,11 @@ local function setupSettingsTab()
 
 	Library.ToggleKeybind = Options.MenuKeybind
 end
-local settingsSetupOk = pcall(setupSettingsTab)
+local settingsSetupOk, settingsSetupErr = pcall(setupSettingsTab)
 if not settingsSetupOk then
 	local settingsFallback = Tabs["Settings"]:AddLeftGroupbox("Menu")
 	settingsFallback:AddLabel("Settings failed to build.")
+	settingsFallback:AddLabel(tostring(settingsSetupErr or "Unknown settings error."), true)
 end
 
 ThemeManager:SetLibrary(Library)
