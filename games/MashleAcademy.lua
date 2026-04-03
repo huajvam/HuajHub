@@ -1019,7 +1019,7 @@ local function setupLocalCheatsTab()
 	end
 
 	local function shouldMaintainLocalAntiFallState()
-		return isAntiFallActive() and os.clock() <= antiFallProtectedUntil
+		return false
 	end
 
 	local function shouldMaintainAntiFallState()
