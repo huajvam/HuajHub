@@ -5355,17 +5355,42 @@ local function setupMiscTab()
 
 	local function setEffectsEnabled(enabled)
 		for _, descendant in ipairs(Lighting:GetDescendants()) do
-			if (descendant:IsA("PostEffect") and not descendant:IsA("BlurEffect"))
-				or descendant:IsA("Atmosphere")
-				or descendant:IsA("Sky")
-				or descendant:IsA("Clouds")
-			then
+			if descendant:IsA("PostEffect") and not descendant:IsA("BlurEffect") then
 				if effectEnabledStates[descendant] == nil then
 					effectEnabledStates[descendant] = descendant.Enabled
 				end
 
 				pcall(function()
 					descendant.Enabled = enabled and effectEnabledStates[descendant] or false
+				end)
+			elseif descendant:IsA("Atmosphere") then
+				if effectEnabledStates[descendant] == nil then
+					effectEnabledStates[descendant] = {
+						Density = descendant.Density,
+						Haze = descendant.Haze,
+						Glare = descendant.Glare,
+					}
+				end
+
+				pcall(function()
+					local state = effectEnabledStates[descendant]
+					if enabled and type(state) == "table" then
+						descendant.Density = state.Density
+						descendant.Haze = state.Haze
+						descendant.Glare = state.Glare
+					else
+						descendant.Density = 0
+						descendant.Haze = 0
+						descendant.Glare = 0
+					end
+				end)
+			elseif descendant:IsA("Sky") or descendant:IsA("Clouds") then
+				if effectEnabledStates[descendant] == nil then
+					effectEnabledStates[descendant] = descendant.Parent
+				end
+
+				pcall(function()
+					descendant.Parent = enabled and Lighting or nil
 				end)
 			end
 		end
@@ -5624,7 +5649,7 @@ local function setupMiscTab()
 
 		local playersList = {}
 		for _, child in ipairs(game:GetService("Players"):GetChildren()) do
-			if child:IsA("Player") then
+			if child and type(child.Name) == "string" and child.Name ~= "" then
 				table.insert(playersList, child)
 			end
 		end
@@ -5686,18 +5711,24 @@ local function setupMiscTab()
 		buildInventoryPlayerLabels()
 
 		if Options.InventoryViewerPlayer then
-			Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
+			pcall(function()
+				Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
+			end)
 			local currentSelection = preferredSelection
 				or Options.InventoryViewerPlayer.Value
 				or (inventoryPlayerLabels[2] or "(none)")
 			if not inventoryPlayerMap[currentSelection] then
 				currentSelection = inventoryPlayerLabels[2] or "(none)"
 			end
-			Options.InventoryViewerPlayer:SetValue(currentSelection)
+			pcall(function()
+				Options.InventoryViewerPlayer:SetValue(currentSelection)
+			end)
 		end
 
 		renderSelectedInventory()
 	end
+
+	buildInventoryPlayerLabels()
 
 	local miscGroup = miscTab:AddLeftGroupbox("Misc")
 	miscGroup:AddButton("Hop to Low Server", function()
