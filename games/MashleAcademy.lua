@@ -737,13 +737,16 @@ local function setupLocalCheatsTab()
 	local speedHackVelocity = nil
 	local flyVelocity = nil
 	local antiFallState = nil
-	local godModeLoopToken = 0
 	local GOD_MODE_FALL_DAMAGE_PAYLOAD = {
 		FallDamageValueTotal = -math.huge,
 		FallDamage = -math.huge,
 	}
 	local GOD_MODE_REMOTE_INTERVAL = 0.05
 	local GOD_MODE_REMOTE_BURST = 3
+	local GOD_MODE_INFINITE_HEALTH_THRESHOLD = 1e12
+	local godModeSavedHealth = nil
+	local godModeSavedMaxHealth = nil
+	local godModeReachedInfiniteHealth = false
 	local antiFallProtectedUntil = 0
 	local teleportAntiFallUntil = 0
 	local knockedOwnershipLoopToken = 0
@@ -1176,7 +1179,62 @@ local function setupLocalCheatsTab()
 	end
 
 	local function removeGodModeState()
-		return
+		local humanoid = getCharacterHumanoid(LocalPlayer and LocalPlayer.Character)
+		if not humanoid then
+			godModeSavedHealth = nil
+			godModeSavedMaxHealth = nil
+			godModeReachedInfiniteHealth = false
+			return
+		end
+
+		local restoredMaxHealth = godModeSavedMaxHealth
+		local restoredHealth = godModeSavedHealth
+
+		godModeReachedInfiniteHealth = false
+		godModeSavedHealth = nil
+		godModeSavedMaxHealth = nil
+
+		if restoredMaxHealth and restoredMaxHealth > 0 then
+			pcall(function()
+				humanoid.MaxHealth = restoredMaxHealth
+			end)
+		end
+
+		if restoredHealth and restoredHealth > 0 then
+			pcall(function()
+				local maxHealth = humanoid.MaxHealth
+				humanoid.Health = math.clamp(restoredHealth, 0, maxHealth > 0 and maxHealth or restoredHealth)
+			end)
+		end
+	end
+
+	local function isHumanoidHealthInfinite(humanoid)
+		if not humanoid then
+			return false
+		end
+
+		local health = humanoid.Health
+		local maxHealth = humanoid.MaxHealth
+		if health == math.huge or maxHealth == math.huge then
+			return true
+		end
+
+		if health >= GOD_MODE_INFINITE_HEALTH_THRESHOLD or maxHealth >= GOD_MODE_INFINITE_HEALTH_THRESHOLD then
+			return true
+		end
+
+		return false
+	end
+
+	local function updateGodModeSavedHealth(humanoid)
+		if not humanoid or godModeReachedInfiniteHealth then
+			return
+		end
+
+		if not isHumanoidHealthInfinite(humanoid) then
+			godModeSavedHealth = humanoid.Health
+			godModeSavedMaxHealth = humanoid.MaxHealth
+		end
 	end
 
 	local function fireGodModeFallDamageRemote()
@@ -1202,6 +1260,15 @@ local function setupLocalCheatsTab()
 			return
 		end
 
+		local humanoid = getCharacterHumanoid(character)
+		if humanoid then
+			updateGodModeSavedHealth(humanoid)
+			if isHumanoidHealthInfinite(humanoid) then
+				godModeReachedInfiniteHealth = true
+				return
+			end
+		end
+
 		fireGodModeFallDamageRemote()
 	end
 
@@ -1222,9 +1289,15 @@ local function setupLocalCheatsTab()
 	local function startGodMode()
 		stopGodMode()
 		godModeLoopToken += 1
+		godModeReachedInfiniteHealth = false
 		local loopToken = godModeLoopToken
 
 		local function hookCharacter(character)
+			local humanoid = getCharacterHumanoid(character)
+			if humanoid then
+				godModeSavedHealth = humanoid.Health
+				godModeSavedMaxHealth = humanoid.MaxHealth
+			end
 			ensureGodModeState(character)
 		end
 
@@ -1252,6 +1325,15 @@ local function setupLocalCheatsTab()
 			while loopToken == godModeLoopToken do
 				if not (Toggles and Toggles.GodModeEnabled and Toggles.GodModeEnabled.Value) then
 					break
+				end
+
+				local humanoid = getCharacterHumanoid(LocalPlayer and LocalPlayer.Character)
+				if humanoid then
+					updateGodModeSavedHealth(humanoid)
+					if isHumanoidHealthInfinite(humanoid) then
+						godModeReachedInfiniteHealth = true
+						break
+					end
 				end
 
 				for _ = 1, GOD_MODE_REMOTE_BURST do
