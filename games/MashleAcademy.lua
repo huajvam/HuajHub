@@ -4244,12 +4244,19 @@ local function setupAutoParryTab()
 			return false
 		end
 
-		local recentTimestamp = autoParryState.recentAnimationActions[recentKey]
-		if not recentTimestamp then
+		local recentState = autoParryState.recentAnimationActions[recentKey]
+		if not recentState then
 			return false
 		end
 
-		if os.clock() - (tonumber(recentTimestamp) or 0) < 0.45 then
+		local expiresAt
+		if type(recentState) == "table" then
+			expiresAt = tonumber(recentState.expiresAt)
+		else
+			expiresAt = (tonumber(recentState) or 0) + 0.45
+		end
+
+		if os.clock() < (expiresAt or 0) then
 			return true
 		end
 
@@ -4257,10 +4264,14 @@ local function setupAutoParryTab()
 		return false
 	end
 
-	local function markAnimationRecentlyHandled(targetCharacter, animationId)
+	local function markAnimationRecentlyHandled(targetCharacter, animationId, durationSeconds)
 		local recentKey = getRecentAnimationActionKey(targetCharacter, animationId)
 		if recentKey then
-			autoParryState.recentAnimationActions[recentKey] = os.clock()
+			local duration = math.clamp(tonumber(durationSeconds) or 0.9, 0.45, 3)
+			autoParryState.recentAnimationActions[recentKey] = {
+				recordedAt = os.clock(),
+				expiresAt = os.clock() + duration,
+			}
 		end
 	end
 
@@ -4483,7 +4494,12 @@ local function setupAutoParryTab()
 			return
 		end
 
-		markAnimationRecentlyHandled(targetCharacter, animationId)
+		local handledDuration = math.max(
+			resolveConfiguredTiming(activeMoveConfig) or 0,
+			getMoveConfigDelaySeconds(activeMoveConfig),
+			getMoveConfigRepeatDelaySeconds(activeMoveConfig)
+		) + 0.75
+		markAnimationRecentlyHandled(targetCharacter, animationId, handledDuration)
 
 		local usedDash = false
 		if activeMoveConfig and activeMoveConfig.dash == true
