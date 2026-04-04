@@ -7145,7 +7145,9 @@ local function setupMiscTab()
 
 	local function setInventoryViewerText(text)
 		if inventoryListLabel and type(inventoryListLabel.SetText) == "function" then
-			inventoryListLabel:SetText(tostring(text or ""))
+			pcall(function()
+				inventoryListLabel:SetText(tostring(text or ""))
+			end)
 		end
 	end
 
