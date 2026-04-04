@@ -6267,8 +6267,16 @@ local function setupAutoParryTab()
 			setDebugText(string.format("%s -> animation register failed: %s", actionKind, tostring(registerAnimationErr)))
 			return
 		end
-		setLastAnimationId(candidate.animationId)
-		local latestCapture = {
+		local setLastIdOk, setLastIdErr = pcall(function()
+			setLastAnimationId(candidate.animationId)
+		end)
+		if not setLastIdOk then
+			setDebugText(string.format("%s -> last id update failed: %s", actionKind, tostring(setLastIdErr)))
+			return
+		end
+		local latestCapture = nil
+		local latestCaptureOk, latestCaptureErr = pcall(function()
+			latestCapture = {
 			actionKind = actionKind,
 			sourceKey = getMakerSourceKey(candidate.targetType),
 			animationId = candidate.animationId,
@@ -6277,6 +6285,11 @@ local function setupAutoParryTab()
 			range = math.max(1, math.floor(candidate.distance or 16)),
 			capturedAt = os.clock(),
 		}
+		end)
+		if not latestCaptureOk then
+			setDebugText(string.format("%s -> capture build failed: %s", actionKind, tostring(latestCaptureErr)))
+			return
+		end
 		if isDashAction then
 			lastManualDashCapture = latestCapture
 		elseif isJumpAction then
