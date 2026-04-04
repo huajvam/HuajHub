@@ -6986,7 +6986,7 @@ local function setupMiscTab()
 
 	local function buildInventoryPlayerLabels()
 		table.clear(inventoryPlayerMap)
-		inventoryPlayerLabels = {}
+		inventoryPlayerLabels = {"(none)"}
 
 		local playersList = {}
 		local ok, livePlayers = pcall(function()
@@ -7028,7 +7028,7 @@ local function setupMiscTab()
 
 	local function renderSelectedInventory()
 		local selectedName = Options.InventoryViewerPlayer and Options.InventoryViewerPlayer.Value
-		local selectedPlayer = (type(selectedName) == "string" and selectedName ~= "" and inventoryPlayerMap[selectedName]) or nil
+		local selectedPlayer = (type(selectedName) == "string" and selectedName ~= "" and selectedName ~= "(none)" and inventoryPlayerMap[selectedName]) or nil
 		if not selectedPlayer then
 			setInventoryViewerText("Select a player to view inventory folders.")
 			return
@@ -7070,9 +7070,9 @@ local function setupMiscTab()
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValues(inventoryPlayerLabels)
 			end)
-			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value
+			local currentSelection = preferredSelection or Options.InventoryViewerPlayer.Value or "(none)"
 			if not inventoryPlayerMap[currentSelection] then
-				currentSelection = nil
+				currentSelection = "(none)"
 			end
 			pcall(function()
 				Options.InventoryViewerPlayer:SetValue(currentSelection)
@@ -7130,8 +7130,8 @@ local function setupMiscTab()
 	inventoryGroup:AddDropdown("InventoryViewerPlayer", {
 		Text = "Player",
 		Values = inventoryPlayerLabels,
-		AllowNull = true,
-		Default = nil,
+		AllowNull = false,
+		Default = 1,
 		Multi = false,
 	})
 	inventoryGroup:AddButton("Refresh Player List", function()
