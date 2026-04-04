@@ -4741,42 +4741,50 @@ local function setupAutoParryTab()
 		end
 
 		local bestCandidate
-		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if descendant
 				and descendant.Parent
 				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
-				and isValidProjectileSignatureNode(descendant)
 			then
-				local representative = getProjectileRepresentative(descendant)
-				if representative and representative.Parent and not seenRepresentatives[representative] then
-					seenRepresentatives[representative] = true
+				local projectilePart = nil
+				if descendant:IsA("BasePart") then
+					projectilePart = descendant
+				elseif descendant:IsA("Attachment") then
+					local parent = descendant.Parent
+					if parent and parent:IsA("BasePart") then
+						projectilePart = parent
+					end
+				end
 
-					local signature = getProjectileRelativePathUnderFx(descendant)
+				if projectilePart and projectilePart:IsDescendantOf(fxFolder) then
+					local representative = projectilePart:FindFirstAncestorWhichIsA("Model") or projectilePart
+					local signature = getProjectileRelativePathUnderFx(projectilePart)
 						or getProjectileRelativePathUnderFx(representative)
-						or tostring(representative.Name or "")
-					if signature and signature ~= "" and signature ~= "FX" and signature ~= "fx" then
-						local approachData = getProjectileApproachData(representative)
-						local distance = getProjectileCandidateDistance(descendant, representative, representative)
-						if not distance and approachData then
-							distance = approachData.distance
-						end
-						if distance and distance <= maxDistance then
-							local candidate = {
-								signature = normalizeBuilderConfigId("Projectiles", signature),
-								representative = representative,
-								signatureSource = representative,
-								specificity = getProjectileSpecificityScore(representative.Name),
-								distance = distance,
-								timeToImpact = approachData and approachData.timeToImpact or 0,
-							}
-							if candidate.signature and candidate.signature ~= "" then
-								if not bestCandidate
-									or candidate.distance < bestCandidate.distance
-									or ((candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0) and candidate.timeToImpact < bestCandidate.timeToImpact)
-								then
-									bestCandidate = candidate
-								end
+						or tostring(projectilePart.Name or "")
+					local distance = getProjectileCandidateDistance(projectilePart, representative, projectilePart)
+					local speed = projectilePart.AssemblyLinearVelocity.Magnitude
+					if signature
+						and signature ~= ""
+						and signature ~= "FX"
+						and signature ~= "fx"
+						and distance
+						and distance <= maxDistance
+					then
+						local candidate = {
+							signature = normalizeBuilderConfigId("Projectiles", signature),
+							representative = representative,
+							signatureSource = projectilePart,
+							specificity = getProjectileSpecificityScore(projectilePart.Name),
+							distance = distance,
+							timeToImpact = speed > 5 and (((getProjectileApproachData(representative) or {}).timeToImpact) or 0) or 0,
+						}
+						if candidate.signature and candidate.signature ~= "" then
+							if not bestCandidate
+								or (speed > 5 and (bestCandidate.timeToImpact or 0) <= 0)
+								or (speed > 5 and bestCandidate.timeToImpact > 0 and candidate.timeToImpact > 0 and candidate.timeToImpact < bestCandidate.timeToImpact)
+								or (candidate.distance < bestCandidate.distance)
+							then
+								bestCandidate = candidate
 							end
 						end
 					end
