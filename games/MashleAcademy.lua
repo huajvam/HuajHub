@@ -4597,8 +4597,8 @@ local function setupAutoParryTab()
 	local function getProjectileSignature(instance)
 		local representative = getProjectileRepresentative(instance)
 		local signatureSource = representative or instance
-		local signature = getProjectileRelativePathUnderFx(signatureSource)
-			or getProjectileRelativePathUnderFx(instance)
+		local signature = getProjectileRelativePathUnderFx(instance)
+			or getProjectileRelativePathUnderFx(signatureSource)
 			or (signatureSource and signatureSource.Name)
 			or (representative and representative.Name or nil)
 		if not signature or signature == "" or signature == "FX" or signature == "fx" then
@@ -4852,23 +4852,9 @@ local function setupAutoParryTab()
 				lastSource = child,
 				seenAt = os.clock(),
 			}
-			rememberRecentProjectileCandidate(child)
-			for _, descendant in ipairs(child:GetDescendants()) do
-				rememberRecentProjectileCandidate(descendant)
-			end
 		end))
-		table.insert(recentProjectileFxConnections, folder.DescendantAdded:Connect(function(instance)
-			rememberRecentProjectileCandidate(instance)
-		end))
-		table.insert(recentProjectileFxConnections, folder.DescendantRemoving:Connect(function(instance)
-			local representative = getProjectileRepresentative(instance) or instance
-			if representative then
-				recentProjectileCandidates[representative] = nil
-			end
-			local branch = getProjectileTopLevelChild(instance)
-			if branch and not branch.Parent then
-				recentProjectileBranches[branch] = nil
-			end
+		table.insert(recentProjectileFxConnections, folder.ChildRemoved:Connect(function(child)
+			recentProjectileBranches[child] = nil
 		end))
 
 		for _, child in ipairs(folder:GetChildren()) do
@@ -4878,10 +4864,6 @@ local function setupAutoParryTab()
 				lastSource = child,
 				seenAt = os.clock(),
 			}
-			rememberRecentProjectileCandidate(child)
-		end
-		for _, descendant in ipairs(folder:GetDescendants()) do
-			rememberRecentProjectileCandidate(descendant)
 		end
 	end
 
@@ -4926,42 +4908,6 @@ local function setupAutoParryTab()
 		end
 
 		local bestCandidate
-		local now = os.clock()
-		for branch, branchEntry in pairs(recentProjectileBranches) do
-			if not branchEntry
-				or not branch
-				or not branch.Parent
-				or (now - (branchEntry.seenAt or 0)) > RECENT_PROJECTILE_CAPTURE_WINDOW
-			then
-				recentProjectileBranches[branch] = nil
-			else
-				local branchCandidate = buildProjectileCandidateFromBranch(branchEntry)
-				if branchCandidate
-					and branchCandidate.distance
-					and branchCandidate.distance <= maxDistance
-					and scoreProjectileCandidate(branchCandidate, bestCandidate)
-				then
-					bestCandidate = branchCandidate
-				end
-			end
-		end
-		for representative, cachedCandidate in pairs(recentProjectileCandidates) do
-			if not cachedCandidate
-				or (now - (cachedCandidate.seenAt or 0)) > RECENT_PROJECTILE_CAPTURE_WINDOW
-			then
-				recentProjectileCandidates[representative] = nil
-			else
-				local refreshedCandidate = nil
-				if cachedCandidate.signatureSource and cachedCandidate.signatureSource.Parent then
-					refreshedCandidate = buildProjectileCandidateFromInstance(cachedCandidate.signatureSource)
-				end
-				local candidate = refreshedCandidate or cachedCandidate
-				if candidate.distance and candidate.distance <= maxDistance and scoreProjectileCandidate(candidate, bestCandidate) then
-					bestCandidate = candidate
-				end
-			end
-		end
-
 		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if descendant
@@ -4969,7 +4915,6 @@ local function setupAutoParryTab()
 				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
 				and shouldTrackProjectileCandidate(descendant)
 			then
-				rememberRecentProjectileCandidate(descendant)
 				local representative = getProjectileRepresentative(descendant) or descendant
 				if representative and not seenRepresentatives[representative] then
 					seenRepresentatives[representative] = true
