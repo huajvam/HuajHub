@@ -594,7 +594,13 @@ end
 
 local function getOtherPlayerNames()
 	local names = {}
-	local playersList = Players and Players.GetPlayers and Players:GetPlayers()
+	local playersList = {}
+	local okPlayers, livePlayers = pcall(function()
+		return Players and Players.GetPlayers and Players:GetPlayers()
+	end)
+	if okPlayers and type(livePlayers) == "table" then
+		playersList = livePlayers
+	end
 	if type(playersList) ~= "table" then
 		return names
 	end
@@ -607,6 +613,29 @@ local function getOtherPlayerNames()
 
 	table.sort(names)
 	return names
+end
+
+local function getSafePlayersList()
+	local playersList = {}
+	local okPlayers, livePlayers = pcall(function()
+		return Players and Players.GetPlayers and Players:GetPlayers()
+	end)
+	if okPlayers and type(livePlayers) == "table" then
+		return livePlayers
+	end
+
+	local okChildren, playerChildren = pcall(function()
+		return Players and Players:GetChildren()
+	end)
+	if okChildren and type(playerChildren) == "table" then
+		for _, child in ipairs(playerChildren) do
+			if typeof(child) == "Instance" and child:IsA("Player") then
+				table.insert(playersList, child)
+			end
+		end
+	end
+
+	return playersList
 end
 
 local fallDebugState = {
@@ -2375,9 +2404,11 @@ local function setupEspTab()
 			return
 		end
 
-		textObject.Text = text or ""
-		textObject.Position = position or Vector2.zero
-		textObject.Visible = visible == true
+		pcall(function()
+			textObject.Text = text or ""
+			textObject.Position = position or Vector2.zero
+			textObject.Visible = visible == true
+		end)
 	end
 
 	local function getPlayerAcademyName(model)
@@ -3136,7 +3167,7 @@ local function setupEspTab()
 		scheduleEspRefresh()
 	end))
 
-	for _, player in ipairs(Players:GetPlayers()) do
+	for _, player in ipairs(getSafePlayersList()) do
 		maid:GiveTask(player.CharacterAdded:Connect(function()
 			scheduleEspRefresh()
 		end))
@@ -4366,22 +4397,6 @@ local function setupAutoParryTab()
 		return workspace:FindFirstChild("FX")
 	end
 
-	local function getProjectileFxBranch(instance)
-		local fxFolder = getProjectileFxFolder()
-		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
-			return nil
-		end
-
-		local current = instance
-		local lastBelowFx = nil
-		while current and current ~= fxFolder do
-			lastBelowFx = current
-			current = current.Parent
-		end
-
-		return lastBelowFx
-	end
-
 	local function getProjectileRelativePathUnderFx(instance)
 		local fxFolder = getProjectileFxFolder()
 		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
@@ -4409,53 +4424,6 @@ local function setupAutoParryTab()
 		return table.concat(filtered, "/")
 	end
 
-	local function resolveProjectileSignatureNameFromFx(instance)
-		local fxFolder = getProjectileFxFolder()
-		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
-			return nil
-		end
-
-		local current = instance
-		local bestName = nil
-		local keywordName = nil
-		while current and current ~= fxFolder do
-			local currentName = tostring(current.Name or "")
-			if currentName ~= "" and not isGenericProjectileContainerName(currentName) then
-				bestName = bestName or currentName
-				if hasProjectileKeyword and hasProjectileKeyword(currentName) then
-					keywordName = currentName
-					break
-				end
-			end
-			current = current.Parent
-		end
-
-		return keywordName or bestName
-	end
-
-	local function getNearestSpecificProjectileNode(instance)
-		local fxFolder = getProjectileFxFolder()
-		local current = instance
-		local fallback = nil
-
-		while current and current ~= workspace do
-			if current == fxFolder then
-				break
-			end
-
-			if isValidProjectileSignatureNode(current) then
-				fallback = fallback or current
-				if not isGenericProjectileContainerName(current.Name) then
-					return current
-				end
-			end
-
-			current = current.Parent
-		end
-
-		return fallback or instance
-	end
-
 	local function getProjectileRepresentative(instance)
 		if not instance then
 			return nil
@@ -4465,34 +4433,34 @@ local function setupAutoParryTab()
 			local attachmentParent = instance.Parent
 			local effectParent = attachmentParent and attachmentParent.Parent
 			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
-				return getNearestSpecificProjectileNode(effectParent)
+				return effectParent
 			end
 			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
-				return getNearestSpecificProjectileNode(attachmentParent)
+				return attachmentParent
 			end
-			return getNearestSpecificProjectileNode(attachmentParent)
+			return attachmentParent
 		end
 
 		if instance:IsA("Attachment") then
 			local attachmentParent = instance.Parent
 			local effectParent = attachmentParent and attachmentParent.Parent
 			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
-				return getNearestSpecificProjectileNode(effectParent)
+				return effectParent
 			end
-			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
-				return getNearestSpecificProjectileNode(attachmentParent)
+			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart")) then
+				return attachmentParent
 			end
-			return getNearestSpecificProjectileNode(attachmentParent)
+			return attachmentParent
 		end
 
 		if instance:IsA("BasePart") then
 			local modelAncestor = instance:FindFirstAncestorWhichIsA("Model")
 			if modelAncestor then
-				return getNearestSpecificProjectileNode(modelAncestor)
+				return modelAncestor
 			end
 		end
 
-		return getNearestSpecificProjectileNode(instance)
+		return instance
 	end
 
 	local function getProjectileSpecificityScore(name)
@@ -4507,59 +4475,6 @@ local function setupAutoParryTab()
 			return 4
 		end
 		return 1
-	end
-
-	local function refineProjectileRepresentative(representative)
-		local current = representative
-		local best = representative
-		local bestScore = getProjectileSpecificityScore(representative and representative.Name)
-
-		while current and current.Parent and current.Parent ~= workspace do
-			current = current.Parent
-			if current == workspace:FindFirstChild("FX") then
-				break
-			end
-
-			if current:IsA("Model") or current:IsA("Folder") or current:IsA("BasePart") then
-				local score = getProjectileSpecificityScore(current.Name)
-				if score > bestScore then
-					best = current
-					bestScore = score
-				end
-			end
-		end
-
-		return best
-	end
-
-	local function getProjectileSignatureSource(instance, representative)
-		local current = instance
-		local best = representative or instance
-		local bestScore = getProjectileSpecificityScore(best and best.Name)
-		local fxFolder = getProjectileFxFolder()
-		local fxBranch = getProjectileFxBranch(instance)
-		if fxBranch and not isGenericProjectileContainerName(fxBranch.Name) then
-			best = fxBranch
-			bestScore = math.max(bestScore, getProjectileSpecificityScore(fxBranch.Name))
-		end
-
-		while current and current ~= workspace do
-			local isViable = isValidProjectileSignatureNode(current)
-			if isViable then
-				local score = getProjectileSpecificityScore(current.Name)
-				if score > bestScore then
-					best = current
-					bestScore = score
-				end
-			end
-
-			if current == fxFolder then
-				break
-			end
-			current = current.Parent
-		end
-
-		return best, bestScore
 	end
 
 	hasProjectileKeyword = function(name)
@@ -4611,14 +4526,10 @@ local function setupAutoParryTab()
 	end
 
 	local function getProjectileSignature(instance)
-		local representative = refineProjectileRepresentative(getProjectileRepresentative(instance))
-		local signatureSource = nil
-		signatureSource = select(1, getProjectileSignatureSource(instance, representative))
-		local signature = getProjectileRelativePathUnderFx(instance)
-			or getProjectileRelativePathUnderFx(signatureSource)
-			or getProjectileRelativePathUnderFx(representative)
-			or resolveProjectileSignatureNameFromFx(signatureSource)
-			or resolveProjectileSignatureNameFromFx(representative)
+		local representative = getProjectileRepresentative(instance)
+		local signatureSource = representative or instance
+		local signature = getProjectileRelativePathUnderFx(signatureSource)
+			or getProjectileRelativePathUnderFx(instance)
 			or (signatureSource and signatureSource.Name)
 			or (representative and representative.Name or nil)
 		if not signature or signature == "" or signature == "FX" or signature == "fx" then
@@ -4749,27 +4660,26 @@ local function setupAutoParryTab()
 			return false
 		end
 
+		local fxFolder = getProjectileFxFolder()
+		if not fxFolder or not instance:IsDescendantOf(fxFolder) then
+			return false
+		end
+
 		if instance:IsA("Beam") or instance:IsA("Trail") or instance:IsA("ParticleEmitter") then
-			return hasProjectileKeyword(instance.Name) or isUnderLikelyProjectileFolder(instance)
+			return true
 		end
 
 		if instance:IsA("Attachment") then
-			return hasProjectileKeyword(instance.Name) and isUnderLikelyProjectileFolder(instance)
+			return true
 		end
 
-		if instance:IsA("BasePart") or instance:IsA("Model") or instance:IsA("Folder") then
+		if instance:IsA("BasePart") or instance:IsA("Model") then
 			local representativePart = getProjectileRepresentativeBasePart(instance)
 			local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
 			if hasProjectileKeyword(instance.Name) then
 				return true
 			end
-			if instance:IsA("Folder") then
-				return false
-			end
-			if isUnderLikelyProjectileFolder(instance) then
-				return speed >= 12
-			end
-			return false
+			return speed >= 12
 		end
 
 		return false
@@ -5996,12 +5906,16 @@ local function setupAutoParryTab()
 		updateAutoParryVisualizer()
 
 		if autoParryState.pendingManualParryDebugMessage and manualParryTimingLabel and type(manualParryTimingLabel.SetText) == "function" then
-			manualParryTimingLabel:SetText(autoParryState.pendingManualParryDebugMessage)
+			pcall(function()
+				manualParryTimingLabel:SetText(autoParryState.pendingManualParryDebugMessage)
+			end)
 			autoParryState.pendingManualParryDebugMessage = nil
 		end
 
 		if autoParryState.pendingManualDashDebugMessage and manualDashTimingLabel and type(manualDashTimingLabel.SetText) == "function" then
-			manualDashTimingLabel:SetText(autoParryState.pendingManualDashDebugMessage)
+			pcall(function()
+				manualDashTimingLabel:SetText(autoParryState.pendingManualDashDebugMessage)
+			end)
 			autoParryState.pendingManualDashDebugMessage = nil
 		end
 
@@ -7363,7 +7277,7 @@ local function setupMiscTab()
 	local function startStaffDetector()
 		stopStaffDetector()
 
-		for _, player in ipairs(Players:GetPlayers()) do
+		for _, player in ipairs(getSafePlayersList()) do
 			handleDetectedStaffPlayer(player)
 			if staffDetectorTriggered then
 				return
