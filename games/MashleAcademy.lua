@@ -5460,6 +5460,7 @@ local function setupAutoParryTab()
 		end
 
 		local seenKeys = {}
+		local detectionDistance = math.max(tonumber(getOptionValue("AutoParryDistance", 18)) or 18, 40)
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if not (
 				(descendant:IsA("ParticleEmitter") or descendant:IsA("Beam") or descendant:IsA("Trail"))
@@ -5474,13 +5475,16 @@ local function setupAutoParryTab()
 			if signature and representative and representative.Parent then
 				local approachData = getProjectileApproachData(representative)
 				local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
+				if distance and distance <= detectionDistance then
+					registerDetectedProjectile(representative, distance, approachData and approachData.timeToImpact or nil)
+				end
+
 				local moveConfig = distance and getProjectileMoveConfig(signature, distance) or nil
 				if moveConfig then
 					local configRange = getMoveConfigRange(moveConfig)
 					if distance and distance <= configRange and not wasAnimationRecentlyHandled(representative, signature) then
 						local projectileKey = string.format("%s::%s", representative:GetDebugId(), signature)
 						seenKeys[projectileKey] = true
-						registerDetectedProjectile(representative, distance, approachData and approachData.timeToImpact or nil)
 
 						local seenState = autoParryState.projectileSeenStates[projectileKey]
 						if not seenState then
