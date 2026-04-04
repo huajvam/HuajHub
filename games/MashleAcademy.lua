@@ -298,8 +298,10 @@ local AUTO_PARRY_ANIMATION_TABLE = {
 		}),
 	},
 }
+local AUTO_PARRY_PROJECTILE_TABLE = {}
 
 GLOBAL_ENV.HuajHubAutoParryAnimations = AUTO_PARRY_ANIMATION_TABLE
+GLOBAL_ENV.HuajHubAutoParryProjectiles = AUTO_PARRY_PROJECTILE_TABLE
 
 local function appendUniquePath(pathList, seenPaths, path)
 	if type(path) ~= "string" or path == "" or seenPaths[path] then
@@ -3254,16 +3256,19 @@ local function setupAutoParryTab()
 	local autoParryMakerConfigs = {
 		Players = {},
 		Mobs = {},
+		Projectiles = {},
 	}
 	local detectedAnimationEntries = {
 		Players = {},
 		Mobs = {},
+		Projectiles = {},
 	}
 	local builderConfigLabelMap = {}
 	local detectedAnimationLabelMap = {}
 	local lastManualParryCapture = nil
 	local lastManualDashCapture = nil
 	local lastManualJumpCapture = nil
+	local lastProjectileCapture = nil
 	local autoParryState = {
 		lastState = {
 			remoteMissing = false,
@@ -3298,6 +3303,7 @@ local function setupAutoParryTab()
 		pendingManualParryDebugMessage = nil,
 		pendingManualDashDebugMessage = nil,
 		queuedMoveActions = {},
+		projectileSeenStates = {},
 		pendingBlockReleaseAt = 0,
 		currentBuilderConfigId = nil,
 		adaptiveTiming = {
@@ -3401,6 +3407,7 @@ local function setupAutoParryTab()
 		autoParryState.pendingParryFailCheck = nil
 		table.clear(autoParryState.queuedMoveActions)
 		table.clear(autoParryState.queuedTracks)
+		table.clear(autoParryState.projectileSeenStates)
 		if autoParryRuntime and type(autoParryRuntime.setAutoParryInputBlocking) == "function" then
 			autoParryRuntime.setAutoParryInputBlocking(false)
 		end
@@ -3492,7 +3499,7 @@ local function setupAutoParryTab()
 		Text = "Detected Animation",
 	})
 	local makerSourceDropdown = autoParryMakerGroup:AddDropdown("AutoParryMakerSource", {
-		Values = {"Players", "Mobs"},
+		Values = {"Players", "Mobs", "Projectiles"},
 		Default = 1,
 		Multi = false,
 		Text = "Config",
@@ -3513,7 +3520,7 @@ local function setupAutoParryTab()
 		Library:Notify("Refreshed Auto Parry Maker configs.", 2)
 	end)
 	local makerAnimationIdInput = autoParryMakerGroup:AddInput("AutoParryMakerAnimationId", {
-		Text = "Animation ID",
+		Text = "Animation ID / Signature",
 		Default = "",
 	})
 	local makerRepeatAmountInput = autoParryMakerGroup:AddInput("AutoParryMakerRepeatAmount", {
@@ -3650,7 +3657,22 @@ local function setupAutoParryTab()
 	end
 
 	local function getMakerSourceKey(targetType)
-		return targetType == "player" and "Players" or "Mobs"
+		if targetType == "player" then
+			return "Players"
+		end
+		if targetType == "projectile" then
+			return "Projectiles"
+		end
+		return "Mobs"
+	end
+
+	local function normalizeBuilderConfigId(sourceKey, value)
+		if sourceKey == "Projectiles" then
+			local normalized = string.lower(tostring(value or "")):gsub("^%s+", ""):gsub("%s+$", "")
+			return normalized ~= "" and normalized or nil
+		end
+
+		return normalizeBuilderAnimationId(value)
 	end
 
 	local function formatDetectedAnimationLabel(entry)
@@ -3697,7 +3719,7 @@ local function setupAutoParryTab()
 			return nil
 		end
 
-		local normalizedAnimationId = normalizeBuilderAnimationId(configData.animationId or storageKey)
+		local normalizedAnimationId = normalizeBuilderConfigId(sourceKey, configData.animationId or storageKey)
 		if not normalizedAnimationId or normalizedAnimationId == "" then
 			return nil
 		end
@@ -3726,14 +3748,14 @@ local function setupAutoParryTab()
 
 		local sourceConfigs = getMakerConfigList(configData.sourceKey)
 		local savedConfig = cloneConfigData(configData)
-		savedConfig.animationId = normalizeBuilderAnimationId(savedConfig.animationId)
+		savedConfig.animationId = normalizeBuilderConfigId(savedConfig.sourceKey, savedConfig.animationId)
 		if not savedConfig.animationId or savedConfig.animationId == "" then
 			return nil
 		end
 		savedConfig.configId = savedConfig.animationId
 
 		for index, existingConfig in ipairs(sourceConfigs) do
-			if type(existingConfig) == "table" and normalizeBuilderAnimationId(existingConfig.animationId) == savedConfig.animationId then
+			if type(existingConfig) == "table" and normalizeBuilderConfigId(savedConfig.sourceKey, existingConfig.animationId) == savedConfig.animationId then
 				sourceConfigs[index] = savedConfig
 				return savedConfig
 			end
@@ -3801,13 +3823,13 @@ local function setupAutoParryTab()
 	end
 
 	local function findMakerConfigByAnimationId(sourceKey, animationId)
-		local normalizedAnimationId = normalizeBuilderAnimationId(animationId)
+		local normalizedAnimationId = normalizeBuilderConfigId(sourceKey, animationId)
 		if not normalizedAnimationId or normalizedAnimationId == "" then
 			return nil
 		end
 
 		for _, configData in ipairs(getMakerConfigList(sourceKey)) do
-			if type(configData) == "table" and normalizeBuilderAnimationId(configData.animationId) == normalizedAnimationId then
+			if type(configData) == "table" and normalizeBuilderConfigId(sourceKey, configData.animationId) == normalizedAnimationId then
 				return configData
 			end
 		end
@@ -3818,7 +3840,9 @@ local function setupAutoParryTab()
 	local function updateLearnedAdaptiveOffset(sourceKey, animationId, actionType, deltaMs, weight)
 		AdaptiveTimingUtils.updateLearnedOffset(
 			autoParryState.adaptiveTiming.learnedOffsets,
-			normalizeBuilderAnimationId,
+			function(value)
+				return normalizeBuilderConfigId(sourceKey, value)
+			end,
 			sourceKey,
 			animationId,
 			actionType,
@@ -3829,7 +3853,9 @@ local function setupAutoParryTab()
 
 	local function getAdaptiveTimingOffsetMs(sourceKey, animationId, moveConfig, distance)
 		local actionType = (moveConfig and moveConfig.actionType) or "Parry"
-		local key = AdaptiveTimingUtils.getAdaptiveAnimationKey(normalizeBuilderAnimationId, sourceKey, animationId, actionType)
+		local key = AdaptiveTimingUtils.getAdaptiveAnimationKey(function(value)
+			return normalizeBuilderConfigId(sourceKey, value)
+		end, sourceKey, animationId, actionType)
 		return AdaptiveTimingUtils.getTimingOffsetMs({
 			manualOffsetMs = tonumber(getOptionValue("AutoParryTimingOffset", 0)) or 0,
 			adaptiveEnabled = getToggleValue("AutoParryAdaptiveTiming", false),
@@ -3842,8 +3868,8 @@ local function setupAutoParryTab()
 	end
 
 	local function getBuilderConfigData()
-		local animationId = normalizeBuilderAnimationId(getOptionValue("AutoParryMakerAnimationId", ""))
 		local sourceKey = getOptionValue("AutoParryMakerSource", "Players") or "Players"
+		local animationId = normalizeBuilderConfigId(sourceKey, getOptionValue("AutoParryMakerAnimationId", ""))
 		local actionType = getOptionValue("AutoParryMakerActionType", "Parry") or "Parry"
 
 		if not animationId or animationId == "" then
@@ -3924,6 +3950,25 @@ local function setupAutoParryTab()
 
 	syncAutoParryBuilderConfigsToRuntime = function()
 		for sourceKey, sourceConfigs in pairs(autoParryMakerConfigs) do
+			if sourceKey == "Projectiles" then
+				local projectileTable = {}
+				for _, configData in ipairs(sourceConfigs) do
+					if type(configData) == "table" then
+						local signature = normalizeBuilderConfigId("Projectiles", configData.animationId)
+						if signature then
+							projectileTable[signature] = buildRuntimeMoveConfig(configData)
+						end
+					end
+				end
+				for key in pairs(AUTO_PARRY_PROJECTILE_TABLE) do
+					AUTO_PARRY_PROJECTILE_TABLE[key] = nil
+				end
+				for signature, runtimeConfig in pairs(projectileTable) do
+					AUTO_PARRY_PROJECTILE_TABLE[signature] = runtimeConfig
+				end
+				goto continue_sync
+			end
+
 			local runtimeTable = AUTO_PARRY_ANIMATION_TABLE[sourceKey]
 			if type(runtimeTable) ~= "table" then
 				runtimeTable = {}
@@ -3950,19 +3995,22 @@ local function setupAutoParryTab()
 					}
 				end
 			end
+
+			::continue_sync::
 		end
 
 		GLOBAL_ENV.HuajHubAutoParryAnimations = AUTO_PARRY_ANIMATION_TABLE
+		GLOBAL_ENV.HuajHubAutoParryProjectiles = AUTO_PARRY_PROJECTILE_TABLE
 	end
 
 	refreshSavedConfigDropdown = function(selectedLabel)
 		local labels = {"(none)"}
 		builderConfigLabelMap = {}
 
-		for _, sourceKey in ipairs({"Players", "Mobs"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
 			local sourceConfigs = autoParryMakerConfigs[sourceKey]
 			for _, configData in ipairs(sourceConfigs) do
-				local animationId = normalizeBuilderAnimationId(configData.animationId)
+				local animationId = normalizeBuilderConfigId(sourceKey, configData.animationId)
 				if animationId then
 				local label = buildSavedConfigLabel(sourceKey, animationId, configData)
 					if builderConfigLabelMap[label] then
@@ -3995,7 +4043,7 @@ local function setupAutoParryTab()
 		local labels = {"(none)"}
 		detectedAnimationLabelMap = {}
 
-		for _, sourceKey in ipairs({"Players", "Mobs"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
 			local sourceEntries = detectedAnimationEntries[sourceKey]
 			for animationId, entry in pairs(sourceEntries) do
 				local label = formatDetectedAnimationLabel(entry)
@@ -4036,7 +4084,7 @@ local function setupAutoParryTab()
 
 	local function registerDetectedAnimation(targetType, targetName, animationId, timePosition, distance, animationName)
 		local sourceKey = getMakerSourceKey(targetType)
-		local normalizedAnimationId = normalizeBuilderAnimationId(animationId)
+		local normalizedAnimationId = normalizeBuilderConfigId(sourceKey, animationId)
 		if not normalizedAnimationId or normalizedAnimationId == "" then
 			return
 		end
@@ -4056,6 +4104,78 @@ local function setupAutoParryTab()
 		local selectedLabel = formatDetectedAnimationLabel(entry)
 		refreshDetectedAnimationDropdown(selectedLabel)
 		applyDetectedEntryToBuilder(entry)
+	end
+
+	local function getProjectileRepresentative(instance)
+		if not instance then
+			return nil
+		end
+
+		if instance:IsA("ParticleEmitter") or instance:IsA("Beam") or instance:IsA("Trail") then
+			local attachmentParent = instance.Parent
+			local effectParent = attachmentParent and attachmentParent.Parent
+			if effectParent and effectParent ~= workspace and effectParent ~= workspace:FindFirstChild("FX") then
+				return effectParent
+			end
+			return attachmentParent
+		end
+
+		if instance:IsA("Attachment") then
+			local attachmentParent = instance.Parent
+			local effectParent = attachmentParent and attachmentParent.Parent
+			if effectParent and effectParent ~= workspace and effectParent ~= workspace:FindFirstChild("FX") then
+				return effectParent
+			end
+			return attachmentParent
+		end
+
+		if instance:IsA("BasePart") then
+			local modelAncestor = instance:FindFirstAncestorWhichIsA("Model")
+			if modelAncestor then
+				return modelAncestor
+			end
+		end
+
+		return instance
+	end
+
+	local function getProjectileSignature(instance)
+		local representative = getProjectileRepresentative(instance)
+		local signature = representative and representative.Name or nil
+		signature = normalizeBuilderConfigId("Projectiles", signature)
+		return signature, representative
+	end
+
+	local function getProjectileRepresentativeDistance(instance)
+		local representative = getProjectileRepresentative(instance)
+		local repPosition = representative and (representative:IsA("BasePart") and representative.Position
+			or (representative:IsA("Model") and getCharacterRoot(representative) and getCharacterRoot(representative).Position)
+			or (representative:IsA("Attachment") and representative.WorldPosition)
+			or nil)
+		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+		if not localRoot or not repPosition then
+			return nil
+		end
+		return (repPosition - localRoot.Position).Magnitude, representative
+	end
+
+	local function registerDetectedProjectile(instance, distance)
+		local signature, representative = getProjectileSignature(instance)
+		if not signature or not representative then
+			return nil
+		end
+
+		lastProjectileCapture = {
+			sourceKey = "Projectiles",
+			animationId = signature,
+			wait = 0,
+			nickname = representative.Name,
+			range = distance or 16,
+			actionKind = "projectile",
+			capturedAt = os.clock(),
+		}
+		registerDetectedAnimation("projectile", representative.Name, signature, 0, distance or 0, representative.Name)
+		return signature, representative
 	end
 
 	loadAutoParryMakerConfigsFromFile = function()
@@ -4097,7 +4217,7 @@ local function setupAutoParryTab()
 			return
 		end
 
-		for _, sourceKey in ipairs({"Players", "Mobs"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
 			local normalizedConfigs = {}
 			if type(decoded[sourceKey]) == "table" then
 				for storageKey, configData in pairs(decoded[sourceKey]) do
@@ -4151,7 +4271,7 @@ local function setupAutoParryTab()
 			pcall(makefolder, AUTO_PARRY_MAKER_FOLDER)
 		end
 
-		for _, sourceKey in ipairs({"Players", "Mobs"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
 			autoParryMakerConfigs[sourceKey] = dedupeMakerConfigList(sourceKey, autoParryMakerConfigs[sourceKey])
 		end
 
@@ -4211,9 +4331,12 @@ local function setupAutoParryTab()
 		if lastManualJumpCapture and (not latestCapture or (lastManualJumpCapture.capturedAt or 0) > (latestCapture.capturedAt or 0)) then
 			latestCapture = lastManualJumpCapture
 		end
+		if lastProjectileCapture and (not latestCapture or (lastProjectileCapture.capturedAt or 0) > (latestCapture.capturedAt or 0)) then
+			latestCapture = lastProjectileCapture
+		end
 
 		if not latestCapture then
-			Library:Notify("No manual parry, dash, or jump capture is available yet.", 2)
+			Library:Notify("No manual, jump, dash, or projectile capture is available yet.", 2)
 			return
 		end
 
@@ -4225,7 +4348,9 @@ local function setupAutoParryTab()
 			repeatDelay = 0,
 			wait = latestCapture.wait or 0,
 			nickname = latestCapture.nickname or "",
-			actionType = latestCapture.actionKind == "manual dash" and "Dash" or (latestCapture.actionKind == "manual jump" and "Jump" or "Parry"),
+			actionType = latestCapture.actionKind == "manual dash" and "Dash"
+				or (latestCapture.actionKind == "manual jump" and "Jump"
+				or (latestCapture.actionKind == "projectile" and "Parry" or "Parry")),
 			delay = false,
 			delayRange = 0,
 			range = latestCapture.range or 16,
@@ -4752,6 +4877,114 @@ local function setupAutoParryTab()
 		return reason or "invalid track", trackTimePosition
 	end
 
+	local function getProjectileEffectsFolder()
+		local fxFolder = workspace:FindFirstChild("FX")
+		if fxFolder and fxFolder:IsA("Folder") then
+			return fxFolder
+		end
+		return nil
+	end
+
+	local function getProjectileMoveConfig(signature, candidateDistance)
+		local normalizedSignature = normalizeBuilderConfigId("Projectiles", signature)
+		if not normalizedSignature then
+			return nil
+		end
+
+		local config = AUTO_PARRY_PROJECTILE_TABLE[normalizedSignature]
+		return config and normalizeMoveConfig(config, candidateDistance) or nil
+	end
+
+	local function executeProjectileAutoParryAction(projectileInstance, projectileSignature, activeMoveConfig, projectileDistance, remote, now)
+		if not projectileInstance or not activeMoveConfig then
+			return false
+		end
+
+		local handledDuration = math.max(
+			resolveConfiguredTiming(activeMoveConfig) or 0,
+			getMoveConfigDelaySeconds(activeMoveConfig),
+			getMoveConfigRepeatDelaySeconds(activeMoveConfig),
+			0.35
+		) + 0.75
+		markAnimationRecentlyHandled(projectileInstance, projectileSignature, handledDuration)
+
+		if activeMoveConfig.actionType == "Jump" then
+			autoParryRuntime.pressJumpKey()
+		elseif activeMoveConfig.actionType == "Dash" then
+			if getToggleValue("AutoParryBlatantDash", false) then
+				autoParryRuntime.fireAutoParryDashRemote(remote)
+			else
+				autoParryRuntime.pressDashKey()
+			end
+		elseif activeMoveConfig.block == true then
+			if fireBlockingStateRemote(true) then
+				autoParryState.pendingBlockReleaseAt = now + (tonumber(activeMoveConfig.blockHold) or autoParryBlockHoldDuration)
+			end
+		else
+			autoParryRuntime.fireAutoParryParryRemote(remote)
+		end
+
+		setAutoParryDebugText(string.format(
+			"projectile %s %s at %.1f studs",
+			activeMoveConfig.actionType or (activeMoveConfig.block and "Block" or "Parry"),
+			projectileSignature,
+			tonumber(projectileDistance) or 0
+		))
+
+		if getToggleValue("AutoParryBlockInputs", false) then
+			autoParryState.inputBlockUntil = now + AUTO_PARRY_BLOCK_DURATION
+			autoParryRuntime.setAutoParryInputBlocking(true)
+		end
+
+		return true
+	end
+
+	local function scanProjectileAutoParry(remote, now)
+		local fxFolder = getProjectileEffectsFolder()
+		if not fxFolder then
+			table.clear(autoParryState.projectileSeenStates)
+			return
+		end
+
+		local seenKeys = {}
+		for _, descendant in ipairs(fxFolder:GetDescendants()) do
+			local signature, representative = getProjectileSignature(descendant)
+			if signature and representative and representative.Parent then
+				local distance = getProjectileRepresentativeDistance(representative)
+				local moveConfig = distance and getProjectileMoveConfig(signature, distance) or nil
+				if moveConfig then
+					local configRange = getMoveConfigRange(moveConfig)
+					if distance and distance <= configRange and not wasAnimationRecentlyHandled(representative, signature) then
+						local projectileKey = string.format("%s::%s", representative:GetDebugId(), signature)
+						seenKeys[projectileKey] = true
+						registerDetectedProjectile(representative, distance)
+
+						local seenState = autoParryState.projectileSeenStates[projectileKey]
+						if not seenState then
+							seenState = {
+								firstSeenAt = now,
+								fired = false,
+								representative = representative,
+								signature = signature,
+							}
+							autoParryState.projectileSeenStates[projectileKey] = seenState
+						end
+
+						if not seenState.fired and now >= (seenState.firstSeenAt + math.max(resolveConfiguredTiming(moveConfig) or 0, 0)) then
+							seenState.fired = executeProjectileAutoParryAction(representative, signature, moveConfig, distance, remote, now) == true
+						end
+					end
+				end
+			end
+		end
+
+		for projectileKey, seenState in pairs(autoParryState.projectileSeenStates) do
+			if not seenKeys[projectileKey] or not seenState.representative or not seenState.representative.Parent then
+				autoParryState.projectileSeenStates[projectileKey] = nil
+			end
+		end
+	end
+
 	function autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		local repeatsRemaining = math.max(math.floor(tonumber(selectedAction.repeatsRemaining) or 1), 1) - 1
 		if repeatsRemaining <= 0 then
@@ -4985,6 +5218,7 @@ local function setupAutoParryTab()
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
 			table.clear(autoParryState.recentAnimationActions)
+			table.clear(autoParryState.projectileSeenStates)
 			setAutoParryTrackingText("disabled.")
 			return
 		end
@@ -4996,6 +5230,7 @@ local function setupAutoParryTab()
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
 			table.clear(autoParryState.recentAnimationActions)
+			table.clear(autoParryState.projectileSeenStates)
 			setAutoParryTrackingText("remote not found.")
 			if not autoParryState.lastState.remoteMissing then
 				autoParryState.lastState.remoteMissing = true
@@ -5018,6 +5253,7 @@ local function setupAutoParryTab()
 					end
 				end
 			end
+			scanProjectileAutoParry(remote, now)
 		end
 
 		local selectedAction
