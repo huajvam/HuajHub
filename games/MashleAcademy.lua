@@ -6185,12 +6185,22 @@ local function setupAutoParryTab()
 	end
 
 	local function captureManualActionDebug(actionKind, captureRequestedAt)
-		local ok, err = pcall(reportManualActionDebug, actionKind, captureRequestedAt)
+		autoParryState.manualCaptureStage = "start"
+		local ok, err = xpcall(function()
+			reportManualActionDebug(actionKind, captureRequestedAt)
+		end, debug.traceback)
 		if ok then
+			autoParryState.manualCaptureStage = nil
 			return
 		end
 
-		local message = string.format("%s capture failed: %s", tostring(actionKind), tostring(err))
+		local message = string.format(
+			"%s capture failed at %s: %s",
+			tostring(actionKind),
+			tostring(autoParryState.manualCaptureStage or "unknown"),
+			tostring(err)
+		)
+		autoParryState.manualCaptureStage = nil
 		if actionKind == "manual dash" then
 			setManualDashDebugText(message)
 		else
@@ -6199,15 +6209,19 @@ local function setupAutoParryTab()
 	end
 
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
+		autoParryState.manualCaptureStage = "getOptionValue"
 		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = nil
 		local projectileCandidate = nil
+		autoParryState.manualCaptureStage = "findManualDebugCandidate"
 		local candidateOk, candidateErr = pcall(function()
 			candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
 		end)
+		autoParryState.manualCaptureStage = "findManualProjectileCandidate"
 		local projectileOk, projectileErr = pcall(function()
 			projectileCandidate = findManualProjectileCandidate(maxDistance)
 		end)
+		autoParryState.manualCaptureStage = "buildActionState"
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
 		local isBlockAction = actionKind == "manual block"
@@ -6227,6 +6241,7 @@ local function setupAutoParryTab()
 		end
 
 		if projectileCandidate then
+			autoParryState.manualCaptureStage = "registerDetectedProjectile"
 			local projectileRegisterOk, projectileRegisterErr = pcall(function()
 				registerDetectedProjectile(
 					projectileCandidate.representative,
@@ -6241,6 +6256,7 @@ local function setupAutoParryTab()
 		end
 
 		if not candidate then
+			autoParryState.manualCaptureStage = "noCandidateDebug"
 			setLastAnimationId(nil)
 			if projectileCandidate then
 				setDebugText(string.format(
@@ -6261,12 +6277,14 @@ local function setupAutoParryTab()
 		end
 
 		local registerAnimationOk, registerAnimationErr = pcall(function()
+			autoParryState.manualCaptureStage = "registerDetectedAnimation"
 			registerDetectedAnimation(candidate.targetType, candidate.targetName, candidate.animationId, candidate.timePosition, candidate.distance, candidate.animationName)
 		end)
 		if not registerAnimationOk then
 			setDebugText(string.format("%s -> animation register failed: %s", actionKind, tostring(registerAnimationErr)))
 			return
 		end
+		autoParryState.manualCaptureStage = "setLastAnimationId"
 		local setLastIdOk, setLastIdErr = pcall(function()
 			setLastAnimationId(candidate.animationId)
 		end)
@@ -6274,6 +6292,7 @@ local function setupAutoParryTab()
 			setDebugText(string.format("%s -> last id update failed: %s", actionKind, tostring(setLastIdErr)))
 			return
 		end
+		autoParryState.manualCaptureStage = "buildLatestCapture"
 		local latestCapture = nil
 		local latestCaptureOk, latestCaptureErr = pcall(function()
 			latestCapture = {
@@ -6290,6 +6309,7 @@ local function setupAutoParryTab()
 			setDebugText(string.format("%s -> capture build failed: %s", actionKind, tostring(latestCaptureErr)))
 			return
 		end
+		autoParryState.manualCaptureStage = "saveLatestCapture"
 		if isDashAction then
 			lastManualDashCapture = latestCapture
 		elseif isJumpAction then
@@ -6298,6 +6318,7 @@ local function setupAutoParryTab()
 			lastManualParryCapture = latestCapture
 		end
 
+		autoParryState.manualCaptureStage = "findMakerConfigByAnimationId"
 		local savedConfig = nil
 		local savedConfigOk, savedConfigErr = pcall(function()
 			savedConfig = findMakerConfigByAnimationId(latestCapture.sourceKey, latestCapture.animationId)
@@ -6310,6 +6331,7 @@ local function setupAutoParryTab()
 			local savedTiming = tonumber(savedConfig.wait)
 			if savedTiming then
 				local adaptiveOk, adaptiveErr = pcall(function()
+					autoParryState.manualCaptureStage = "updateLearnedAdaptiveOffset"
 					updateLearnedAdaptiveOffset(latestCapture.sourceKey, latestCapture.animationId, actionType, ((latestCapture.wait or 0) - savedTiming) * 1000, 0.35)
 				end)
 				if not adaptiveOk then
@@ -6317,6 +6339,7 @@ local function setupAutoParryTab()
 				end
 			end
 		end
+		autoParryState.manualCaptureStage = "applyBuilderConfigData"
 		local builderApplyOk, builderApplyErr = pcall(function()
 			applyBuilderConfigData({
 			configId = nil,
@@ -6337,6 +6360,7 @@ local function setupAutoParryTab()
 			setDebugText(string.format("%s -> builder apply failed: %s", actionKind, tostring(builderApplyErr)))
 			return
 		end
+		autoParryState.manualCaptureStage = "setDebugText"
 		setDebugText(string.format(
 			"%s -> %s %s anim %s at %.2fs%s%s",
 			actionKind,
@@ -6347,6 +6371,7 @@ local function setupAutoParryTab()
 			candidate.matched and " (in table)" or " (not in table)",
 			isBlockAction and string.format(" | hold %.2fs", manualBlockHold) or ""
 		))
+		autoParryState.manualCaptureStage = nil
 	end
 
 	local function isManualActionRequestRemote(instance)
