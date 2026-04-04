@@ -211,6 +211,7 @@ function HyakuAsura.init(_context)
 		local infoGroup = Tabs.Main:AddLeftGroupbox("Info")
 		local localCheatsGroup = Tabs.Main:AddRightGroupbox("Local Cheats")
 		local infiniteRhythmLoopToken = 0
+		local rhythmChargeConnection
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -229,6 +230,63 @@ function HyakuAsura.init(_context)
 			end
 
 			return nil
+		end
+
+		local function getRhythmChargeValue()
+			local entitiesFolder = workspace:FindFirstChild("Entities")
+			if not entitiesFolder or not LocalPlayer then
+				return nil
+			end
+
+			local entityModel = entitiesFolder:FindFirstChild(LocalPlayer.Name)
+			if not entityModel then
+				return nil
+			end
+
+			local mainScript = entityModel:FindFirstChild("MainScript")
+			local statsFolder = mainScript and mainScript:FindFirstChild("Stats")
+			local rhythmCharge = statsFolder and statsFolder:FindFirstChild("RhythmCharge")
+			if rhythmCharge and rhythmCharge:IsA("NumberValue") then
+				return rhythmCharge
+			end
+
+			return nil
+		end
+
+		local function applyInfiniteRhythmCharge()
+			local rhythmCharge = getRhythmChargeValue()
+			if not rhythmCharge then
+				return false
+			end
+
+			pcall(function()
+				rhythmCharge.Value = 100
+			end)
+			return true
+		end
+
+		local function stopInfiniteRhythmChargeHook()
+			if rhythmChargeConnection then
+				pcall(function()
+					rhythmChargeConnection:Disconnect()
+				end)
+				rhythmChargeConnection = nil
+			end
+		end
+
+		local function startInfiniteRhythmChargeHook()
+			stopInfiniteRhythmChargeHook()
+			local rhythmCharge = getRhythmChargeValue()
+			if not rhythmCharge then
+				return
+			end
+
+			applyInfiniteRhythmCharge()
+			rhythmChargeConnection = rhythmCharge:GetPropertyChangedSignal("Value"):Connect(function()
+				if Toggles and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value then
+					applyInfiniteRhythmCharge()
+				end
+			end)
 		end
 
 		local function fireInfiniteRhythmRemote(isDown)
@@ -258,10 +316,12 @@ function HyakuAsura.init(_context)
 		local function startInfiniteRhythmLoop()
 			infiniteRhythmLoopToken += 1
 			local currentToken = infiniteRhythmLoopToken
+			startInfiniteRhythmChargeHook()
 			task.spawn(function()
 				fireInfiniteRhythmRemote(true)
 				while currentToken == infiniteRhythmLoopToken and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value do
 					fireInfiniteRhythmRemote(true)
+					applyInfiniteRhythmCharge()
 					task.wait(HYAKU_RHYTHM_REMOTE_INTERVAL)
 				end
 			end)
@@ -269,6 +329,7 @@ function HyakuAsura.init(_context)
 
 		local function stopInfiniteRhythmLoop()
 			infiniteRhythmLoopToken += 1
+			stopInfiniteRhythmChargeHook()
 			fireInfiniteRhythmRemote(false)
 		end
 
