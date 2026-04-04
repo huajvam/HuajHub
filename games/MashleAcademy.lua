@@ -6557,7 +6557,12 @@ local function setupAutoParryTab()
 		end
 	end)
 end
-setupAutoParryTab()
+local autoParrySetupOk, autoParrySetupErr = pcall(setupAutoParryTab)
+if not autoParrySetupOk then
+	local autoParryFallback = Tabs["Auto Parry"]:AddLeftGroupbox("Auto Parry")
+	autoParryFallback:AddLabel("Auto Parry failed to build.")
+	autoParryFallback:AddLabel(tostring(autoParrySetupErr or "Unknown auto parry error."), true)
+end
 
 local function setupMiscTab()
 	local miscTab = Tabs["Misc"]
