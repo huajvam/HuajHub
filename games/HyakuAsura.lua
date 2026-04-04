@@ -20,6 +20,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G
 local HUAJ_HUB_HYAKU_INIT_KEY = "__huaj_hub_hyaku_initialized_v1"
 local HUAJ_HUB_HYAKU_LIBRARY_KEY = "__huaj_hub_hyaku_library_v1"
 local HUAJ_HUB_HYAKU_ESP_DRAWINGS_KEY = "__huaj_hub_hyaku_esp_drawings_v1"
+local HYAKU_RHYTHM_REMOTE_INTERVAL = 0.1
 
 local LocalPlayer = Players.LocalPlayer
 local maid = Maid.new()
@@ -192,9 +193,90 @@ function HyakuAsura.init(_context)
 
 	do
 		local infoGroup = Tabs.Main:AddLeftGroupbox("Info")
+		local localCheatsGroup = Tabs.Main:AddRightGroupbox("Local Cheats")
+		local infiniteRhythmLoopToken = 0
+
+		local function getRhythmInputRemote()
+			local character = LocalPlayer and LocalPlayer.Character
+			if not character then
+				return nil
+			end
+
+			local mainScript = character:FindFirstChild("MainScript")
+			if not mainScript then
+				return nil
+			end
+
+			local inputRemote = mainScript:FindFirstChild("Input")
+			if inputRemote and inputRemote:IsA("RemoteEvent") then
+				return inputRemote
+			end
+
+			return nil
+		end
+
+		local function fireInfiniteRhythmRemote()
+			local inputRemote = getRhythmInputRemote()
+			if not inputRemote then
+				return false
+			end
+
+			local payload = {
+				{
+					KeyInfo = {
+						Direction = "None",
+						Name = "R",
+						Airborne = false,
+					},
+					IsDown = true,
+				},
+			}
+
+			pcall(function()
+				inputRemote:FireServer(unpack(payload))
+			end)
+
+			return true
+		end
+
+		local function startInfiniteRhythmLoop()
+			infiniteRhythmLoopToken += 1
+			local currentToken = infiniteRhythmLoopToken
+			task.spawn(function()
+				while currentToken == infiniteRhythmLoopToken and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value do
+					fireInfiniteRhythmRemote()
+					task.wait(HYAKU_RHYTHM_REMOTE_INTERVAL)
+				end
+			end)
+		end
+
+		local function stopInfiniteRhythmLoop()
+			infiniteRhythmLoopToken += 1
+		end
+
 		infoGroup:AddLabel("Hyaku Asura scaffold loaded.")
 		infoGroup:AddLabel("ESP is available now.")
 		infoGroup:AddLabel("Game-specific features can be added later.")
+
+		localCheatsGroup:AddToggle("InfiniteRhythmEnabled", {
+			Text = "Infinite Rhythm",
+			Default = false,
+		}):OnChanged(function(enabled)
+			if enabled then
+				startInfiniteRhythmLoop()
+			else
+				stopInfiniteRhythmLoop()
+			end
+		end)
+
+		registerLibraryUnloadCallback(function()
+			stopInfiniteRhythmLoop()
+			if Toggles and Toggles.InfiniteRhythmEnabled then
+				pcall(function()
+					Toggles.InfiniteRhythmEnabled:SetValue(false)
+				end)
+			end
+		end)
 	end
 
 	do
@@ -620,6 +702,11 @@ function HyakuAsura.init(_context)
 		SaveManager:SetFolder("HuajHub/" .. GAME_KEY)
 		SaveManager:BuildConfigSection(Tabs.Settings)
 		ThemeManager:ApplyToTab(Tabs.Settings)
+
+		local menuGroup = Tabs.Settings:AddLeftGroupbox("Menu")
+		menuGroup:AddButton("Unload", function()
+			Library:Unload()
+		end)
 	end
 
 	registerLibraryUnloadCallback(function()
