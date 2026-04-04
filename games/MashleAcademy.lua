@@ -4382,6 +4382,33 @@ local function setupAutoParryTab()
 		return lastBelowFx
 	end
 
+	local function getProjectileRelativePathUnderFx(instance)
+		local fxFolder = getProjectileFxFolder()
+		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
+			return nil
+		end
+
+		local segments = {}
+		local current = instance
+		while current and current ~= fxFolder do
+			table.insert(segments, 1, tostring(current.Name or ""))
+			current = current.Parent
+		end
+
+		local filtered = {}
+		for _, segment in ipairs(segments) do
+			if segment ~= "" and not isGenericProjectileContainerName(segment) then
+				table.insert(filtered, segment)
+			end
+		end
+
+		if #filtered == 0 then
+			return nil
+		end
+
+		return table.concat(filtered, "/")
+	end
+
 	local function resolveProjectileSignatureNameFromFx(instance)
 		local fxFolder = getProjectileFxFolder()
 		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
@@ -4587,7 +4614,10 @@ local function setupAutoParryTab()
 		local representative = refineProjectileRepresentative(getProjectileRepresentative(instance))
 		local signatureSource = nil
 		signatureSource = select(1, getProjectileSignatureSource(instance, representative))
-		local signature = resolveProjectileSignatureNameFromFx(signatureSource)
+		local signature = getProjectileRelativePathUnderFx(instance)
+			or getProjectileRelativePathUnderFx(signatureSource)
+			or getProjectileRelativePathUnderFx(representative)
+			or resolveProjectileSignatureNameFromFx(signatureSource)
 			or resolveProjectileSignatureNameFromFx(representative)
 			or (signatureSource and signatureSource.Name)
 			or (representative and representative.Name or nil)
@@ -4679,7 +4709,11 @@ local function setupAutoParryTab()
 			return nil
 		end
 
-		local displayName = (signatureSource and signatureSource.Name) or representative.Name
+		local displayName = getProjectileRelativePathUnderFx(instance)
+			or getProjectileRelativePathUnderFx(signatureSource)
+			or getProjectileRelativePathUnderFx(representative)
+			or (signatureSource and signatureSource.Name)
+			or representative.Name
 
 		lastProjectileCapture = {
 			sourceKey = "Projectiles",
