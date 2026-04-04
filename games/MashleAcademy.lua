@@ -4111,8 +4111,11 @@ local function setupAutoParryTab()
 		if instance:IsA("ParticleEmitter") or instance:IsA("Beam") or instance:IsA("Trail") then
 			local attachmentParent = instance.Parent
 			local effectParent = attachmentParent and attachmentParent.Parent
-			if effectParent and effectParent ~= workspace and effectParent ~= workspace:FindFirstChild("FX") then
+			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
 				return effectParent
+			end
+			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
+				return attachmentParent
 			end
 			return attachmentParent
 		end
@@ -4120,8 +4123,11 @@ local function setupAutoParryTab()
 		if instance:IsA("Attachment") then
 			local attachmentParent = instance.Parent
 			local effectParent = attachmentParent and attachmentParent.Parent
-			if effectParent and effectParent ~= workspace and effectParent ~= workspace:FindFirstChild("FX") then
+			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
 				return effectParent
+			end
+			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
+				return attachmentParent
 			end
 			return attachmentParent
 		end
@@ -4136,6 +4142,32 @@ local function setupAutoParryTab()
 		return instance
 	end
 
+	local function hasProjectileKeyword(name)
+		local lowered = string.lower(tostring(name or ""))
+		for _, keyword in ipairs({"projectile", "proj", "bullet", "shot", "blast", "orb", "ball", "sand", "erupt", "lance", "arrow", "spear"}) do
+			if string.find(lowered, keyword, 1, true) then
+				return true
+			end
+		end
+		return false
+	end
+
+	local function isUnderLikelyProjectileFolder(instance)
+		local current = instance
+		while current do
+			if current == workspace:FindFirstChild("FX") or current == workspace:FindFirstChild("Live") then
+				return true
+			end
+			if string.lower(tostring(current.Name or "")) == "projectiles" then
+				return true
+			end
+			current = current.Parent
+		end
+		return false
+	end
+
+	local getProjectileRepresentativeBasePart
+
 	local function getProjectileSignature(instance)
 		local representative = getProjectileRepresentative(instance)
 		local signature = representative and representative.Name or nil
@@ -4145,8 +4177,8 @@ local function setupAutoParryTab()
 
 	local function getProjectileRepresentativeDistance(instance)
 		local representative = getProjectileRepresentative(instance)
-		local repPosition = representative and (representative:IsA("BasePart") and representative.Position
-			or (representative:IsA("Model") and getCharacterRoot(representative) and getCharacterRoot(representative).Position)
+		local repBasePart = representative and getProjectileRepresentativeBasePart(representative) or nil
+		local repPosition = representative and (repBasePart and repBasePart.Position
 			or (representative:IsA("Attachment") and representative.WorldPosition)
 			or nil)
 		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
@@ -4156,7 +4188,7 @@ local function setupAutoParryTab()
 		return (repPosition - localRoot.Position).Magnitude, representative
 	end
 
-	local function getProjectileRepresentativeBasePart(representative)
+	getProjectileRepresentativeBasePart = function(representative)
 		if not representative then
 			return nil
 		end
@@ -4171,7 +4203,11 @@ local function setupAutoParryTab()
 		end
 
 		if representative:IsA("Model") then
-			return getCharacterRoot(representative) or representative.PrimaryPart or representative:FindFirstChildWhichIsA("BasePart")
+			return getCharacterRoot(representative) or representative.PrimaryPart or representative:FindFirstChildWhichIsA("BasePart", true)
+		end
+
+		if representative:IsA("Folder") then
+			return representative:FindFirstChildWhichIsA("BasePart", true)
 		end
 
 		return nil
@@ -5013,6 +5049,15 @@ local function setupAutoParryTab()
 
 		local seenKeys = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
+			if not (
+				(descendant:IsA("ParticleEmitter") or descendant:IsA("Beam") or descendant:IsA("Trail"))
+					and (hasProjectileKeyword(descendant.Name) or isUnderLikelyProjectileFolder(descendant))
+				or ((descendant:IsA("Attachment")) and hasProjectileKeyword(descendant.Name) and isUnderLikelyProjectileFolder(descendant))
+				or (descendant:IsA("BasePart") or descendant:IsA("Model") or descendant:IsA("Folder"))
+			) then
+				continue
+			end
+
 			local signature, representative = getProjectileSignature(descendant)
 			if signature and representative and representative.Parent then
 				local approachData = getProjectileApproachData(representative)
