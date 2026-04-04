@@ -4938,7 +4938,6 @@ local function setupAutoParryTab()
 		local trackableCount = 0
 		local nearestTrackablePath = nil
 		local nearestTrackableDistance = math.huge
-		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			totalDescendants += 1
 			if descendant
@@ -4955,16 +4954,12 @@ local function setupAutoParryTab()
 						or (descendant:GetFullName():gsub("^.-Workspace%.FX%.?", ""))
 						or descendant.Name
 				end
-				local representative = getProjectileRepresentative(descendant) or descendant
-				if representative and not seenRepresentatives[representative] then
-					seenRepresentatives[representative] = true
-					local candidate = buildProjectileCandidateFromInstance(descendant)
-					if candidate
-						and (candidate.distance == nil or candidate.distance <= maxDistance)
-						and scoreProjectileCandidate(candidate, bestCandidate)
-					then
-						bestCandidate = candidate
-					end
+				local candidate = buildProjectileCandidateFromInstance(descendant)
+				if candidate
+					and (candidate.distance == nil or candidate.distance <= maxDistance)
+					and scoreProjectileCandidate(candidate, bestCandidate)
+				then
+					bestCandidate = candidate
 				end
 			end
 		end
