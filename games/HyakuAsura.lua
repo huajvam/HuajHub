@@ -212,6 +212,7 @@ function HyakuAsura.init(_context)
 		local localCheatsGroup = Tabs.Main:AddRightGroupbox("Local Cheats")
 		local infiniteRhythmLoopToken = 0
 		local rhythmChargeConnection
+		local staminaConnection
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -253,6 +254,27 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
+		local function getStaminaValue()
+			local entitiesFolder = workspace:FindFirstChild("Entities")
+			if not entitiesFolder or not LocalPlayer then
+				return nil
+			end
+
+			local entityModel = entitiesFolder:FindFirstChild(LocalPlayer.Name)
+			if not entityModel then
+				return nil
+			end
+
+			local mainScript = entityModel:FindFirstChild("MainScript")
+			local statsFolder = mainScript and mainScript:FindFirstChild("Stats")
+			local stamina = statsFolder and statsFolder:FindFirstChild("Stamina")
+			if stamina and stamina:IsA("NumberValue") then
+				return stamina
+			end
+
+			return nil
+		end
+
 		local function applyInfiniteRhythmCharge()
 			local rhythmCharge = getRhythmChargeValue()
 			if not rhythmCharge then
@@ -272,6 +294,42 @@ function HyakuAsura.init(_context)
 				end)
 				rhythmChargeConnection = nil
 			end
+		end
+
+		local function applyInfiniteStamina()
+			local stamina = getStaminaValue()
+			if not stamina then
+				return false
+			end
+
+			pcall(function()
+				stamina.Value = 100
+			end)
+			return true
+		end
+
+		local function stopInfiniteStaminaHook()
+			if staminaConnection then
+				pcall(function()
+					staminaConnection:Disconnect()
+				end)
+				staminaConnection = nil
+			end
+		end
+
+		local function startInfiniteStaminaHook()
+			stopInfiniteStaminaHook()
+			local stamina = getStaminaValue()
+			if not stamina then
+				return
+			end
+
+			applyInfiniteStamina()
+			staminaConnection = stamina:GetPropertyChangedSignal("Value"):Connect(function()
+				if Toggles and Toggles.InfiniteStaminaEnabled and Toggles.InfiniteStaminaEnabled.Value then
+					applyInfiniteStamina()
+				end
+			end)
 		end
 
 		local function startInfiniteRhythmChargeHook()
@@ -348,11 +406,29 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
+		localCheatsGroup:AddToggle("InfiniteStaminaEnabled", {
+			Text = "Infinite Stamina",
+			Default = false,
+		}):OnChanged(function(enabled)
+			if enabled then
+				startInfiniteStaminaHook()
+				applyInfiniteStamina()
+			else
+				stopInfiniteStaminaHook()
+			end
+		end)
+
 		registerLibraryUnloadCallback(function()
 			stopInfiniteRhythmLoop()
+			stopInfiniteStaminaHook()
 			if Toggles and Toggles.InfiniteRhythmEnabled then
 				pcall(function()
 					Toggles.InfiniteRhythmEnabled:SetValue(false)
+				end)
+			end
+			if Toggles and Toggles.InfiniteStaminaEnabled then
+				pcall(function()
+					Toggles.InfiniteStaminaEnabled:SetValue(false)
 				end)
 			end
 		end)
