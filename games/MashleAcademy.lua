@@ -6227,11 +6227,17 @@ local function setupAutoParryTab()
 		end
 
 		if projectileCandidate then
-			registerDetectedProjectile(
-				projectileCandidate.representative,
-				projectileCandidate.distance,
-				projectileCandidate.timeToImpact
-			)
+			local projectileRegisterOk, projectileRegisterErr = pcall(function()
+				registerDetectedProjectile(
+					projectileCandidate.representative,
+					projectileCandidate.distance,
+					projectileCandidate.timeToImpact
+				)
+			end)
+			if not projectileRegisterOk then
+				setDebugText(string.format("%s -> projectile register failed: %s", actionKind, tostring(projectileRegisterErr)))
+				projectileCandidate = nil
+			end
 		end
 
 		if not candidate then
@@ -6254,7 +6260,13 @@ local function setupAutoParryTab()
 			return
 		end
 
-		registerDetectedAnimation(candidate.targetType, candidate.targetName, candidate.animationId, candidate.timePosition, candidate.distance, candidate.animationName)
+		local registerAnimationOk, registerAnimationErr = pcall(function()
+			registerDetectedAnimation(candidate.targetType, candidate.targetName, candidate.animationId, candidate.timePosition, candidate.distance, candidate.animationName)
+		end)
+		if not registerAnimationOk then
+			setDebugText(string.format("%s -> animation register failed: %s", actionKind, tostring(registerAnimationErr)))
+			return
+		end
 		setLastAnimationId(candidate.animationId)
 		local latestCapture = {
 			actionKind = actionKind,
@@ -6273,14 +6285,27 @@ local function setupAutoParryTab()
 			lastManualParryCapture = latestCapture
 		end
 
-		local savedConfig = findMakerConfigByAnimationId(latestCapture.sourceKey, latestCapture.animationId)
+		local savedConfig = nil
+		local savedConfigOk, savedConfigErr = pcall(function()
+			savedConfig = findMakerConfigByAnimationId(latestCapture.sourceKey, latestCapture.animationId)
+		end)
+		if not savedConfigOk then
+			setDebugText(string.format("%s -> config lookup failed: %s", actionKind, tostring(savedConfigErr)))
+			return
+		end
 		if savedConfig then
 			local savedTiming = tonumber(savedConfig.wait)
 			if savedTiming then
-				updateLearnedAdaptiveOffset(latestCapture.sourceKey, latestCapture.animationId, actionType, ((latestCapture.wait or 0) - savedTiming) * 1000, 0.35)
+				local adaptiveOk, adaptiveErr = pcall(function()
+					updateLearnedAdaptiveOffset(latestCapture.sourceKey, latestCapture.animationId, actionType, ((latestCapture.wait or 0) - savedTiming) * 1000, 0.35)
+				end)
+				if not adaptiveOk then
+					setDebugText(string.format("%s -> adaptive update failed: %s", actionKind, tostring(adaptiveErr)))
+				end
 			end
 		end
-		applyBuilderConfigData({
+		local builderApplyOk, builderApplyErr = pcall(function()
+			applyBuilderConfigData({
 			configId = nil,
 			sourceKey = latestCapture.sourceKey,
 			animationId = latestCapture.animationId,
@@ -6294,6 +6319,11 @@ local function setupAutoParryTab()
 			blockHold = manualBlockHold,
 			range = latestCapture.range or 16,
 		})
+		end)
+		if not builderApplyOk then
+			setDebugText(string.format("%s -> builder apply failed: %s", actionKind, tostring(builderApplyErr)))
+			return
+		end
 		setDebugText(string.format(
 			"%s -> %s %s anim %s at %.2fs%s%s",
 			actionKind,
