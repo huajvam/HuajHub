@@ -4632,7 +4632,7 @@ local function setupAutoParryTab()
 				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
 					local approachData = getProjectileApproachData(representative)
-					local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
+					local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(signatureSource or representative)
 					if distance and distance <= maxDistance then
 						local specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name)
 						local candidate = {
@@ -4657,7 +4657,30 @@ local function setupAutoParryTab()
 			end
 		end
 
-		return bestCandidate
+		if bestCandidate then
+			return bestCandidate
+		end
+
+		for _, descendant in ipairs(fxFolder:GetDescendants()) do
+			if shouldTrackProjectileCandidate(descendant) then
+				local signature, representative, signatureSource = getProjectileSignature(descendant)
+				if signature and representative and representative.Parent then
+					local distance = getProjectileRepresentativeDistance(signatureSource or representative)
+					if distance and distance <= maxDistance then
+						return {
+							signature = signature,
+							representative = representative,
+							signatureSource = signatureSource,
+							specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name),
+							distance = distance,
+							timeToImpact = 0,
+						}
+					end
+				end
+			end
+		end
+
+		return nil
 	end
 
 	loadAutoParryMakerConfigsFromFile = function()
@@ -5184,6 +5207,41 @@ local function setupAutoParryTab()
 		local distance = getHorizontalEdgeDistance(character, model)
 		if distance > maxDistance then
 			return nil
+		end
+
+		return {
+			character = model,
+			root = targetRoot,
+			distance = distance,
+			targetType = targetType,
+		}
+	end
+
+	local function classifyManualParryTarget(model, maxDistance)
+		local character = LocalPlayer and LocalPlayer.Character
+		local root = getCharacterRoot(character)
+		if not root or not model or not model:IsA("Model") or isLocalAutoParryCharacter(model) then
+			return nil
+		end
+
+		local targetRoot = getCharacterRoot(model)
+		if not targetRoot then
+			return nil
+		end
+
+		local humanoid = model:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health <= 0 then
+			return nil
+		end
+
+		local distance = getHorizontalEdgeDistance(character, model)
+		if distance > maxDistance then
+			return nil
+		end
+
+		local targetType = resolveAutoParryTargetType(model)
+		if not targetType then
+			targetType = Players:GetPlayerFromCharacter(model) and "player" or "mob"
 		end
 
 		return {
@@ -6074,7 +6132,7 @@ local function setupAutoParryTab()
 				continue
 			end
 
-			local candidate = classifyParryTarget(model, maxDistance)
+			local candidate = classifyManualParryTarget(model, maxDistance)
 			if candidate then
 				local animationId, animationName, isMatched, timePosition, priorityScore = getManualDebugTrackForTarget(candidate.character, candidate.targetType, captureRequestedAt)
 				if animationId then
