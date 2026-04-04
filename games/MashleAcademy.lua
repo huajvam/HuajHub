@@ -4333,45 +4333,6 @@ local function setupAutoParryTab()
 		applyDetectedEntryToBuilder(entry)
 	end
 
-	local function getProjectileRepresentative(instance)
-		if not instance then
-			return nil
-		end
-
-		if instance:IsA("ParticleEmitter") or instance:IsA("Beam") or instance:IsA("Trail") then
-			local attachmentParent = instance.Parent
-			local effectParent = attachmentParent and attachmentParent.Parent
-			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
-				return effectParent
-			end
-			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
-				return attachmentParent
-			end
-			return attachmentParent
-		end
-
-		if instance:IsA("Attachment") then
-			local attachmentParent = instance.Parent
-			local effectParent = attachmentParent and attachmentParent.Parent
-			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
-				return effectParent
-			end
-			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
-				return attachmentParent
-			end
-			return attachmentParent
-		end
-
-		if instance:IsA("BasePart") then
-			local modelAncestor = instance:FindFirstAncestorWhichIsA("Model")
-			if modelAncestor then
-				return modelAncestor
-			end
-		end
-
-		return instance
-	end
-
 	local hasProjectileKeyword
 
 	local function isGenericProjectileContainerName(name)
@@ -4386,6 +4347,79 @@ local function setupAutoParryTab()
 			or lowered == "emit"
 			or lowered == "emitter"
 			or lowered == "attachment"
+	end
+
+	local function isValidProjectileSignatureNode(instance)
+		return instance
+			and (instance:IsA("ParticleEmitter")
+				or instance:IsA("Beam")
+				or instance:IsA("Trail")
+				or instance:IsA("Attachment")
+				or instance:IsA("BasePart")
+				or instance:IsA("Model")
+				or instance:IsA("Folder"))
+	end
+
+	local function getNearestSpecificProjectileNode(instance)
+		local fxFolder = workspace:FindFirstChild("FX")
+		local current = instance
+		local fallback = nil
+
+		while current and current ~= workspace do
+			if current == fxFolder then
+				break
+			end
+
+			if isValidProjectileSignatureNode(current) then
+				fallback = fallback or current
+				if not isGenericProjectileContainerName(current.Name) then
+					return current
+				end
+			end
+
+			current = current.Parent
+		end
+
+		return fallback or instance
+	end
+
+	local function getProjectileRepresentative(instance)
+		if not instance then
+			return nil
+		end
+
+		if instance:IsA("ParticleEmitter") or instance:IsA("Beam") or instance:IsA("Trail") then
+			local attachmentParent = instance.Parent
+			local effectParent = attachmentParent and attachmentParent.Parent
+			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
+				return getNearestSpecificProjectileNode(effectParent)
+			end
+			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
+				return getNearestSpecificProjectileNode(attachmentParent)
+			end
+			return getNearestSpecificProjectileNode(attachmentParent)
+		end
+
+		if instance:IsA("Attachment") then
+			local attachmentParent = instance.Parent
+			local effectParent = attachmentParent and attachmentParent.Parent
+			if effectParent and (effectParent:IsA("Model") or effectParent:IsA("BasePart") or effectParent:IsA("Folder")) then
+				return getNearestSpecificProjectileNode(effectParent)
+			end
+			if attachmentParent and (attachmentParent:IsA("Model") or attachmentParent:IsA("BasePart") or attachmentParent:IsA("Folder")) then
+				return getNearestSpecificProjectileNode(attachmentParent)
+			end
+			return getNearestSpecificProjectileNode(attachmentParent)
+		end
+
+		if instance:IsA("BasePart") then
+			local modelAncestor = instance:FindFirstAncestorWhichIsA("Model")
+			if modelAncestor then
+				return getNearestSpecificProjectileNode(modelAncestor)
+			end
+		end
+
+		return getNearestSpecificProjectileNode(instance)
 	end
 
 	local function getProjectileSpecificityScore(name)
@@ -4429,15 +4463,10 @@ local function setupAutoParryTab()
 		local current = instance
 		local best = representative or instance
 		local bestScore = getProjectileSpecificityScore(best and best.Name)
+		local fxFolder = workspace:FindFirstChild("FX")
 
 		while current and current ~= workspace do
-			local isViable = current:IsA("ParticleEmitter")
-				or current:IsA("Beam")
-				or current:IsA("Trail")
-				or current:IsA("Attachment")
-				or current:IsA("BasePart")
-				or current:IsA("Model")
-				or current:IsA("Folder")
+			local isViable = isValidProjectileSignatureNode(current)
 			if isViable then
 				local score = getProjectileSpecificityScore(current.Name)
 				if score > bestScore then
@@ -4446,7 +4475,7 @@ local function setupAutoParryTab()
 				end
 			end
 
-			if current == workspace:FindFirstChild("FX") then
+			if current == fxFolder then
 				break
 			end
 			current = current.Parent
