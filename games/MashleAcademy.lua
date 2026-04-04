@@ -3278,6 +3278,7 @@ local function setupAutoParryTab()
 	local onSaveProjectileConfig
 	local onDeleteProjectileConfig
 	local onAutoGetProjectileConfig
+	local onProjectileDebugProbe
 	local deleteMakerConfigById
 	local syncAutoParryBuilderConfigsToRuntime
 	local refreshSavedConfigDropdown
@@ -3317,6 +3318,7 @@ local function setupAutoParryTab()
 	local lastManualDashCapture = nil
 	local lastManualJumpCapture = nil
 	local lastProjectileCapture = nil
+	local projectileDebugLabel
 	local autoParryState = {
 		lastState = {
 			remoteMissing = false,
@@ -3686,6 +3688,12 @@ local function setupAutoParryTab()
 		refreshProjectileSavedConfigDropdown("(none)")
 		Library:Notify("Refreshed projectile configs.", 2)
 	end)
+	projectileParryMakerGroup:AddButton("Probe Projectile Detection", function()
+		if onProjectileDebugProbe then
+			onProjectileDebugProbe()
+		end
+	end)
+	projectileDebugLabel = projectileParryMakerGroup:AddLabel("Projectile Debug: idle.", true)
 	local projectileSignatureInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerSignature", {
 		Text = "Projectile Signature",
 		Default = "",
@@ -3787,6 +3795,15 @@ local function setupAutoParryTab()
 				manualDashTimingLabel:SetText(text)
 			end)
 			autoParryState.pendingManualDashDebugMessage = nil
+		end
+	end
+
+	local function setProjectileMakerDebugText(message)
+		local text = "Projectile Debug: " .. tostring(message or "")
+		if projectileDebugLabel and type(projectileDebugLabel.SetText) == "function" then
+			pcall(function()
+				projectileDebugLabel:SetText(text)
+			end)
 		end
 	end
 
@@ -4912,17 +4929,32 @@ local function setupAutoParryTab()
 	local function findManualProjectileCandidate(maxDistance)
 		local fxFolder = getProjectileEffectsFolder()
 		if not fxFolder then
+			setProjectileMakerDebugText("workspace.FX missing.")
 			return nil
 		end
 
 		local bestCandidate
+		local totalDescendants = 0
+		local trackableCount = 0
+		local nearestTrackablePath = nil
+		local nearestTrackableDistance = math.huge
 		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
+			totalDescendants += 1
 			if descendant
 				and descendant.Parent
 				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
 				and shouldTrackProjectileCandidate(descendant)
 			then
+				trackableCount += 1
+				local rawDistance = getProjectileCandidateDistance(descendant, getProjectileRepresentative(descendant), descendant)
+					or getProjectileRepresentativeDistance(descendant)
+				if rawDistance and rawDistance < nearestTrackableDistance then
+					nearestTrackableDistance = rawDistance
+					nearestTrackablePath = getProjectileRelativePathUnderFx(descendant)
+						or (descendant:GetFullName():gsub("^.-Workspace%.FX%.?", ""))
+						or descendant.Name
+				end
 				local representative = getProjectileRepresentative(descendant) or descendant
 				if representative and not seenRepresentatives[representative] then
 					seenRepresentatives[representative] = true
@@ -4937,7 +4969,37 @@ local function setupAutoParryTab()
 			end
 		end
 
+		if bestCandidate then
+			setProjectileMakerDebugText(string.format(
+				"fx=%d trackable=%d best=%s dist=%.1f tti=%.2f",
+				totalDescendants,
+				trackableCount,
+				tostring(bestCandidate.signature or "(none)"),
+				tonumber(bestCandidate.distance) or 0,
+				tonumber(bestCandidate.timeToImpact) or 0
+			))
+		else
+			setProjectileMakerDebugText(string.format(
+				"fx=%d trackable=%d nearest=%s dist=%s range=%s",
+				totalDescendants,
+				trackableCount,
+				tostring(nearestTrackablePath or "(none)"),
+				nearestTrackableDistance ~= math.huge and string.format("%.1f", nearestTrackableDistance) or "?",
+				tostring(maxDistance)
+			))
+		end
+
 		return bestCandidate
+	end
+
+	onProjectileDebugProbe = function()
+		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
+		local candidate = findManualProjectileCandidate(maxDistance)
+		if candidate then
+			Library:Notify("Projectile probe found: " .. tostring(candidate.signature or "(none)"), 2)
+			return
+		end
+		Library:Notify("Projectile probe found no projectile in range.", 2)
 	end
 
 	loadAutoParryMakerConfigsFromFile = function()
