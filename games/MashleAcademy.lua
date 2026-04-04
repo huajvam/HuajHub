@@ -3305,6 +3305,7 @@ local function setupAutoParryTab()
 		lastDashOnFailAt = 0,
 		lastAdaptiveTimingUpdateAt = 0,
 		lastTrackSweepAt = 0,
+		lastProjectileSweepAt = 0,
 		manualDashInputSuppressUntil = 0,
 		manualParryInputSuppressUntil = 0,
 		lastManualParryAnimationId = nil,
@@ -3318,6 +3319,7 @@ local function setupAutoParryTab()
 		pendingManualDashDebugMessage = nil,
 		queuedMoveActions = {},
 		projectileSeenStates = {},
+		projectileCandidates = {},
 		pendingBlockReleaseAt = 0,
 		currentBuilderConfigId = nil,
 		currentProjectileBuilderConfigId = nil,
@@ -4497,6 +4499,45 @@ local function setupAutoParryTab()
 		return signature, representative
 	end
 
+	local function shouldTrackProjectileCandidate(instance)
+		if not instance or not instance.Parent then
+			return false
+		end
+
+		if instance:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder")) then
+			return false
+		end
+
+		if instance:IsA("Beam") or instance:IsA("Trail") or instance:IsA("ParticleEmitter") then
+			return hasProjectileKeyword(instance.Name) or isUnderLikelyProjectileFolder(instance)
+		end
+
+		if instance:IsA("Attachment") then
+			return hasProjectileKeyword(instance.Name) and isUnderLikelyProjectileFolder(instance)
+		end
+
+		if instance:IsA("BasePart") or instance:IsA("Model") or instance:IsA("Folder") then
+			return isUnderLikelyProjectileFolder(instance) or hasProjectileKeyword(instance.Name)
+		end
+
+		return false
+	end
+
+	local function rebuildProjectileCandidateRegistry()
+		table.clear(autoParryState.projectileCandidates)
+
+		local fxFolder = getProjectileEffectsFolder()
+		if not fxFolder then
+			return
+		end
+
+		for _, descendant in ipairs(fxFolder:GetDescendants()) do
+			if shouldTrackProjectileCandidate(descendant) then
+				autoParryState.projectileCandidates[descendant] = true
+			end
+		end
+	end
+
 	loadAutoParryMakerConfigsFromFile = function()
 		if type(isfile) ~= "function" or type(readfile) ~= "function" then
 			return
@@ -5456,18 +5497,15 @@ local function setupAutoParryTab()
 		local fxFolder = getProjectileEffectsFolder()
 		if not fxFolder then
 			table.clear(autoParryState.projectileSeenStates)
+			table.clear(autoParryState.projectileCandidates)
 			return
 		end
 
 		local seenKeys = {}
-		local detectionDistance = math.max(tonumber(getOptionValue("AutoParryDistance", 18)) or 18, 40)
-		for _, descendant in ipairs(fxFolder:GetDescendants()) do
-			if not (
-				(descendant:IsA("ParticleEmitter") or descendant:IsA("Beam") or descendant:IsA("Trail"))
-					and (hasProjectileKeyword(descendant.Name) or isUnderLikelyProjectileFolder(descendant))
-				or ((descendant:IsA("Attachment")) and hasProjectileKeyword(descendant.Name) and isUnderLikelyProjectileFolder(descendant))
-				or (descendant:IsA("BasePart") or descendant:IsA("Model") or descendant:IsA("Folder"))
-			) then
+		local detectionDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
+		for descendant in pairs(autoParryState.projectileCandidates) do
+			if not descendant or not descendant.Parent or not descendant:IsDescendantOf(fxFolder) then
+				autoParryState.projectileCandidates[descendant] = nil
 				continue
 			end
 
@@ -5750,7 +5788,10 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 		end
 
-		scanProjectileAutoParry(getRequestModuleRemote(), now)
+		if now - autoParryState.lastProjectileSweepAt >= autoParryTrackSweepInterval then
+			autoParryState.lastProjectileSweepAt = now
+			scanProjectileAutoParry(getRequestModuleRemote(), now)
+		end
 
 		if not isAutoParryEnabled() then
 			autoParryState.pendingParryFailCheck = nil
@@ -6353,6 +6394,7 @@ local function setupAutoParryTab()
 	refreshDetectedAnimationDropdown("(none)")
 	refreshProjectileSavedConfigDropdown("(none)")
 	refreshProjectileDetectedDropdown("(none)")
+	rebuildProjectileCandidateRegistry()
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
@@ -6441,6 +6483,18 @@ local function setupAutoParryTab()
 
 		maid:GiveTask(liveFolder.ChildRemoved:Connect(function(child)
 			autoParryRuntime.disconnectTrackedAutoParryTarget(child)
+		end))
+	end
+
+	local projectileFxFolder = getProjectileEffectsFolder()
+	if projectileFxFolder then
+		maid:GiveTask(projectileFxFolder.DescendantAdded:Connect(function(descendant)
+			if shouldTrackProjectileCandidate(descendant) then
+				autoParryState.projectileCandidates[descendant] = true
+			end
+		end))
+		maid:GiveTask(projectileFxFolder.DescendantRemoving:Connect(function(descendant)
+			autoParryState.projectileCandidates[descendant] = nil
 		end))
 	end
 
