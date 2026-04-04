@@ -4741,63 +4741,50 @@ local function setupAutoParryTab()
 		end
 
 		local bestCandidate
+		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
-			if shouldTrackProjectileCandidate(descendant) then
-				local signature, representative, signatureSource = getProjectileSignature(descendant)
-				if signature and representative and representative.Parent then
-					local approachData = getProjectileApproachData(representative)
-					local distance = getProjectileCandidateDistance(descendant, representative, signatureSource)
-					if not distance and approachData then
-						distance = approachData.distance
-					end
-					if distance and distance <= maxDistance then
-						local specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name)
-						local candidate = {
-							signature = signature,
-							representative = representative,
-							signatureSource = signatureSource,
-							specificity = specificity,
-							distance = distance,
-							timeToImpact = approachData and approachData.timeToImpact or 0,
-						}
-						if not bestCandidate
-							or candidate.specificity > (bestCandidate.specificity or 0)
-							or (candidate.specificity == (bestCandidate.specificity or 0)
-								and (candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0)
-								and candidate.timeToImpact < bestCandidate.timeToImpact)
-							or (candidate.timeToImpact == bestCandidate.timeToImpact and candidate.distance < bestCandidate.distance)
-							or (bestCandidate.timeToImpact <= 0 and candidate.distance < bestCandidate.distance) then
-							bestCandidate = candidate
+			if descendant
+				and descendant.Parent
+				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
+				and isValidProjectileSignatureNode(descendant)
+			then
+				local representative = getProjectileRepresentative(descendant)
+				if representative and representative.Parent and not seenRepresentatives[representative] then
+					seenRepresentatives[representative] = true
+
+					local signature = getProjectileRelativePathUnderFx(descendant)
+						or getProjectileRelativePathUnderFx(representative)
+						or tostring(representative.Name or "")
+					if signature and signature ~= "" and signature ~= "FX" and signature ~= "fx" then
+						local approachData = getProjectileApproachData(representative)
+						local distance = getProjectileCandidateDistance(descendant, representative, representative)
+						if not distance and approachData then
+							distance = approachData.distance
+						end
+						if distance and distance <= maxDistance then
+							local candidate = {
+								signature = normalizeBuilderConfigId("Projectiles", signature),
+								representative = representative,
+								signatureSource = representative,
+								specificity = getProjectileSpecificityScore(representative.Name),
+								distance = distance,
+								timeToImpact = approachData and approachData.timeToImpact or 0,
+							}
+							if candidate.signature and candidate.signature ~= "" then
+								if not bestCandidate
+									or candidate.distance < bestCandidate.distance
+									or ((candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0) and candidate.timeToImpact < bestCandidate.timeToImpact)
+								then
+									bestCandidate = candidate
+								end
+							end
 						end
 					end
 				end
 			end
 		end
 
-		if bestCandidate then
-			return bestCandidate
-		end
-
-		for _, descendant in ipairs(fxFolder:GetDescendants()) do
-			if shouldTrackProjectileCandidate(descendant) then
-				local signature, representative, signatureSource = getProjectileSignature(descendant)
-				if signature and representative and representative.Parent then
-					local distance = getProjectileCandidateDistance(descendant, representative, signatureSource)
-					if distance and distance <= maxDistance then
-						return {
-							signature = signature,
-							representative = representative,
-							signatureSource = signatureSource,
-							specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name),
-							distance = distance,
-							timeToImpact = 0,
-						}
-					end
-				end
-			end
-		end
-
-		return nil
+		return bestCandidate
 	end
 
 	loadAutoParryMakerConfigsFromFile = function()
