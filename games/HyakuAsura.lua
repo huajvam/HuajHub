@@ -20,7 +20,7 @@ local GLOBAL_ENV = getgenv and getgenv() or _G
 local HUAJ_HUB_HYAKU_INIT_KEY = "__huaj_hub_hyaku_initialized_v1"
 local HUAJ_HUB_HYAKU_LIBRARY_KEY = "__huaj_hub_hyaku_library_v1"
 local HUAJ_HUB_HYAKU_ESP_DRAWINGS_KEY = "__huaj_hub_hyaku_esp_drawings_v1"
-local HYAKU_RHYTHM_REMOTE_INTERVAL = 0.1
+local HYAKU_RHYTHM_REMOTE_INTERVAL = 0.03
 
 local LocalPlayer = Players.LocalPlayer
 local maid = Maid.new()
@@ -152,6 +152,22 @@ local function iterEspCandidateModels()
 	return models
 end
 
+local function getToggleValue(key, default)
+	local toggle = Toggles and Toggles[key]
+	if toggle and toggle.Value ~= nil then
+		return toggle.Value
+	end
+	return default
+end
+
+local function getOptionValue(key, default)
+	local option = Options and Options[key]
+	if option and option.Value ~= nil then
+		return option.Value
+	end
+	return default
+end
+
 function HyakuAsura.init(_context)
 	if GLOBAL_ENV[HUAJ_HUB_HYAKU_INIT_KEY] then
 		local existingLibrary = GLOBAL_ENV[HUAJ_HUB_HYAKU_LIBRARY_KEY]
@@ -215,7 +231,7 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
-		local function fireInfiniteRhythmRemote()
+		local function fireInfiniteRhythmRemote(isDown)
 			local inputRemote = getRhythmInputRemote()
 			if not inputRemote then
 				return false
@@ -228,7 +244,7 @@ function HyakuAsura.init(_context)
 						Name = "R",
 						Airborne = false,
 					},
-					IsDown = true,
+					IsDown = isDown == nil and true or isDown,
 				},
 			}
 
@@ -243,8 +259,9 @@ function HyakuAsura.init(_context)
 			infiniteRhythmLoopToken += 1
 			local currentToken = infiniteRhythmLoopToken
 			task.spawn(function()
+				fireInfiniteRhythmRemote(true)
 				while currentToken == infiniteRhythmLoopToken and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value do
-					fireInfiniteRhythmRemote()
+					fireInfiniteRhythmRemote(true)
 					task.wait(HYAKU_RHYTHM_REMOTE_INTERVAL)
 				end
 			end)
@@ -252,6 +269,7 @@ function HyakuAsura.init(_context)
 
 		local function stopInfiniteRhythmLoop()
 			infiniteRhythmLoopToken += 1
+			fireInfiniteRhythmRemote(false)
 		end
 
 		infoGroup:AddLabel("Hyaku Asura scaffold loaded.")
@@ -468,7 +486,7 @@ function HyakuAsura.init(_context)
 				{topRight, bottomRight},
 				{bottomRight, bottomLeft},
 				{bottomLeft, topLeft},
-			}, accentColor, Toggles.EspShowBox.Value)
+			}, accentColor, getToggleValue("EspShowBox", true))
 
 			local health = humanoid and math.max(humanoid.Health, 0) or 0
 			local maxHealth = humanoid and math.max(humanoid.MaxHealth, 1) or 100
@@ -487,33 +505,33 @@ function HyakuAsura.init(_context)
 					math.floor(255 * healthRatio),
 					90
 				),
-				Toggles.EspShowHealthBar.Value and humanoid ~= nil
+				getToggleValue("EspShowHealthBar", true) and humanoid ~= nil
 			)
 
 			entry:setText(
 				entry.nameText,
 				getEspDisplayName(model, targetType),
 				Vector2.new(box.left + (box.width * 0.5), box.top - 14),
-				Toggles.EspShowNames.Value
+				getToggleValue("EspShowNames", true)
 			)
 
 			entry:setText(
 				entry.distanceText,
 				string.format("%.0f studs", distance),
 				Vector2.new(box.left + (box.width * 0.5), box.bottom + 1),
-				Toggles.EspShowDistance.Value
+				getToggleValue("EspShowDistance", true)
 			)
 
 			entry:setText(
 				entry.healthText,
 				string.format("%d / %d HP", math.floor(health + 0.5), math.floor(maxHealth + 0.5)),
 				Vector2.new(box.left + (box.width * 0.5), box.top - 27),
-				Toggles.EspShowHealthText.Value and humanoid ~= nil
+				getToggleValue("EspShowHealthText", false) and humanoid ~= nil
 			)
 
-			entry:setTracer(tracerStart, tracerEnd, accentColor, Toggles.EspShowTracers.Value)
+			entry:setTracer(tracerStart, tracerEnd, accentColor, getToggleValue("EspShowTracers", false))
 
-			if Toggles.EspShowSkeleton.Value then
+			if getToggleValue("EspShowSkeleton", false) then
 				updateEspSkeleton(entry, model, accentColor)
 			else
 				entry:hideSkeletonFrom(1)
@@ -527,7 +545,7 @@ function HyakuAsura.init(_context)
 				return
 			end
 
-			if not enabledToggle.Value then
+			if not (enabledToggle and enabledToggle.Value) then
 				clearEspCache(cache)
 				return
 			end
@@ -537,7 +555,7 @@ function HyakuAsura.init(_context)
 				if getEspTargetType(model) == targetType then
 					local humanoid = getCharacterHumanoid(model)
 					local aliveEnough = humanoid == nil or humanoid.Health > 0
-					local maxDistance = Options.EspRenderDistance.Value or 500
+					local maxDistance = getOptionValue("EspRenderDistance", 500)
 
 					if aliveEnough and getEspDistance(model) <= maxDistance then
 						validModels[model] = true
@@ -673,7 +691,7 @@ function HyakuAsura.init(_context)
 		end))
 
 		maid:GiveTask(RunService.Heartbeat:Connect(function()
-			if Toggles.PlayerEspEnabled.Value or Toggles.MobEspEnabled.Value then
+			if getToggleValue("PlayerEspEnabled", false) or getToggleValue("MobEspEnabled", false) then
 				refreshEsp()
 			end
 		end))
