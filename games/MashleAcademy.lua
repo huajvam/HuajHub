@@ -6058,8 +6058,17 @@ local function setupAutoParryTab()
 	local function getManualDebugTrackForTarget(targetCharacter, targetType, captureRequestedAt)
 		local bestTrack
 		local captureCompensation = getManualCaptureCompensationSeconds(captureRequestedAt)
+		local animators = getTargetAnimators(targetCharacter)
+		if type(animators) ~= "table" or #animators == 0 then
+			animators = {}
+			for _, descendant in ipairs(targetCharacter:GetDescendants()) do
+				if descendant:IsA("Animator") then
+					table.insert(animators, descendant)
+				end
+			end
+		end
 
-		for _, animator in ipairs(getTargetAnimators(targetCharacter)) do
+		for _, animator in ipairs(animators) do
 			local ok, tracks = pcall(function()
 				return animator:GetPlayingAnimationTracks()
 			end)
@@ -6119,7 +6128,7 @@ local function setupAutoParryTab()
 	end
 
 	local function findManualDebugCandidate(maxDistance, captureRequestedAt)
-		local liveFolder = autoParryRuntime.refreshTrackedAutoParryTargets()
+		local liveFolder = workspace:FindFirstChild("Live")
 		if not liveFolder then
 			return nil
 		end
@@ -6159,6 +6168,20 @@ local function setupAutoParryTab()
 		end
 
 		return matchedCandidate or fallbackCandidate
+	end
+
+	local function captureManualActionDebug(actionKind, captureRequestedAt)
+		local ok, err = pcall(reportManualActionDebug, actionKind, captureRequestedAt)
+		if ok then
+			return
+		end
+
+		local message = string.format("%s capture failed: %s", tostring(actionKind), tostring(err))
+		if actionKind == "manual dash" then
+			setManualDashDebugText(message)
+		else
+			setManualParryDebugText(message)
+		end
 	end
 
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
@@ -6535,7 +6558,7 @@ local function setupAutoParryTab()
 					if os.clock() >= autoParryState.manualParryInputSuppressUntil then
 						local captureRequestedAt = os.clock()
 						task.defer(function()
-							pcall(reportManualActionDebug, "manual parry", captureRequestedAt)
+							captureManualActionDebug("manual parry", captureRequestedAt)
 						end)
 					end
 				end
@@ -6561,7 +6584,7 @@ local function setupAutoParryTab()
 		if inputObject.KeyCode == Enum.KeyCode.Space then
 			local captureRequestedAt = os.clock()
 			task.delay(0.05, function()
-				pcall(reportManualActionDebug, "manual jump", captureRequestedAt)
+				captureManualActionDebug("manual jump", captureRequestedAt)
 			end)
 			return
 		end
@@ -6576,7 +6599,7 @@ local function setupAutoParryTab()
 
 		local captureRequestedAt = os.clock()
 		task.defer(function()
-			pcall(reportManualActionDebug, "manual dash", captureRequestedAt)
+			captureManualActionDebug("manual dash", captureRequestedAt)
 		end)
 	end))
 
@@ -6601,7 +6624,7 @@ local function setupAutoParryTab()
 		autoParryState.manualBlockCaptureHold = math.min(heldFor, 3)
 		local captureRequestedAt = startedAt
 		task.defer(function()
-			pcall(reportManualActionDebug, "manual block", captureRequestedAt)
+			captureManualActionDebug("manual block", captureRequestedAt)
 		end)
 	end))
 
