@@ -4362,8 +4362,28 @@ local function setupAutoParryTab()
 				or instance:IsA("Folder"))
 	end
 
+	local function getProjectileFxFolder()
+		return workspace:FindFirstChild("FX")
+	end
+
+	local function getProjectileFxBranch(instance)
+		local fxFolder = getProjectileFxFolder()
+		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
+			return nil
+		end
+
+		local current = instance
+		local lastBelowFx = nil
+		while current and current ~= fxFolder do
+			lastBelowFx = current
+			current = current.Parent
+		end
+
+		return lastBelowFx
+	end
+
 	local function getNearestSpecificProjectileNode(instance)
-		local fxFolder = workspace:FindFirstChild("FX")
+		local fxFolder = getProjectileFxFolder()
 		local current = instance
 		local fallback = nil
 
@@ -4465,7 +4485,12 @@ local function setupAutoParryTab()
 		local current = instance
 		local best = representative or instance
 		local bestScore = getProjectileSpecificityScore(best and best.Name)
-		local fxFolder = workspace:FindFirstChild("FX")
+		local fxFolder = getProjectileFxFolder()
+		local fxBranch = getProjectileFxBranch(instance)
+		if fxBranch and not isGenericProjectileContainerName(fxBranch.Name) then
+			best = fxBranch
+			bestScore = math.max(bestScore, getProjectileSpecificityScore(fxBranch.Name))
+		end
 
 		while current and current ~= workspace do
 			local isViable = isValidProjectileSignatureNode(current)
@@ -4498,11 +4523,9 @@ local function setupAutoParryTab()
 
 	local function isUnderLikelyProjectileFolder(instance)
 		local current = instance
+		local fxFolder = getProjectileFxFolder()
 		while current do
-			if current == workspace:FindFirstChild("FX") or current == workspace:FindFirstChild("Live") then
-				return true
-			end
-			if string.lower(tostring(current.Name or "")) == "projectiles" then
+			if current == fxFolder then
 				return true
 			end
 			current = current.Parent
@@ -5662,7 +5685,7 @@ local function setupAutoParryTab()
 	end
 
 	getProjectileEffectsFolder = function()
-		local fxFolder = workspace:FindFirstChild("FX")
+		local fxFolder = getProjectileFxFolder()
 		if fxFolder and fxFolder:IsA("Folder") then
 			return fxFolder
 		end
