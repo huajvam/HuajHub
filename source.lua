@@ -221,13 +221,31 @@ local function canReadLocalFile(path)
 	return type(isfile) == "function" and type(readfile) == "function" and isfile(path)
 end
 
+local function tryReadLocalFile(path)
+	if type(readfile) ~= "function" or type(path) ~= "string" or path == "" then
+		return nil
+	end
+
+	local ok, result = pcall(readfile, path)
+	if ok and type(result) == "string" and result ~= "" then
+		return result
+	end
+
+	return nil
+end
+
 local function readModuleSource(path)
 	local localCandidates = {
-		path,
 		LOCAL_REPO_BASE_DIR .. "\\" .. path:gsub("/", "\\"),
+		path,
 	}
 
 	for _, candidate in ipairs(localCandidates) do
+		local localSource = tryReadLocalFile(candidate)
+		if localSource then
+			return localSource, candidate
+		end
+
 		if canReadLocalFile(candidate) then
 			return readfile(candidate), candidate
 		end
