@@ -760,6 +760,8 @@ local function setupLocalCheatsTab()
 	local triggerAntiFallBypass
 	local ensureAntiFallState
 	local applyTeleportAntiFallProtection
+	local isTeleportAntiFallActive
+	local shouldBlockTeleportFallDamageRequest
 	local NO_STUN_STATE_NAMES = {
 		NoMove = true,
 		NoMoveFake = true,
@@ -999,7 +1001,7 @@ local function setupLocalCheatsTab()
 		return Toggles and Toggles.AntiFallDamageEnabled and Toggles.AntiFallDamageEnabled.Value == true
 	end
 
-	local function isTeleportAntiFallActive()
+	isTeleportAntiFallActive = function()
 		return os.clock() <= teleportAntiFallUntil
 	end
 
@@ -1007,7 +1009,7 @@ local function setupLocalCheatsTab()
 		return isAntiFallActive() or isTeleportAntiFallActive()
 	end
 
-	local function shouldBlockTeleportFallDamageRequest(instance, args)
+	shouldBlockTeleportFallDamageRequest = function(instance, args)
 		if not isTeleportAntiFallActive() then
 			return false
 		end
