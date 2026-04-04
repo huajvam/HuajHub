@@ -73,6 +73,24 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.healthBarFill)
 
+	self.staminaBarOutline = EntityESP.createDrawing(registry, "Square", {
+		Filled = false,
+		Thickness = 1,
+		Transparency = 1,
+		Color = Color3.fromRGB(20, 20, 20),
+		Visible = false,
+	}, shuttingDownFlag)
+	table.insert(self.objects, self.staminaBarOutline)
+
+	self.staminaBarFill = EntityESP.createDrawing(registry, "Square", {
+		Filled = true,
+		Thickness = 1,
+		Transparency = 1,
+		Color = Color3.fromRGB(240, 200, 60),
+		Visible = false,
+	}, shuttingDownFlag)
+	table.insert(self.objects, self.staminaBarFill)
+
 	self.nameText = EntityESP.createDrawing(registry, "Text", {
 		Center = true,
 		Outline = true,
@@ -106,6 +124,17 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.healthText)
 
+	self.staminaText = EntityESP.createDrawing(registry, "Text", {
+		Center = true,
+		Outline = true,
+		Size = 13,
+		Font = 2,
+		Transparency = 1,
+		Color = Color3.fromRGB(240, 200, 60),
+		Visible = false,
+	}, shuttingDownFlag)
+	table.insert(self.objects, self.staminaText)
+
 	self.magicMarksText = EntityESP.createDrawing(registry, "Text", {
 		Center = false,
 		Outline = true,
@@ -116,6 +145,17 @@ function EntityESP.new(registry, accentColor, shuttingDownFlag)
 		Visible = false,
 	}, shuttingDownFlag)
 	table.insert(self.objects, self.magicMarksText)
+
+	self.rankText = EntityESP.createDrawing(registry, "Text", {
+		Center = false,
+		Outline = true,
+		Size = 13,
+		Font = 2,
+		Transparency = 1,
+		Color = Color3.fromRGB(255, 255, 255),
+		Visible = false,
+	}, shuttingDownFlag)
+	table.insert(self.objects, self.rankText)
 
 	self.tracerLine = EntityESP.createDrawing(registry, "Line", {
 		Thickness = 1,
@@ -201,6 +241,21 @@ function EntityESP:setHealthBar(position, size, fillPosition, fillSize, fillColo
 	end
 end
 
+function EntityESP:setStaminaBar(position, size, fillPosition, fillSize, fillColor, visible)
+	if self.staminaBarOutline then
+		self.staminaBarOutline.Position = position
+		self.staminaBarOutline.Size = size
+		self.staminaBarOutline.Visible = visible == true
+	end
+
+	if self.staminaBarFill then
+		self.staminaBarFill.Position = fillPosition
+		self.staminaBarFill.Size = fillSize
+		self.staminaBarFill.Color = fillColor or self.staminaBarFill.Color
+		self.staminaBarFill.Visible = visible == true
+	end
+end
+
 function EntityESP:setText(textObject, text, position, visible)
 	if not textObject then
 		return
@@ -231,6 +286,12 @@ function EntityESP:hide()
 	if self.healthBarFill then
 		self.healthBarFill.Visible = false
 	end
+	if self.staminaBarOutline then
+		self.staminaBarOutline.Visible = false
+	end
+	if self.staminaBarFill then
+		self.staminaBarFill.Visible = false
+	end
 	if self.nameText then
 		self.nameText.Visible = false
 	end
@@ -240,8 +301,14 @@ function EntityESP:hide()
 	if self.healthText then
 		self.healthText.Visible = false
 	end
+	if self.staminaText then
+		self.staminaText.Visible = false
+	end
 	if self.magicMarksText then
 		self.magicMarksText.Visible = false
+	end
+	if self.rankText then
+		self.rankText.Visible = false
 	end
 	if self.tracerLine then
 		self.tracerLine.Visible = false
