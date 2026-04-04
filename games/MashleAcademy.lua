@@ -3306,7 +3306,6 @@ local function setupAutoParryTab()
 		lastDashOnFailAt = 0,
 		lastAdaptiveTimingUpdateAt = 0,
 		lastTrackSweepAt = 0,
-		lastProjectileSweepAt = 0,
 		manualDashInputSuppressUntil = 0,
 		manualParryInputSuppressUntil = 0,
 		lastManualParryAnimationId = nil,
@@ -3320,7 +3319,6 @@ local function setupAutoParryTab()
 		pendingManualDashDebugMessage = nil,
 		queuedMoveActions = {},
 		projectileSeenStates = {},
-		projectileCandidates = {},
 		pendingBlockReleaseAt = 0,
 		currentBuilderConfigId = nil,
 		currentProjectileBuilderConfigId = nil,
@@ -4524,19 +4522,38 @@ local function setupAutoParryTab()
 		return false
 	end
 
-	local function rebuildProjectileCandidateRegistry()
-		table.clear(autoParryState.projectileCandidates)
-
+	local function findManualProjectileCandidate(maxDistance)
 		local fxFolder = getProjectileEffectsFolder()
 		if not fxFolder then
-			return
+			return nil
 		end
 
+		local bestCandidate
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if shouldTrackProjectileCandidate(descendant) then
-				autoParryState.projectileCandidates[descendant] = true
+				local signature, representative = getProjectileSignature(descendant)
+				if signature and representative and representative.Parent then
+					local approachData = getProjectileApproachData(representative)
+					local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
+					if distance and distance <= maxDistance then
+						local candidate = {
+							signature = signature,
+							representative = representative,
+							distance = distance,
+							timeToImpact = approachData and approachData.timeToImpact or 0,
+						}
+						if not bestCandidate
+							or ((candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0) and candidate.timeToImpact < bestCandidate.timeToImpact)
+							or (candidate.timeToImpact == bestCandidate.timeToImpact and candidate.distance < bestCandidate.distance)
+							or (bestCandidate.timeToImpact <= 0 and candidate.distance < bestCandidate.distance) then
+							bestCandidate = candidate
+						end
+					end
+				end
 			end
 		end
+
+		return bestCandidate
 	end
 
 	loadAutoParryMakerConfigsFromFile = function()
@@ -5494,73 +5511,6 @@ local function setupAutoParryTab()
 		return true
 	end
 
-	local function scanProjectileAutoParry(remote, now)
-		local fxFolder = getProjectileEffectsFolder()
-		if not fxFolder then
-			table.clear(autoParryState.projectileSeenStates)
-			table.clear(autoParryState.projectileCandidates)
-			return
-		end
-
-		local seenKeys = {}
-		local detectionDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
-		for descendant in pairs(autoParryState.projectileCandidates) do
-			if not descendant or not descendant.Parent or not descendant:IsDescendantOf(fxFolder) then
-				autoParryState.projectileCandidates[descendant] = nil
-				continue
-			end
-
-			local signature, representative = getProjectileSignature(descendant)
-			if signature and representative and representative.Parent then
-				local approachData = getProjectileApproachData(representative)
-				local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
-				if distance and distance <= detectionDistance then
-					registerDetectedProjectile(representative, distance, approachData and approachData.timeToImpact or nil)
-				end
-
-				local moveConfig = distance and getProjectileMoveConfig(signature, distance) or nil
-				if moveConfig then
-					local configRange = getMoveConfigRange(moveConfig)
-					if distance and distance <= configRange and not wasAnimationRecentlyHandled(representative, signature) then
-						local projectileKey = string.format("%s::%s", representative:GetDebugId(), signature)
-						seenKeys[projectileKey] = true
-
-						local seenState = autoParryState.projectileSeenStates[projectileKey]
-						if not seenState then
-							seenState = {
-								fired = false,
-								representative = representative,
-								signature = signature,
-							}
-							autoParryState.projectileSeenStates[projectileKey] = seenState
-						end
-
-						if not seenState.fired then
-							local leadTime = math.max(resolveConfiguredTiming(moveConfig) or 0, 0)
-							local fallbackWindow = math.max(leadTime, 0.05)
-							local shouldTrigger = false
-							if approachData and approachData.timeToImpact then
-								shouldTrigger = approachData.timeToImpact <= fallbackWindow
-							else
-								shouldTrigger = true
-							end
-
-							if shouldTrigger and remote then
-								seenState.fired = executeProjectileAutoParryAction(representative, signature, moveConfig, distance, remote, now) == true
-							end
-						end
-					end
-				end
-			end
-		end
-
-		for projectileKey, seenState in pairs(autoParryState.projectileSeenStates) do
-			if not seenKeys[projectileKey] or not seenState.representative or not seenState.representative.Parent then
-				autoParryState.projectileSeenStates[projectileKey] = nil
-			end
-		end
-	end
-
 	function autoParryRuntime.completeOrRepeatAutoParryAction(selectedAction, activeMoveConfig, animationTrack, now)
 		local repeatsRemaining = math.max(math.floor(tonumber(selectedAction.repeatsRemaining) or 1), 1) - 1
 		if repeatsRemaining <= 0 then
@@ -5787,11 +5737,6 @@ local function setupAutoParryTab()
 			end
 
 			autoParryState.pendingParryFailCheck = nil
-		end
-
-		if now - autoParryState.lastProjectileSweepAt >= autoParryTrackSweepInterval then
-			autoParryState.lastProjectileSweepAt = now
-			scanProjectileAutoParry(getRequestModuleRemote(), now)
 		end
 
 		if not isAutoParryEnabled() then
@@ -6057,6 +6002,7 @@ local function setupAutoParryTab()
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
 		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
+		local projectileCandidate = findManualProjectileCandidate(maxDistance)
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
 		local isBlockAction = actionKind == "manual block"
@@ -6064,9 +6010,27 @@ local function setupAutoParryTab()
 		local setDebugText = isDashAction and setManualDashDebugText or setManualParryDebugText
 		local setLastAnimationId = isDashAction and setLastManualDashAnimationId or setLastManualParryAnimationId
 		local manualBlockHold = tonumber(autoParryState.manualBlockCaptureHold) or autoParryBlockHoldDuration
+
+		if projectileCandidate then
+			registerDetectedProjectile(
+				projectileCandidate.representative,
+				projectileCandidate.distance,
+				projectileCandidate.timeToImpact
+			)
+		end
+
 		if not candidate then
 			setLastAnimationId(nil)
-			setDebugText(string.format("%s -> no nearby tracked animation found.", actionKind))
+			if projectileCandidate then
+				setDebugText(string.format(
+					"%s -> projectile %s at %.2fs",
+					actionKind,
+					projectileCandidate.signature,
+					tonumber(projectileCandidate.timeToImpact) or 0
+				))
+			else
+				setDebugText(string.format("%s -> no nearby tracked animation found.", actionKind))
+			end
 			return
 		end
 
@@ -6399,7 +6363,6 @@ local function setupAutoParryTab()
 	refreshDetectedAnimationDropdown("(none)")
 	refreshProjectileSavedConfigDropdown("(none)")
 	refreshProjectileDetectedDropdown("(none)")
-	rebuildProjectileCandidateRegistry()
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
@@ -6488,18 +6451,6 @@ local function setupAutoParryTab()
 
 		maid:GiveTask(liveFolder.ChildRemoved:Connect(function(child)
 			autoParryRuntime.disconnectTrackedAutoParryTarget(child)
-		end))
-	end
-
-	local projectileFxFolder = getProjectileEffectsFolder()
-	if projectileFxFolder then
-		maid:GiveTask(projectileFxFolder.DescendantAdded:Connect(function(descendant)
-			if shouldTrackProjectileCandidate(descendant) then
-				autoParryState.projectileCandidates[descendant] = true
-			end
-		end))
-		maid:GiveTask(projectileFxFolder.DescendantRemoving:Connect(function(descendant)
-			autoParryState.projectileCandidates[descendant] = nil
 		end))
 	end
 
