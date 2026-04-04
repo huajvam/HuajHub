@@ -3966,37 +3966,34 @@ local function setupAutoParryTab()
 				for signature, runtimeConfig in pairs(projectileTable) do
 					AUTO_PARRY_PROJECTILE_TABLE[signature] = runtimeConfig
 				end
-				goto continue_sync
-			end
+			else
+				local runtimeTable = AUTO_PARRY_ANIMATION_TABLE[sourceKey]
+				if type(runtimeTable) ~= "table" then
+					runtimeTable = {}
+					AUTO_PARRY_ANIMATION_TABLE[sourceKey] = runtimeTable
+				end
 
-			local runtimeTable = AUTO_PARRY_ANIMATION_TABLE[sourceKey]
-			if type(runtimeTable) ~= "table" then
-				runtimeTable = {}
-				AUTO_PARRY_ANIMATION_TABLE[sourceKey] = runtimeTable
-			end
+				local groupedConfigs = {}
+				for _, configData in ipairs(sourceConfigs) do
+					if type(configData) == "table" then
+						local animationId = normalizeBuilderAnimationId(configData.animationId)
+						if animationId then
+							groupedConfigs[animationId] = groupedConfigs[animationId] or {}
+							table.insert(groupedConfigs[animationId], buildRuntimeMoveConfig(configData))
+						end
+					end
+				end
 
-			local groupedConfigs = {}
-			for _, configData in ipairs(sourceConfigs) do
-				if type(configData) == "table" then
-					local animationId = normalizeBuilderAnimationId(configData.animationId)
-					if animationId then
-						groupedConfigs[animationId] = groupedConfigs[animationId] or {}
-						table.insert(groupedConfigs[animationId], buildRuntimeMoveConfig(configData))
+				for animationId, runtimeConfigs in pairs(groupedConfigs) do
+					if #runtimeConfigs == 1 then
+						runtimeTable[animationId] = runtimeConfigs[1]
+					elseif #runtimeConfigs > 1 then
+						runtimeTable[animationId] = {
+							entries = runtimeConfigs,
+						}
 					end
 				end
 			end
-
-			for animationId, runtimeConfigs in pairs(groupedConfigs) do
-				if #runtimeConfigs == 1 then
-					runtimeTable[animationId] = runtimeConfigs[1]
-				elseif #runtimeConfigs > 1 then
-					runtimeTable[animationId] = {
-						entries = runtimeConfigs,
-					}
-				end
-			end
-
-			::continue_sync::
 		end
 
 		GLOBAL_ENV.HuajHubAutoParryAnimations = AUTO_PARRY_ANIMATION_TABLE
