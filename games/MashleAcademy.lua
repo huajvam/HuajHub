@@ -3256,6 +3256,7 @@ local function setupAutoParryTab()
 	local getProjectileBuilderConfigData
 	local applyProjectileBuilderConfigData
 	local refreshProjectileDetectedDropdown
+	local getProjectileEffectsFolder
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
@@ -5431,7 +5432,7 @@ local function setupAutoParryTab()
 		return reason or "invalid track", trackTimePosition
 	end
 
-	local function getProjectileEffectsFolder()
+	getProjectileEffectsFolder = function()
 		local fxFolder = workspace:FindFirstChild("FX")
 		if fxFolder and fxFolder:IsA("Folder") then
 			return fxFolder
