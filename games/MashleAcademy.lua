@@ -3196,6 +3196,7 @@ local function setupAutoParryTab()
 	local autoParryTab = Tabs["Auto Parry"]
 	local autoParryGroup = autoParryTab:AddLeftGroupbox("Auto Parry")
 	local autoParryMakerGroup = autoParryTab:AddRightGroupbox("Auto Parry Maker")
+	local projectileParryMakerGroup = autoParryTab:AddRightGroupbox("Projectile Maker")
 	local autoParryRuntime = {}
 	GLOBAL_ENV[HUAJ_HUB_MANUAL_ACTION_CALLBACK_KEY] = nil
 	local AUTO_PARRY_BLOCK_ACTION = "HuajHubAutoParryInputBlock"
@@ -3240,16 +3241,27 @@ local function setupAutoParryTab()
 	local onCreateMakerConfig
 	local onSaveMakerConfig
 	local onAutoGetMakerConfig
+	local onCreateProjectileConfig
+	local onSaveProjectileConfig
+	local onDeleteProjectileConfig
+	local onAutoGetProjectileConfig
 	local deleteMakerConfigById
 	local syncAutoParryBuilderConfigsToRuntime
 	local refreshSavedConfigDropdown
+	local refreshProjectileSavedConfigDropdown
 	local loadAutoParryMakerConfigsFromFile
+	local loadProjectileParryConfigsFromFile
 	local saveAutoParryMakerConfigsToFile
+	local saveProjectileParryConfigsToFile
+	local getProjectileBuilderConfigData
+	local applyProjectileBuilderConfigData
+	local refreshProjectileDetectedDropdown
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
 	local AUTO_PARRY_MAKER_FOLDER = "huajhub/" .. GAME_KEY
 	local AUTO_PARRY_MAKER_FILE = AUTO_PARRY_MAKER_FOLDER .. "/AutoParryConfig"
+	local AUTO_PARRY_PROJECTILE_MAKER_FILE = AUTO_PARRY_MAKER_FOLDER .. "/ProjectileAutoParryConfig"
 	local AUTO_PARRY_MAKER_OLD_SHARED_FILE = "huajhub/AutoParryConfig"
 	local AUTO_PARRY_MAKER_OLD_WORKSPACE_FILE = "workspace/huajhub/AutoParryConfig"
 	local AUTO_PARRY_MAKER_LEGACY_FILE = "HuajHubAutoParryConfigs.json"
@@ -3265,6 +3277,8 @@ local function setupAutoParryTab()
 	}
 	local builderConfigLabelMap = {}
 	local detectedAnimationLabelMap = {}
+	local projectileBuilderConfigLabelMap = {}
+	local projectileDetectedLabelMap = {}
 	local lastManualParryCapture = nil
 	local lastManualDashCapture = nil
 	local lastManualJumpCapture = nil
@@ -3306,6 +3320,7 @@ local function setupAutoParryTab()
 		projectileSeenStates = {},
 		pendingBlockReleaseAt = 0,
 		currentBuilderConfigId = nil,
+		currentProjectileBuilderConfigId = nil,
 		adaptiveTiming = {
 			pingSamples = {},
 			smoothedPingMs = 0,
@@ -3499,7 +3514,7 @@ local function setupAutoParryTab()
 		Text = "Detected Animation",
 	})
 	local makerSourceDropdown = autoParryMakerGroup:AddDropdown("AutoParryMakerSource", {
-		Values = {"Players", "Mobs", "Projectiles"},
+		Values = {"Players", "Mobs"},
 		Default = 1,
 		Multi = false,
 		Text = "Config",
@@ -3613,6 +3628,101 @@ local function setupAutoParryTab()
 	autoParryMakerGroup:AddButton("Attempt Automatic Get", function()
 		if onAutoGetMakerConfig then
 			onAutoGetMakerConfig()
+		end
+	end)
+
+	projectileParryMakerGroup:AddLabel("Projectile signatures are detected from FX/projectile effects.", true)
+	local projectileDetectedDropdown = projectileParryMakerGroup:AddDropdown("ProjectileParryMakerDetectedProjectile", {
+		Values = {"(none)"},
+		Default = 1,
+		Multi = false,
+		Text = "Detected Projectile",
+	})
+	local projectileSavedConfigDropdown = projectileParryMakerGroup:AddDropdown("ProjectileParryMakerSavedConfig", {
+		Values = {"(none)"},
+		Default = 1,
+		Multi = false,
+		Text = "Saved Config",
+	})
+	projectileParryMakerGroup:AddButton("Refresh Projectile Configs", function()
+		autoParryMakerConfigs.Projectiles = {}
+		autoParryState.currentProjectileBuilderConfigId = nil
+		loadProjectileParryConfigsFromFile()
+		syncAutoParryBuilderConfigsToRuntime()
+		refreshProjectileSavedConfigDropdown("(none)")
+		Library:Notify("Refreshed projectile configs.", 2)
+	end)
+	local projectileSignatureInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerSignature", {
+		Text = "Projectile Signature",
+		Default = "",
+	})
+	local projectileRepeatAmountInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerRepeatAmount", {
+		Text = "Repeat Amount",
+		Default = "1",
+		Numeric = true,
+	})
+	local projectileRepeatDelayInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerRepeatDelay", {
+		Text = "Repeat Delay",
+		Default = "0",
+		Numeric = true,
+	})
+	local projectileWaitInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerWait", {
+		Text = "Lead Time",
+		Default = "0",
+		Numeric = true,
+	})
+	local projectileNicknameInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerNickname", {
+		Text = "Config Nickname",
+		Default = "",
+	})
+	local projectileActionTypeDropdown = projectileParryMakerGroup:AddDropdown("ProjectileParryMakerActionType", {
+		Values = {"Parry", "Dash", "Block", "Jump"},
+		Default = 1,
+		Multi = false,
+		Text = "Action Type",
+	})
+	local projectileDelayDropdown = projectileParryMakerGroup:AddDropdown("ProjectileParryMakerDelay", {
+		Values = {"Off", "On"},
+		Default = 1,
+		Multi = false,
+		Text = "Delay",
+	})
+	local projectileDelayRangeInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerDelayRange", {
+		Text = "Delay Range",
+		Default = "0",
+		Numeric = true,
+	})
+	local projectileBlockHoldInput = projectileParryMakerGroup:AddInput("ProjectileParryMakerBlockHold", {
+		Text = "Block Hold",
+		Default = "0.35",
+		Numeric = true,
+	})
+	local projectileRangeSlider = projectileParryMakerGroup:AddSlider("ProjectileParryMakerRange", {
+		Text = "Range",
+		Default = 16,
+		Min = 1,
+		Max = 80,
+		Rounding = 0,
+		Suffix = " studs",
+	})
+	projectileParryMakerGroup:AddButton("Create Projectile Config", function()
+		if onCreateProjectileConfig then
+			onCreateProjectileConfig()
+		end
+	end)
+	projectileParryMakerGroup:AddButton("Save Projectile Config", function()
+		if onSaveProjectileConfig then
+			onSaveProjectileConfig()
+		end
+	end)
+	projectileParryMakerGroup:AddButton("Delete Projectile Config", function()
+		if onDeleteProjectileConfig then
+			onDeleteProjectileConfig()
+		end
+	end)
+	projectileParryMakerGroup:AddButton("Attempt Projectile Get", function()
+		if onAutoGetProjectileConfig then
+			onAutoGetProjectileConfig()
 		end
 	end)
 
@@ -3913,6 +4023,49 @@ local function setupAutoParryTab()
 		Options.AutoParryMakerRange:SetValue(tonumber(configData.range) or 16)
 	end
 
+	getProjectileBuilderConfigData = function()
+		local animationId = normalizeBuilderConfigId("Projectiles", getOptionValue("ProjectileParryMakerSignature", ""))
+		local actionType = getOptionValue("ProjectileParryMakerActionType", "Parry") or "Parry"
+		if not animationId or animationId == "" then
+			return nil
+		end
+
+		return {
+			configId = autoParryState.currentProjectileBuilderConfigId,
+			sourceKey = "Projectiles",
+			animationId = animationId,
+			nickname = tostring(getOptionValue("ProjectileParryMakerNickname", "") or ""),
+			wait = tonumber(getOptionValue("ProjectileParryMakerWait", 0)) or 0,
+			repeatAmount = math.max(1, math.floor(tonumber(getOptionValue("ProjectileParryMakerRepeatAmount", 1)) or 1)),
+			repeatDelay = tonumber(getOptionValue("ProjectileParryMakerRepeatDelay", 0)) or 0,
+			actionType = actionType,
+			delay = getOptionValue("ProjectileParryMakerDelay", "Off") == "On",
+			delayRange = tonumber(getOptionValue("ProjectileParryMakerDelayRange", 0)) or 0,
+			blockHold = actionType == "Block"
+				and (tonumber(getOptionValue("ProjectileParryMakerBlockHold", autoParryBlockHoldDuration)) or autoParryBlockHoldDuration)
+				or nil,
+			range = tonumber(getOptionValue("ProjectileParryMakerRange", 16)) or 16,
+		}
+	end
+
+	applyProjectileBuilderConfigData = function(configData)
+		if not configData then
+			return
+		end
+
+		autoParryState.currentProjectileBuilderConfigId = configData.configId
+		Options.ProjectileParryMakerSignature:SetValue(tostring(configData.animationId or ""))
+		Options.ProjectileParryMakerRepeatAmount:SetValue(tostring(configData.repeatAmount or 1))
+		Options.ProjectileParryMakerRepeatDelay:SetValue(tostring(configData.repeatDelay or 0))
+		Options.ProjectileParryMakerWait:SetValue(tostring(configData.wait or 0))
+		Options.ProjectileParryMakerNickname:SetValue(tostring(configData.nickname or ""))
+		Options.ProjectileParryMakerActionType:SetValue(getConfigActionType(configData))
+		Options.ProjectileParryMakerDelay:SetValue(configData.delay and "On" or "Off")
+		Options.ProjectileParryMakerDelayRange:SetValue(tostring(configData.delayRange or 0))
+		Options.ProjectileParryMakerBlockHold:SetValue(tostring(configData.blockHold or autoParryBlockHoldDuration))
+		Options.ProjectileParryMakerRange:SetValue(tonumber(configData.range) or 16)
+	end
+
 	local normalizeMoveConfig
 
 	local function selectBestMoveConfig(configEntries, candidateDistance)
@@ -4004,7 +4157,7 @@ local function setupAutoParryTab()
 		local labels = {"(none)"}
 		builderConfigLabelMap = {}
 
-		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs"}) do
 			local sourceConfigs = autoParryMakerConfigs[sourceKey]
 			for _, configData in ipairs(sourceConfigs) do
 				local animationId = normalizeBuilderConfigId(sourceKey, configData.animationId)
@@ -4040,7 +4193,7 @@ local function setupAutoParryTab()
 		local labels = {"(none)"}
 		detectedAnimationLabelMap = {}
 
-		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs"}) do
 			local sourceEntries = detectedAnimationEntries[sourceKey]
 			for animationId, entry in pairs(sourceEntries) do
 				local label = formatDetectedAnimationLabel(entry)
@@ -4064,6 +4217,66 @@ local function setupAutoParryTab()
 
 		Options.AutoParryMakerDetectedAnimation:SetValues(labels)
 		Options.AutoParryMakerDetectedAnimation:SetValue(detectedAnimationLabelMap[selectedLabel] and selectedLabel or "(none)")
+	end
+
+	refreshProjectileSavedConfigDropdown = function(selectedLabel)
+		local labels = {"(none)"}
+		projectileBuilderConfigLabelMap = {}
+
+		for _, configData in ipairs(autoParryMakerConfigs.Projectiles) do
+			local signature = normalizeBuilderConfigId("Projectiles", configData.animationId)
+			if signature then
+				local label = buildSavedConfigLabel("Projectiles", signature, configData)
+				if projectileBuilderConfigLabelMap[label] then
+					label = string.format("%s | %s", label, tostring(configData.configId or ""):sub(1, 8))
+				end
+				projectileBuilderConfigLabelMap[label] = {
+					sourceKey = "Projectiles",
+					configId = configData.configId,
+				}
+				table.insert(labels, label)
+			end
+		end
+
+		table.sort(labels, function(left, right)
+			if left == "(none)" then
+				return true
+			end
+			if right == "(none)" then
+				return false
+			end
+			return left < right
+		end)
+
+		Options.ProjectileParryMakerSavedConfig:SetValues(labels)
+		Options.ProjectileParryMakerSavedConfig:SetValue(projectileBuilderConfigLabelMap[selectedLabel] and selectedLabel or "(none)")
+	end
+
+	refreshProjectileDetectedDropdown = function(selectedLabel)
+		local labels = {"(none)"}
+		projectileDetectedLabelMap = {}
+
+		for signature, entry in pairs(detectedAnimationEntries.Projectiles) do
+			local label = formatDetectedAnimationLabel(entry)
+			projectileDetectedLabelMap[label] = {
+				sourceKey = "Projectiles",
+				animationId = signature,
+			}
+			table.insert(labels, label)
+		end
+
+		table.sort(labels, function(left, right)
+			if left == "(none)" then
+				return true
+			end
+			if right == "(none)" then
+				return false
+			end
+			return left < right
+		end)
+
+		Options.ProjectileParryMakerDetectedProjectile:SetValues(labels)
+		Options.ProjectileParryMakerDetectedProjectile:SetValue(projectileDetectedLabelMap[selectedLabel] and selectedLabel or "(none)")
 	end
 
 	local function applyDetectedEntryToBuilder(detectedEntry)
@@ -4268,14 +4481,19 @@ local function setupAutoParryTab()
 			actionKind = "projectile",
 			capturedAt = os.clock(),
 		}
-		registerDetectedAnimation(
-			"projectile",
-			representative.Name,
-			signature,
-			math.max(tonumber(timeToImpact) or 0, 0),
-			distance or 0,
-			representative.Name
-		)
+		local entry = detectedAnimationEntries.Projectiles[signature] or {
+			sourceKey = "Projectiles",
+			animationId = signature,
+		}
+		entry.targetName = representative.Name or entry.targetName or "Unknown"
+		entry.animationName = representative.Name or entry.animationName or "Unknown"
+		entry.timePosition = math.max(tonumber(timeToImpact) or 0, 0)
+		entry.distance = tonumber(distance) or entry.distance or 16
+		entry.updatedAt = os.clock()
+		detectedAnimationEntries.Projectiles[signature] = entry
+		local selectedLabel = formatDetectedAnimationLabel(entry)
+		refreshProjectileDetectedDropdown(selectedLabel)
+		applyProjectileBuilderConfigData(lastProjectileCapture)
 		return signature, representative
 	end
 
@@ -4318,7 +4536,7 @@ local function setupAutoParryTab()
 			return
 		end
 
-		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs"}) do
 			local normalizedConfigs = {}
 			if type(decoded[sourceKey]) == "table" then
 				for storageKey, configData in pairs(decoded[sourceKey]) do
@@ -4330,6 +4548,54 @@ local function setupAutoParryTab()
 			end
 			autoParryMakerConfigs[sourceKey] = dedupeMakerConfigList(sourceKey, normalizedConfigs)
 		end
+	end
+
+	loadProjectileParryConfigsFromFile = function()
+		if type(isfile) ~= "function" or type(readfile) ~= "function" then
+			return
+		end
+
+		local filePath = nil
+		for _, candidatePath in ipairs({
+			AUTO_PARRY_PROJECTILE_MAKER_FILE,
+		}) do
+			local readOk, fileExists = pcall(function()
+				return isfile(candidatePath)
+			end)
+			if readOk and fileExists then
+				filePath = candidatePath
+				break
+			end
+		end
+
+		if not filePath then
+			return
+		end
+
+		local sourceOk, source = pcall(function()
+			return readfile(filePath)
+		end)
+		if not sourceOk or type(source) ~= "string" or source == "" then
+			return
+		end
+
+		local decodeOk, decoded = pcall(function()
+			return HttpService:JSONDecode(source)
+		end)
+		if not decodeOk or type(decoded) ~= "table" then
+			return
+		end
+
+		local normalizedConfigs = {}
+		if type(decoded.Projectiles) == "table" then
+			for storageKey, configData in pairs(decoded.Projectiles) do
+				local normalizedConfig = normalizeLoadedConfigRecord("Projectiles", storageKey, configData)
+				if normalizedConfig then
+					table.insert(normalizedConfigs, normalizedConfig)
+				end
+			end
+		end
+		autoParryMakerConfigs.Projectiles = dedupeMakerConfigList("Projectiles", normalizedConfigs)
 	end
 
 	local function ensureAutoParryMakerConfigFile()
@@ -4350,7 +4616,10 @@ local function setupAutoParryTab()
 		end
 
 		local encodeOk, payload = pcall(function()
-			return HttpService:JSONEncode(autoParryMakerConfigs)
+			return HttpService:JSONEncode({
+				Players = autoParryMakerConfigs.Players,
+				Mobs = autoParryMakerConfigs.Mobs,
+			})
 		end)
 		if not encodeOk or type(payload) ~= "string" then
 			return
@@ -4358,6 +4627,37 @@ local function setupAutoParryTab()
 
 		pcall(function()
 			writefile(AUTO_PARRY_MAKER_FILE, payload)
+		end)
+	end
+
+	local function ensureProjectileParryConfigFile()
+		if type(writefile) ~= "function" or type(isfile) ~= "function" then
+			return
+		end
+
+		if type(makefolder) == "function" then
+			pcall(makefolder, "huajhub")
+			pcall(makefolder, AUTO_PARRY_MAKER_FOLDER)
+		end
+
+		local existsOk, exists = pcall(function()
+			return isfile(AUTO_PARRY_PROJECTILE_MAKER_FILE)
+		end)
+		if existsOk and exists then
+			return
+		end
+
+		local encodeOk, payload = pcall(function()
+			return HttpService:JSONEncode({
+				Projectiles = autoParryMakerConfigs.Projectiles,
+			})
+		end)
+		if not encodeOk or type(payload) ~= "string" then
+			return
+		end
+
+		pcall(function()
+			writefile(AUTO_PARRY_PROJECTILE_MAKER_FILE, payload)
 		end)
 	end
 
@@ -4372,12 +4672,15 @@ local function setupAutoParryTab()
 			pcall(makefolder, AUTO_PARRY_MAKER_FOLDER)
 		end
 
-		for _, sourceKey in ipairs({"Players", "Mobs", "Projectiles"}) do
+		for _, sourceKey in ipairs({"Players", "Mobs"}) do
 			autoParryMakerConfigs[sourceKey] = dedupeMakerConfigList(sourceKey, autoParryMakerConfigs[sourceKey])
 		end
 
 		local encodeOk, payload = pcall(function()
-			return HttpService:JSONEncode(autoParryMakerConfigs)
+			return HttpService:JSONEncode({
+				Players = autoParryMakerConfigs.Players,
+				Mobs = autoParryMakerConfigs.Mobs,
+			})
 		end)
 		if not encodeOk or type(payload) ~= "string" then
 			Library:Notify("Failed to encode Auto Parry Maker configs.", 2)
@@ -4393,6 +4696,41 @@ local function setupAutoParryTab()
 		end
 
 		Library:Notify("Saved Auto Parry Maker configs.", 2)
+		return true
+	end
+
+	saveProjectileParryConfigsToFile = function()
+		if type(writefile) ~= "function" then
+			Library:Notify("writefile is unavailable in this executor.", 2)
+			return false
+		end
+
+		if type(makefolder) == "function" then
+			pcall(makefolder, "huajhub")
+			pcall(makefolder, AUTO_PARRY_MAKER_FOLDER)
+		end
+
+		autoParryMakerConfigs.Projectiles = dedupeMakerConfigList("Projectiles", autoParryMakerConfigs.Projectiles)
+
+		local encodeOk, payload = pcall(function()
+			return HttpService:JSONEncode({
+				Projectiles = autoParryMakerConfigs.Projectiles,
+			})
+		end)
+		if not encodeOk or type(payload) ~= "string" then
+			Library:Notify("Failed to encode projectile configs.", 2)
+			return false
+		end
+
+		local writeOk, writeErr = pcall(function()
+			writefile(AUTO_PARRY_PROJECTILE_MAKER_FILE, payload)
+		end)
+		if not writeOk then
+			Library:Notify("Failed to save projectile configs: " .. tostring(writeErr), 2)
+			return false
+		end
+
+		Library:Notify("Saved projectile configs.", 2)
 		return true
 	end
 
@@ -4432,12 +4770,9 @@ local function setupAutoParryTab()
 		if lastManualJumpCapture and (not latestCapture or (lastManualJumpCapture.capturedAt or 0) > (latestCapture.capturedAt or 0)) then
 			latestCapture = lastManualJumpCapture
 		end
-		if lastProjectileCapture and (not latestCapture or (lastProjectileCapture.capturedAt or 0) > (latestCapture.capturedAt or 0)) then
-			latestCapture = lastProjectileCapture
-		end
 
 		if not latestCapture then
-			Library:Notify("No manual, jump, dash, or projectile capture is available yet.", 2)
+			Library:Notify("No manual, jump, or dash capture is available yet.", 2)
 			return
 		end
 
@@ -4458,6 +4793,83 @@ local function setupAutoParryTab()
 		})
 
 		Library:Notify("Loaded latest manual capture into Auto Parry Maker.", 2)
+	end
+
+	onCreateProjectileConfig = function()
+		local configData = getProjectileBuilderConfigData()
+		if not configData then
+			Library:Notify("Projectile signature is required before creating a config.", 2)
+			return
+		end
+
+		local savedConfig = upsertMakerConfig(configData, true)
+		autoParryState.currentProjectileBuilderConfigId = savedConfig and savedConfig.configId or nil
+		syncAutoParryBuilderConfigsToRuntime()
+		refreshProjectileSavedConfigDropdown(buildSavedConfigLabel(savedConfig.sourceKey, savedConfig.animationId, savedConfig))
+		saveProjectileParryConfigsToFile()
+	end
+
+	onSaveProjectileConfig = function()
+		local configData = getProjectileBuilderConfigData()
+		if not configData then
+			Library:Notify("Projectile signature is required before saving a config.", 2)
+			return
+		end
+
+		local savedConfig = upsertMakerConfig(configData, false)
+		autoParryState.currentProjectileBuilderConfigId = savedConfig and savedConfig.configId or nil
+		syncAutoParryBuilderConfigsToRuntime()
+		refreshProjectileSavedConfigDropdown(buildSavedConfigLabel(savedConfig.sourceKey, savedConfig.animationId, savedConfig))
+		saveProjectileParryConfigsToFile()
+	end
+
+	onDeleteProjectileConfig = function()
+		local configId = autoParryState.currentProjectileBuilderConfigId
+		if (not configId or configId == "") and Options and Options.ProjectileParryMakerSavedConfig then
+			local selectedLabel = Options.ProjectileParryMakerSavedConfig.Value
+			local configRef = selectedLabel and projectileBuilderConfigLabelMap[selectedLabel]
+			if configRef then
+				configId = configRef.configId
+			end
+		end
+
+		if not configId or configId == "" then
+			Library:Notify("Select a projectile config before deleting it.", 2)
+			return
+		end
+
+		if not deleteMakerConfigById("Projectiles", configId) then
+			Library:Notify("Could not find that projectile config.", 2)
+			return
+		end
+
+		autoParryState.currentProjectileBuilderConfigId = nil
+		refreshProjectileSavedConfigDropdown("(none)")
+		syncAutoParryBuilderConfigsToRuntime()
+		saveProjectileParryConfigsToFile()
+		Library:Notify("Deleted projectile config.", 2)
+	end
+
+	onAutoGetProjectileConfig = function()
+		if not lastProjectileCapture then
+			Library:Notify("No projectile capture is available yet.", 2)
+			return
+		end
+
+		applyProjectileBuilderConfigData({
+			configId = nil,
+			sourceKey = "Projectiles",
+			animationId = lastProjectileCapture.animationId,
+			repeatAmount = 1,
+			repeatDelay = 0,
+			wait = lastProjectileCapture.wait or 0,
+			nickname = lastProjectileCapture.nickname or "",
+			actionType = "Parry",
+			delay = false,
+			delayRange = 0,
+			range = lastProjectileCapture.range or 16,
+		})
+		Library:Notify("Loaded latest projectile capture into Projectile Maker.", 2)
 	end
 
 	local function getAutoParryTargetDebugType(model)
@@ -5892,12 +6304,52 @@ local function setupAutoParryTab()
 		end
 	end)
 
+	Options.ProjectileParryMakerDetectedProjectile:OnChanged(function(selectedLabel)
+		local detectedEntryRef = projectileDetectedLabelMap[selectedLabel]
+		if not detectedEntryRef then
+			return
+		end
+
+		local detectedEntry = detectedAnimationEntries.Projectiles[detectedEntryRef.animationId]
+		if detectedEntry then
+			applyProjectileBuilderConfigData({
+				configId = nil,
+				sourceKey = "Projectiles",
+				animationId = detectedEntry.animationId,
+				repeatAmount = 1,
+				repeatDelay = 0,
+				wait = detectedEntry.timePosition or 0,
+				nickname = detectedEntry.animationName or detectedEntry.targetName or "",
+				actionType = "Parry",
+				delay = false,
+				delayRange = 0,
+				range = detectedEntry.distance or 16,
+			})
+		end
+	end)
+
+	Options.ProjectileParryMakerSavedConfig:OnChanged(function(selectedLabel)
+		local configRef = projectileBuilderConfigLabelMap[selectedLabel]
+		if not configRef then
+			return
+		end
+
+		local configData = findMakerConfigById("Projectiles", configRef.configId)
+		if configData then
+			applyProjectileBuilderConfigData(configData)
+		end
+	end)
+
 	autoParryRuntime.refreshAutoParryWhitelist()
 	ensureAutoParryMakerConfigFile()
+	ensureProjectileParryConfigFile()
 	loadAutoParryMakerConfigsFromFile()
+	loadProjectileParryConfigsFromFile()
 	syncAutoParryBuilderConfigsToRuntime()
 	refreshSavedConfigDropdown("(none)")
 	refreshDetectedAnimationDropdown("(none)")
+	refreshProjectileSavedConfigDropdown("(none)")
+	refreshProjectileDetectedDropdown("(none)")
 	autoParryRuntime.installManualActionDebugHook()
 	maid:GiveTask(UserInputService.InputBegan:Connect(function(inputObject)
 		if inputObject.UserInputType ~= Enum.UserInputType.Keyboard then
