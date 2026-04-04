@@ -4367,6 +4367,9 @@ local function setupAutoParryTab()
 	end
 
 	local hasProjectileKeyword
+	local recentProjectileCandidates = {}
+	local recentProjectileFxConnections = {}
+	local RECENT_PROJECTILE_CAPTURE_WINDOW = 1.25
 
 	local function isGenericProjectileContainerName(name)
 		local lowered = string.lower(tostring(name or ""))
@@ -4734,6 +4737,102 @@ local function setupAutoParryTab()
 		return false
 	end
 
+	local function scoreProjectileCandidate(candidate, bestCandidate)
+		if not candidate or not candidate.signature or candidate.signature == "" then
+			return false
+		end
+		if not bestCandidate then
+			return true
+		end
+		if (candidate.specificity or 0) > (bestCandidate.specificity or 0) then
+			return true
+		end
+		if (candidate.specificity or 0) < (bestCandidate.specificity or 0) then
+			return false
+		end
+		if (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) <= 0 then
+			return true
+		end
+		if (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) > 0 and candidate.timeToImpact < bestCandidate.timeToImpact then
+			return true
+		end
+		return (candidate.distance or math.huge) < (bestCandidate.distance or math.huge)
+	end
+
+	local function buildProjectileCandidateFromInstance(instance)
+		if not instance or not instance.Parent or not shouldTrackProjectileCandidate(instance) then
+			return nil
+		end
+
+		local representative = getProjectileRepresentative(instance) or instance
+		local signature = getProjectileRelativePathUnderFx(instance)
+			or getProjectileRelativePathUnderFx(representative)
+			or tostring((instance and instance.Name) or (representative and representative.Name) or "")
+		local distance = getProjectileCandidateDistance(instance, representative, instance)
+		if not signature
+			or signature == ""
+			or signature == "FX"
+			or signature == "fx"
+			or not distance
+		then
+			return nil
+		end
+
+		local approachData = getProjectileApproachData(representative)
+		local specificityName = getProjectileRelativePathUnderFx(instance)
+			or getProjectileRelativePathUnderFx(representative)
+			or tostring(representative.Name or "")
+
+		return {
+			signature = normalizeBuilderConfigId("Projectiles", signature),
+			representative = representative,
+			signatureSource = instance,
+			specificity = getProjectileSpecificityScore(specificityName),
+			distance = distance,
+			timeToImpact = (approachData and approachData.timeToImpact) or 0,
+			seenAt = os.clock(),
+		}
+	end
+
+	local function rememberRecentProjectileCandidate(instance)
+		local candidate = buildProjectileCandidateFromInstance(instance)
+		if not candidate or not candidate.representative then
+			return
+		end
+		recentProjectileCandidates[candidate.representative] = candidate
+	end
+
+	local function clearProjectileFxConnections()
+		for _, connection in ipairs(recentProjectileFxConnections) do
+			pcall(function()
+				connection:Disconnect()
+			end)
+		end
+		table.clear(recentProjectileFxConnections)
+	end
+
+	local function hookProjectileFxFolder(folder)
+		clearProjectileFxConnections()
+		table.clear(recentProjectileCandidates)
+		if not folder then
+			return
+		end
+
+		table.insert(recentProjectileFxConnections, folder.DescendantAdded:Connect(function(instance)
+			rememberRecentProjectileCandidate(instance)
+		end))
+		table.insert(recentProjectileFxConnections, folder.DescendantRemoving:Connect(function(instance)
+			local representative = getProjectileRepresentative(instance) or instance
+			if representative then
+				recentProjectileCandidates[representative] = nil
+			end
+		end))
+
+		for _, descendant in ipairs(folder:GetDescendants()) do
+			rememberRecentProjectileCandidate(descendant)
+		end
+	end
+
 	local function findManualProjectileCandidate(maxDistance)
 		local fxFolder = getProjectileEffectsFolder()
 		if not fxFolder then
@@ -4741,6 +4840,24 @@ local function setupAutoParryTab()
 		end
 
 		local bestCandidate
+		local now = os.clock()
+		for representative, cachedCandidate in pairs(recentProjectileCandidates) do
+			if not cachedCandidate
+				or (now - (cachedCandidate.seenAt or 0)) > RECENT_PROJECTILE_CAPTURE_WINDOW
+			then
+				recentProjectileCandidates[representative] = nil
+			else
+				local refreshedCandidate = nil
+				if cachedCandidate.signatureSource and cachedCandidate.signatureSource.Parent then
+					refreshedCandidate = buildProjectileCandidateFromInstance(cachedCandidate.signatureSource)
+				end
+				local candidate = refreshedCandidate or cachedCandidate
+				if candidate.distance and candidate.distance <= maxDistance and scoreProjectileCandidate(candidate, bestCandidate) then
+					bestCandidate = candidate
+				end
+			end
+		end
+
 		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if descendant
@@ -4748,47 +4865,17 @@ local function setupAutoParryTab()
 				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
 				and shouldTrackProjectileCandidate(descendant)
 			then
+				rememberRecentProjectileCandidate(descendant)
 				local representative = getProjectileRepresentative(descendant) or descendant
 				if representative and not seenRepresentatives[representative] then
 					seenRepresentatives[representative] = true
-
-					local signatureSource = descendant
-					local signature = getProjectileRelativePathUnderFx(signatureSource)
-						or getProjectileRelativePathUnderFx(representative)
-						or tostring((signatureSource and signatureSource.Name) or (representative and representative.Name) or "")
-					local distance = getProjectileCandidateDistance(signatureSource, representative, signatureSource)
-					local representativePart = getProjectileRepresentativeBasePart(representative)
-					local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
-					local approachData = getProjectileApproachData(representative)
-					local specificityName = getProjectileRelativePathUnderFx(signatureSource)
-						or getProjectileRelativePathUnderFx(representative)
-						or tostring(representative.Name or "")
-
-					if signature
-						and signature ~= ""
-						and signature ~= "FX"
-						and signature ~= "fx"
-						and distance
-						and distance <= maxDistance
+					local candidate = buildProjectileCandidateFromInstance(descendant)
+					if candidate
+						and candidate.distance
+						and candidate.distance <= maxDistance
+						and scoreProjectileCandidate(candidate, bestCandidate)
 					then
-						local candidate = {
-							signature = normalizeBuilderConfigId("Projectiles", signature),
-							representative = representative,
-							signatureSource = signatureSource,
-							specificity = getProjectileSpecificityScore(specificityName),
-							distance = distance,
-							timeToImpact = (approachData and approachData.timeToImpact) or 0,
-						}
-						if candidate.signature and candidate.signature ~= "" then
-							if not bestCandidate
-								or (candidate.specificity or 0) > (bestCandidate.specificity or 0)
-								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and speed > 5 and (bestCandidate.timeToImpact or 0) <= 0)
-								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and speed > 5 and bestCandidate.timeToImpact > 0 and candidate.timeToImpact > 0 and candidate.timeToImpact < bestCandidate.timeToImpact)
-								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and candidate.distance < bestCandidate.distance)
-							then
-								bestCandidate = candidate
-							end
-						end
+						bestCandidate = candidate
 					end
 				end
 			end
@@ -5727,7 +5814,7 @@ local function setupAutoParryTab()
 
 	getProjectileEffectsFolder = function()
 		local fxFolder = getProjectileFxFolder()
-		if fxFolder and fxFolder:IsA("Folder") then
+		if fxFolder and (fxFolder:IsA("Folder") or fxFolder:IsA("Model")) then
 			return fxFolder
 		end
 		return nil
@@ -6848,6 +6935,8 @@ local function setupAutoParryTab()
 		end))
 	end
 
+	hookProjectileFxFolder(getProjectileEffectsFolder())
+
 	maid:GiveTask(workspace.ChildAdded:Connect(function(child)
 		if child.Name == "Live" then
 			autoParryRuntime.refreshTrackedAutoParryTargets()
@@ -6857,6 +6946,8 @@ local function setupAutoParryTab()
 			maid:GiveTask(child.ChildRemoved:Connect(function(grandChild)
 				autoParryRuntime.disconnectTrackedAutoParryTarget(grandChild)
 			end))
+		elseif child.Name == "FX" then
+			hookProjectileFxFolder(child)
 		end
 	end))
 
@@ -6895,6 +6986,8 @@ local function setupAutoParryTab()
 		autoParryRuntime.setAutoParryInputBlocking(false)
 		fireBlockingStateRemote(false)
 		autoParryState.pendingParryFailCheck = nil
+		clearProjectileFxConnections()
+		table.clear(recentProjectileCandidates)
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_INIT_KEY] = nil
 		GLOBAL_ENV[HUAJ_HUB_MASHLE_LIBRARY_KEY] = nil
 		maid:DoCleaning()
