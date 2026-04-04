@@ -4156,7 +4156,68 @@ local function setupAutoParryTab()
 		return (repPosition - localRoot.Position).Magnitude, representative
 	end
 
-	local function registerDetectedProjectile(instance, distance)
+	local function getProjectileRepresentativeBasePart(representative)
+		if not representative then
+			return nil
+		end
+
+		if representative:IsA("BasePart") then
+			return representative
+		end
+
+		if representative:IsA("Attachment") then
+			local parent = representative.Parent
+			return parent and parent:IsA("BasePart") and parent or nil
+		end
+
+		if representative:IsA("Model") then
+			return getCharacterRoot(representative) or representative.PrimaryPart or representative:FindFirstChildWhichIsA("BasePart")
+		end
+
+		return nil
+	end
+
+	local function getProjectileApproachData(instance)
+		local representative = getProjectileRepresentative(instance)
+		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+		local projectilePart = getProjectileRepresentativeBasePart(representative)
+		if not representative or not localRoot or not projectilePart then
+			return nil
+		end
+
+		local velocity = projectilePart.AssemblyLinearVelocity
+		local speed = velocity.Magnitude
+		if speed <= 5 then
+			return nil
+		end
+
+		local offset = localRoot.Position - projectilePart.Position
+		local direction = velocity.Unit
+		local forwardDistance = offset:Dot(direction)
+		if forwardDistance <= 0 then
+			return nil
+		end
+
+		local closestOffset = offset - (direction * forwardDistance)
+		local projectileRadius = math.max(projectilePart.Size.X, projectilePart.Size.Y, projectilePart.Size.Z) * 0.5
+		local localRadius = math.max(localRoot.Size.X, localRoot.Size.Z) * 0.5
+		local hitRadius = math.max(4, projectileRadius + localRadius + 1.5)
+		local missDistance = closestOffset.Magnitude
+		if missDistance > hitRadius then
+			return nil
+		end
+
+		return {
+			representative = representative,
+			projectilePart = projectilePart,
+			speed = speed,
+			timeToImpact = forwardDistance / speed,
+			missDistance = missDistance,
+			distance = offset.Magnitude,
+		}
+	end
+
+	local function registerDetectedProjectile(instance, distance, timeToImpact)
 		local signature, representative = getProjectileSignature(instance)
 		if not signature or not representative then
 			return nil
@@ -4165,13 +4226,20 @@ local function setupAutoParryTab()
 		lastProjectileCapture = {
 			sourceKey = "Projectiles",
 			animationId = signature,
-			wait = 0,
+			wait = math.max(tonumber(timeToImpact) or 0, 0),
 			nickname = representative.Name,
 			range = distance or 16,
 			actionKind = "projectile",
 			capturedAt = os.clock(),
 		}
-		registerDetectedAnimation("projectile", representative.Name, signature, 0, distance or 0, representative.Name)
+		registerDetectedAnimation(
+			"projectile",
+			representative.Name,
+			signature,
+			math.max(tonumber(timeToImpact) or 0, 0),
+			distance or 0,
+			representative.Name
+		)
 		return signature, representative
 	end
 
@@ -4947,19 +5015,19 @@ local function setupAutoParryTab()
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			local signature, representative = getProjectileSignature(descendant)
 			if signature and representative and representative.Parent then
-				local distance = getProjectileRepresentativeDistance(representative)
+				local approachData = getProjectileApproachData(representative)
+				local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
 				local moveConfig = distance and getProjectileMoveConfig(signature, distance) or nil
 				if moveConfig then
 					local configRange = getMoveConfigRange(moveConfig)
 					if distance and distance <= configRange and not wasAnimationRecentlyHandled(representative, signature) then
 						local projectileKey = string.format("%s::%s", representative:GetDebugId(), signature)
 						seenKeys[projectileKey] = true
-						registerDetectedProjectile(representative, distance)
+						registerDetectedProjectile(representative, distance, approachData and approachData.timeToImpact or nil)
 
 						local seenState = autoParryState.projectileSeenStates[projectileKey]
 						if not seenState then
 							seenState = {
-								firstSeenAt = now,
 								fired = false,
 								representative = representative,
 								signature = signature,
@@ -4967,8 +5035,19 @@ local function setupAutoParryTab()
 							autoParryState.projectileSeenStates[projectileKey] = seenState
 						end
 
-						if not seenState.fired and now >= (seenState.firstSeenAt + math.max(resolveConfiguredTiming(moveConfig) or 0, 0)) then
-							seenState.fired = executeProjectileAutoParryAction(representative, signature, moveConfig, distance, remote, now) == true
+						if not seenState.fired then
+							local leadTime = math.max(resolveConfiguredTiming(moveConfig) or 0, 0)
+							local fallbackWindow = math.max(leadTime, 0.05)
+							local shouldTrigger = false
+							if approachData and approachData.timeToImpact then
+								shouldTrigger = approachData.timeToImpact <= fallbackWindow
+							else
+								shouldTrigger = true
+							end
+
+							if shouldTrigger then
+								seenState.fired = executeProjectileAutoParryAction(representative, signature, moveConfig, distance, remote, now) == true
+							end
 						end
 					end
 				end
