@@ -6284,6 +6284,10 @@ local function setupAutoParryTab()
 		updateAutoParryVisualizer()
 	end)
 
+	maid:GiveTask(RunService.Heartbeat:Connect(function()
+		pcall(updateAutoParryVisualizer)
+	end))
+
 	function autoParryRuntime.refreshAutoParryWhitelist()
 		if not Options or not Options.AutoParryWhitelist then
 			return
