@@ -4382,6 +4382,30 @@ local function setupAutoParryTab()
 		return lastBelowFx
 	end
 
+	local function resolveProjectileSignatureNameFromFx(instance)
+		local fxFolder = getProjectileFxFolder()
+		if not fxFolder or not instance or not instance:IsDescendantOf(fxFolder) then
+			return nil
+		end
+
+		local current = instance
+		local bestName = nil
+		local keywordName = nil
+		while current and current ~= fxFolder do
+			local currentName = tostring(current.Name or "")
+			if currentName ~= "" and not isGenericProjectileContainerName(currentName) then
+				bestName = bestName or currentName
+				if hasProjectileKeyword and hasProjectileKeyword(currentName) then
+					keywordName = currentName
+					break
+				end
+			end
+			current = current.Parent
+		end
+
+		return keywordName or bestName
+	end
+
 	local function getNearestSpecificProjectileNode(instance)
 		local fxFolder = getProjectileFxFolder()
 		local current = instance
@@ -4535,11 +4559,38 @@ local function setupAutoParryTab()
 
 	local getProjectileRepresentativeBasePart
 
+	local function getProjectileRepresentativePosition(representative)
+		if not representative then
+			return nil
+		end
+
+		local repBasePart = getProjectileRepresentativeBasePart and getProjectileRepresentativeBasePart(representative) or nil
+		if repBasePart then
+			return repBasePart.Position
+		end
+
+		if representative:IsA("Attachment") then
+			return representative.WorldPosition
+		end
+
+		if representative:IsA("Model") or representative:IsA("Folder") then
+			local attachment = representative:FindFirstChildWhichIsA("Attachment", true)
+			if attachment then
+				return attachment.WorldPosition
+			end
+		end
+
+		return nil
+	end
+
 	local function getProjectileSignature(instance)
 		local representative = refineProjectileRepresentative(getProjectileRepresentative(instance))
 		local signatureSource = nil
 		signatureSource = select(1, getProjectileSignatureSource(instance, representative))
-		local signature = signatureSource and signatureSource.Name or (representative and representative.Name or nil)
+		local signature = resolveProjectileSignatureNameFromFx(signatureSource)
+			or resolveProjectileSignatureNameFromFx(representative)
+			or (signatureSource and signatureSource.Name)
+			or (representative and representative.Name or nil)
 		if isGenericProjectileContainerName(signature) then
 			return nil, representative, signatureSource
 		end
@@ -4549,10 +4600,7 @@ local function setupAutoParryTab()
 
 	local function getProjectileRepresentativeDistance(instance)
 		local representative = getProjectileRepresentative(instance)
-		local repBasePart = representative and getProjectileRepresentativeBasePart(representative) or nil
-		local repPosition = representative and (repBasePart and repBasePart.Position
-			or (representative:IsA("Attachment") and representative.WorldPosition)
-			or nil)
+		local repPosition = representative and getProjectileRepresentativePosition(representative) or nil
 		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
 		if not localRoot or not repPosition then
 			return nil
