@@ -4356,6 +4356,87 @@ local function setupAutoParryTab()
 		return instance
 	end
 
+	local function isGenericProjectileContainerName(name)
+		local lowered = string.lower(tostring(name or ""))
+		return lowered == ""
+			or lowered == "fx"
+			or lowered == "effect"
+			or lowered == "effects"
+			or lowered == "projectile"
+			or lowered == "projectile fx"
+			or lowered == "projectilefx"
+			or lowered == "emit"
+			or lowered == "emitter"
+			or lowered == "attachment"
+	end
+
+	local function getProjectileSpecificityScore(name)
+		local lowered = string.lower(tostring(name or ""))
+		if lowered == "" then
+			return 0
+		end
+		if isGenericProjectileContainerName(lowered) then
+			return 0
+		end
+		if hasProjectileKeyword(lowered) then
+			return 4
+		end
+		return 1
+	end
+
+	local function refineProjectileRepresentative(representative)
+		local current = representative
+		local best = representative
+		local bestScore = getProjectileSpecificityScore(representative and representative.Name)
+
+		while current and current.Parent and current.Parent ~= workspace do
+			current = current.Parent
+			if current == workspace:FindFirstChild("FX") then
+				break
+			end
+
+			if current:IsA("Model") or current:IsA("Folder") or current:IsA("BasePart") then
+				local score = getProjectileSpecificityScore(current.Name)
+				if score > bestScore then
+					best = current
+					bestScore = score
+				end
+			end
+		end
+
+		return best
+	end
+
+	local function getProjectileSignatureSource(instance, representative)
+		local current = instance
+		local best = representative or instance
+		local bestScore = getProjectileSpecificityScore(best and best.Name)
+
+		while current and current ~= workspace do
+			local isViable = current:IsA("ParticleEmitter")
+				or current:IsA("Beam")
+				or current:IsA("Trail")
+				or current:IsA("Attachment")
+				or current:IsA("BasePart")
+				or current:IsA("Model")
+				or current:IsA("Folder")
+			if isViable then
+				local score = getProjectileSpecificityScore(current.Name)
+				if score > bestScore then
+					best = current
+					bestScore = score
+				end
+			end
+
+			if current == workspace:FindFirstChild("FX") then
+				break
+			end
+			current = current.Parent
+		end
+
+		return best, bestScore
+	end
+
 	local function hasProjectileKeyword(name)
 		local lowered = string.lower(tostring(name or ""))
 		for _, keyword in ipairs({"projectile", "proj", "bullet", "shot", "blast", "orb", "ball", "sand", "erupt", "lance", "arrow", "spear"}) do
@@ -4383,10 +4464,12 @@ local function setupAutoParryTab()
 	local getProjectileRepresentativeBasePart
 
 	local function getProjectileSignature(instance)
-		local representative = getProjectileRepresentative(instance)
-		local signature = representative and representative.Name or nil
+		local representative = refineProjectileRepresentative(getProjectileRepresentative(instance))
+		local signatureSource = nil
+		signatureSource = select(1, getProjectileSignatureSource(instance, representative))
+		local signature = signatureSource and signatureSource.Name or (representative and representative.Name or nil)
 		signature = normalizeBuilderConfigId("Projectiles", signature)
-		return signature, representative
+		return signature, representative, signatureSource
 	end
 
 	local function getProjectileRepresentativeDistance(instance)
@@ -4468,16 +4551,18 @@ local function setupAutoParryTab()
 	end
 
 	local function registerDetectedProjectile(instance, distance, timeToImpact)
-		local signature, representative = getProjectileSignature(instance)
+		local signature, representative, signatureSource = getProjectileSignature(instance)
 		if not signature or not representative then
 			return nil
 		end
+
+		local displayName = (signatureSource and signatureSource.Name) or representative.Name
 
 		lastProjectileCapture = {
 			sourceKey = "Projectiles",
 			animationId = signature,
 			wait = math.max(tonumber(timeToImpact) or 0, 0),
-			nickname = representative.Name,
+			nickname = displayName,
 			range = distance or 16,
 			actionKind = "projectile",
 			capturedAt = os.clock(),
@@ -4486,8 +4571,8 @@ local function setupAutoParryTab()
 			sourceKey = "Projectiles",
 			animationId = signature,
 		}
-		entry.targetName = representative.Name or entry.targetName or "Unknown"
-		entry.animationName = representative.Name or entry.animationName or "Unknown"
+		entry.targetName = displayName or entry.targetName or "Unknown"
+		entry.animationName = displayName or entry.animationName or "Unknown"
 		entry.timePosition = math.max(tonumber(timeToImpact) or 0, 0)
 		entry.distance = tonumber(distance) or entry.distance or 16
 		entry.updatedAt = os.clock()
@@ -4516,7 +4601,18 @@ local function setupAutoParryTab()
 		end
 
 		if instance:IsA("BasePart") or instance:IsA("Model") or instance:IsA("Folder") then
-			return isUnderLikelyProjectileFolder(instance) or hasProjectileKeyword(instance.Name)
+			local representativePart = getProjectileRepresentativeBasePart(instance)
+			local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
+			if hasProjectileKeyword(instance.Name) then
+				return true
+			end
+			if instance:IsA("Folder") then
+				return false
+			end
+			if isUnderLikelyProjectileFolder(instance) then
+				return speed >= 12
+			end
+			return false
 		end
 
 		return false
@@ -4531,19 +4627,25 @@ local function setupAutoParryTab()
 		local bestCandidate
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if shouldTrackProjectileCandidate(descendant) then
-				local signature, representative = getProjectileSignature(descendant)
+				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
 					local approachData = getProjectileApproachData(representative)
 					local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(representative)
 					if distance and distance <= maxDistance then
+						local specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name)
 						local candidate = {
 							signature = signature,
 							representative = representative,
+							signatureSource = signatureSource,
+							specificity = specificity,
 							distance = distance,
 							timeToImpact = approachData and approachData.timeToImpact or 0,
 						}
 						if not bestCandidate
-							or ((candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0) and candidate.timeToImpact < bestCandidate.timeToImpact)
+							or candidate.specificity > (bestCandidate.specificity or 0)
+							or (candidate.specificity == (bestCandidate.specificity or 0)
+								and (candidate.timeToImpact > 0 and bestCandidate.timeToImpact > 0)
+								and candidate.timeToImpact < bestCandidate.timeToImpact)
 							or (candidate.timeToImpact == bestCandidate.timeToImpact and candidate.distance < bestCandidate.distance)
 							or (bestCandidate.timeToImpact <= 0 and candidate.distance < bestCandidate.distance) then
 							bestCandidate = candidate
