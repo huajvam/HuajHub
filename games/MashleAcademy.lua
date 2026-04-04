@@ -4274,12 +4274,14 @@ local function setupAutoParryTab()
 		projectileDetectedLabelMap = {}
 
 		for signature, entry in pairs(detectedAnimationEntries.Projectiles) do
-			local label = formatDetectedAnimationLabel(entry)
-			projectileDetectedLabelMap[label] = {
-				sourceKey = "Projectiles",
-				animationId = signature,
-			}
-			table.insert(labels, label)
+			if not isGenericProjectileContainerName(signature) then
+				local label = formatDetectedAnimationLabel(entry)
+				projectileDetectedLabelMap[label] = {
+					sourceKey = "Projectiles",
+					animationId = signature,
+				}
+				table.insert(labels, label)
+			end
 		end
 
 		table.sort(labels, function(left, right)
@@ -4515,6 +4517,9 @@ local function setupAutoParryTab()
 		local signatureSource = nil
 		signatureSource = select(1, getProjectileSignatureSource(instance, representative))
 		local signature = signatureSource and signatureSource.Name or (representative and representative.Name or nil)
+		if isGenericProjectileContainerName(signature) then
+			return nil, representative, signatureSource
+		end
 		signature = normalizeBuilderConfigId("Projectiles", signature)
 		return signature, representative, signatureSource
 	end
