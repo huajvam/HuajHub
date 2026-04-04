@@ -3738,11 +3738,25 @@ local function setupAutoParryTab()
 	end
 
 	local function setManualParryDebugText(message)
-		autoParryState.pendingManualParryDebugMessage = "Manual Parry Timing: " .. tostring(message or "")
+		local text = "Manual Parry Timing: " .. tostring(message or "")
+		autoParryState.pendingManualParryDebugMessage = text
+		if manualParryTimingLabel and type(manualParryTimingLabel.SetText) == "function" then
+			pcall(function()
+				manualParryTimingLabel:SetText(text)
+			end)
+			autoParryState.pendingManualParryDebugMessage = nil
+		end
 	end
 
 	local function setManualDashDebugText(message)
-		autoParryState.pendingManualDashDebugMessage = "Manual Dash Timing: " .. tostring(message or "")
+		local text = "Manual Dash Timing: " .. tostring(message or "")
+		autoParryState.pendingManualDashDebugMessage = text
+		if manualDashTimingLabel and type(manualDashTimingLabel.SetText) == "function" then
+			pcall(function()
+				manualDashTimingLabel:SetText(text)
+			end)
+			autoParryState.pendingManualDashDebugMessage = nil
+		end
 	end
 
 	local function setLastManualParryAnimationId(animationId)
@@ -6186,8 +6200,14 @@ local function setupAutoParryTab()
 
 	local function reportManualActionDebug(actionKind, captureRequestedAt)
 		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
-		local candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
-		local projectileCandidate = findManualProjectileCandidate(maxDistance)
+		local candidate = nil
+		local projectileCandidate = nil
+		local candidateOk, candidateErr = pcall(function()
+			candidate = findManualDebugCandidate(maxDistance, captureRequestedAt)
+		end)
+		local projectileOk, projectileErr = pcall(function()
+			projectileCandidate = findManualProjectileCandidate(maxDistance)
+		end)
 		local isDashAction = actionKind == "manual dash"
 		local isJumpAction = actionKind == "manual jump"
 		local isBlockAction = actionKind == "manual block"
@@ -6195,6 +6215,16 @@ local function setupAutoParryTab()
 		local setDebugText = isDashAction and setManualDashDebugText or setManualParryDebugText
 		local setLastAnimationId = isDashAction and setLastManualDashAnimationId or setLastManualParryAnimationId
 		local manualBlockHold = tonumber(autoParryState.manualBlockCaptureHold) or autoParryBlockHoldDuration
+
+		if not candidateOk and not projectileOk then
+			setDebugText(string.format(
+				"%s -> capture lookup failed (%s | %s)",
+				actionKind,
+				tostring(candidateErr),
+				tostring(projectileErr)
+			))
+			return
+		end
 
 		if projectileCandidate then
 			registerDetectedProjectile(
@@ -6214,7 +6244,12 @@ local function setupAutoParryTab()
 					tonumber(projectileCandidate.timeToImpact) or 0
 				))
 			else
-				setDebugText(string.format("%s -> no nearby tracked animation found.", actionKind))
+				setDebugText(string.format(
+					"%s -> no nearby tracked animation found.%s%s",
+					actionKind,
+					candidateOk and "" or (" anim err: " .. tostring(candidateErr)),
+					projectileOk and "" or (" projectile err: " .. tostring(projectileErr))
+				))
 			end
 			return
 		end
