@@ -6184,6 +6184,8 @@ local function setupAutoParryTab()
 		return matchedCandidate or fallbackCandidate
 	end
 
+	local reportManualActionDebug
+
 	local function captureManualActionDebug(actionKind, captureRequestedAt)
 		autoParryState.manualCaptureStage = "start"
 		local ok, err = xpcall(function()
@@ -6208,7 +6210,7 @@ local function setupAutoParryTab()
 		end
 	end
 
-	local function reportManualActionDebug(actionKind, captureRequestedAt)
+	reportManualActionDebug = function(actionKind, captureRequestedAt)
 		autoParryState.manualCaptureStage = "getOptionValue"
 		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = nil
