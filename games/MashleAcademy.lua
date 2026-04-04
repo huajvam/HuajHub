@@ -4735,20 +4735,28 @@ local function setupAutoParryTab()
 		end
 
 		if instance:IsA("Beam") or instance:IsA("Trail") or instance:IsA("ParticleEmitter") then
-			return true
+			return hasProjectileKeyword(instance.Name) or isUnderLikelyProjectileFolder(instance)
 		end
 
 		if instance:IsA("Attachment") then
-			return true
+			return hasProjectileKeyword(instance.Name) and isUnderLikelyProjectileFolder(instance)
 		end
 
 		if instance:IsA("BasePart") or instance:IsA("Model") then
+			local distance = getProjectileCandidateDistance(instance, instance, instance)
+			if distance and distance > (tonumber(getOptionValue("AutoParryDistance", 18)) or 18) then
+				return false
+			end
+
 			local representativePart = getProjectileRepresentativeBasePart(instance)
 			local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
+			if speed >= 30 then
+				return true
+			end
 			if hasProjectileKeyword(instance.Name) then
 				return true
 			end
-			return speed >= 12
+			return isUnderLikelyProjectileFolder(instance) and speed >= 12
 		end
 
 		return false
@@ -4786,11 +4794,11 @@ local function setupAutoParryTab()
 			or getProjectileRelativePathUnderFx(representative)
 			or tostring((instance and instance.Name) or (representative and representative.Name) or "")
 		local distance = getProjectileCandidateDistance(instance, representative, instance)
+			or getProjectileRepresentativeDistance(instance)
 		if not signature
 			or signature == ""
 			or signature == "FX"
 			or signature == "fx"
-			or not distance
 		then
 			return nil
 		end
@@ -4920,8 +4928,7 @@ local function setupAutoParryTab()
 					seenRepresentatives[representative] = true
 					local candidate = buildProjectileCandidateFromInstance(descendant)
 					if candidate
-						and candidate.distance
-						and candidate.distance <= maxDistance
+						and (candidate.distance == nil or candidate.distance <= maxDistance)
 						and scoreProjectileCandidate(candidate, bestCandidate)
 					then
 						bestCandidate = candidate
