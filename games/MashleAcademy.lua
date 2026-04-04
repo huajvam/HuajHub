@@ -5506,7 +5506,7 @@ local function setupAutoParryTab()
 								shouldTrigger = true
 							end
 
-							if shouldTrigger then
+							if shouldTrigger and remote then
 								seenState.fired = executeProjectileAutoParryAction(representative, signature, moveConfig, distance, remote, now) == true
 							end
 						end
@@ -5750,12 +5750,13 @@ local function setupAutoParryTab()
 			autoParryState.pendingParryFailCheck = nil
 		end
 
+		scanProjectileAutoParry(getRequestModuleRemote(), now)
+
 		if not isAutoParryEnabled() then
 			autoParryState.pendingParryFailCheck = nil
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
 			table.clear(autoParryState.recentAnimationActions)
-			table.clear(autoParryState.projectileSeenStates)
 			setAutoParryTrackingText("disabled.")
 			return
 		end
@@ -5767,7 +5768,6 @@ local function setupAutoParryTab()
 			table.clear(autoParryState.queuedMoveActions)
 			table.clear(autoParryState.queuedTracks)
 			table.clear(autoParryState.recentAnimationActions)
-			table.clear(autoParryState.projectileSeenStates)
 			setAutoParryTrackingText("remote not found.")
 			if not autoParryState.lastState.remoteMissing then
 				autoParryState.lastState.remoteMissing = true
@@ -5790,7 +5790,6 @@ local function setupAutoParryTab()
 					end
 				end
 			end
-			scanProjectileAutoParry(remote, now)
 		end
 
 		local selectedAction
