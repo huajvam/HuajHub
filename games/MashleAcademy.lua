@@ -4501,6 +4501,39 @@ local function setupAutoParryTab()
 
 	local getProjectileRepresentativeBasePart
 
+	local function getProjectileInstancePosition(instance)
+		if not instance then
+			return nil
+		end
+
+		if instance:IsA("BasePart") then
+			return instance.Position
+		end
+
+		if instance:IsA("Attachment") then
+			return instance.WorldPosition
+		end
+
+		local basePart = instance:FindFirstAncestorWhichIsA("BasePart")
+		if basePart then
+			return basePart.Position
+		end
+
+		if instance:IsA("Model") or instance:IsA("Folder") then
+			local attachment = instance:FindFirstChildWhichIsA("Attachment", true)
+			if attachment then
+				return attachment.WorldPosition
+			end
+
+			local descendantPart = instance:FindFirstChildWhichIsA("BasePart", true)
+			if descendantPart then
+				return descendantPart.Position
+			end
+		end
+
+		return nil
+	end
+
 	local function getProjectileRepresentativePosition(representative)
 		if not representative then
 			return nil
@@ -4519,6 +4552,22 @@ local function setupAutoParryTab()
 			local attachment = representative:FindFirstChildWhichIsA("Attachment", true)
 			if attachment then
 				return attachment.WorldPosition
+			end
+		end
+
+		return nil
+	end
+
+	local function getProjectileCandidateDistance(instance, representative, signatureSource)
+		local localRoot = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+		if not localRoot then
+			return nil
+		end
+
+		for _, candidateInstance in ipairs({instance, signatureSource, representative}) do
+			local candidatePosition = getProjectileInstancePosition(candidateInstance)
+			if candidatePosition then
+				return (candidatePosition - localRoot.Position).Magnitude
 			end
 		end
 
@@ -4697,7 +4746,7 @@ local function setupAutoParryTab()
 				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
 					local approachData = getProjectileApproachData(representative)
-					local distance = getProjectileRepresentativeDistance(signatureSource or descendant)
+					local distance = getProjectileCandidateDistance(descendant, representative, signatureSource)
 					if not distance and approachData then
 						distance = approachData.distance
 					end
@@ -4733,7 +4782,7 @@ local function setupAutoParryTab()
 			if shouldTrackProjectileCandidate(descendant) then
 				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
-					local distance = getProjectileRepresentativeDistance(signatureSource or descendant)
+					local distance = getProjectileCandidateDistance(descendant, representative, signatureSource)
 					if distance and distance <= maxDistance then
 						return {
 							signature = signature,
