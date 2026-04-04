@@ -4372,6 +4372,8 @@ local function setupAutoParryTab()
 		return instance
 	end
 
+	local hasProjectileKeyword
+
 	local function isGenericProjectileContainerName(name)
 		local lowered = string.lower(tostring(name or ""))
 		return lowered == ""
@@ -4453,7 +4455,7 @@ local function setupAutoParryTab()
 		return best, bestScore
 	end
 
-	local function hasProjectileKeyword(name)
+	hasProjectileKeyword = function(name)
 		local lowered = string.lower(tostring(name or ""))
 		for _, keyword in ipairs({"projectile", "proj", "bullet", "shot", "blast", "orb", "ball", "sand", "erupt", "lance", "arrow", "spear"}) do
 			if string.find(lowered, keyword, 1, true) then
