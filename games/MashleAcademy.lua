@@ -4741,28 +4741,29 @@ local function setupAutoParryTab()
 		end
 
 		local bestCandidate
+		local seenRepresentatives = {}
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
 			if descendant
 				and descendant.Parent
 				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
+				and shouldTrackProjectileCandidate(descendant)
 			then
-				local projectilePart = nil
-				if descendant:IsA("BasePart") then
-					projectilePart = descendant
-				elseif descendant:IsA("Attachment") then
-					local parent = descendant.Parent
-					if parent and parent:IsA("BasePart") then
-						projectilePart = parent
-					end
-				end
+				local representative = getProjectileRepresentative(descendant) or descendant
+				if representative and not seenRepresentatives[representative] then
+					seenRepresentatives[representative] = true
 
-				if projectilePart and projectilePart:IsDescendantOf(fxFolder) then
-					local representative = projectilePart:FindFirstAncestorWhichIsA("Model") or projectilePart
-					local signature = getProjectileRelativePathUnderFx(projectilePart)
+					local signatureSource = descendant
+					local signature = getProjectileRelativePathUnderFx(signatureSource)
 						or getProjectileRelativePathUnderFx(representative)
-						or tostring(projectilePart.Name or "")
-					local distance = getProjectileCandidateDistance(projectilePart, representative, projectilePart)
-					local speed = projectilePart.AssemblyLinearVelocity.Magnitude
+						or tostring((signatureSource and signatureSource.Name) or (representative and representative.Name) or "")
+					local distance = getProjectileCandidateDistance(signatureSource, representative, signatureSource)
+					local representativePart = getProjectileRepresentativeBasePart(representative)
+					local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
+					local approachData = getProjectileApproachData(representative)
+					local specificityName = getProjectileRelativePathUnderFx(signatureSource)
+						or getProjectileRelativePathUnderFx(representative)
+						or tostring(representative.Name or "")
+
 					if signature
 						and signature ~= ""
 						and signature ~= "FX"
@@ -4773,16 +4774,17 @@ local function setupAutoParryTab()
 						local candidate = {
 							signature = normalizeBuilderConfigId("Projectiles", signature),
 							representative = representative,
-							signatureSource = projectilePart,
-							specificity = getProjectileSpecificityScore(projectilePart.Name),
+							signatureSource = signatureSource,
+							specificity = getProjectileSpecificityScore(specificityName),
 							distance = distance,
-							timeToImpact = speed > 5 and (((getProjectileApproachData(representative) or {}).timeToImpact) or 0) or 0,
+							timeToImpact = (approachData and approachData.timeToImpact) or 0,
 						}
 						if candidate.signature and candidate.signature ~= "" then
 							if not bestCandidate
-								or (speed > 5 and (bestCandidate.timeToImpact or 0) <= 0)
-								or (speed > 5 and bestCandidate.timeToImpact > 0 and candidate.timeToImpact > 0 and candidate.timeToImpact < bestCandidate.timeToImpact)
-								or (candidate.distance < bestCandidate.distance)
+								or (candidate.specificity or 0) > (bestCandidate.specificity or 0)
+								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and speed > 5 and (bestCandidate.timeToImpact or 0) <= 0)
+								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and speed > 5 and bestCandidate.timeToImpact > 0 and candidate.timeToImpact > 0 and candidate.timeToImpact < bestCandidate.timeToImpact)
+								or ((candidate.specificity or 0) == (bestCandidate.specificity or 0) and candidate.distance < bestCandidate.distance)
 							then
 								bestCandidate = candidate
 							end
