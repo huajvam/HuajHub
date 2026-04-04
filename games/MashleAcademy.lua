@@ -4397,7 +4397,7 @@ local function setupAutoParryTab()
 
 		local filtered = {}
 		for _, segment in ipairs(segments) do
-			if segment ~= "" and not isGenericProjectileContainerName(segment) then
+			if segment ~= "" then
 				table.insert(filtered, segment)
 			end
 		end
@@ -4621,7 +4621,7 @@ local function setupAutoParryTab()
 			or resolveProjectileSignatureNameFromFx(representative)
 			or (signatureSource and signatureSource.Name)
 			or (representative and representative.Name or nil)
-		if isGenericProjectileContainerName(signature) then
+		if not signature or signature == "" or signature == "FX" or signature == "fx" then
 			return nil, representative, signatureSource
 		end
 		signature = normalizeBuilderConfigId("Projectiles", signature)
@@ -4787,7 +4787,10 @@ local function setupAutoParryTab()
 				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
 					local approachData = getProjectileApproachData(representative)
-					local distance = approachData and approachData.distance or getProjectileRepresentativeDistance(signatureSource or representative)
+					local distance = getProjectileRepresentativeDistance(signatureSource or descendant)
+					if not distance and approachData then
+						distance = approachData.distance
+					end
 					if distance and distance <= maxDistance then
 						local specificity = getProjectileSpecificityScore(signatureSource and signatureSource.Name)
 						local candidate = {
@@ -4820,7 +4823,7 @@ local function setupAutoParryTab()
 			if shouldTrackProjectileCandidate(descendant) then
 				local signature, representative, signatureSource = getProjectileSignature(descendant)
 				if signature and representative and representative.Parent then
-					local distance = getProjectileRepresentativeDistance(signatureSource or representative)
+					local distance = getProjectileRepresentativeDistance(signatureSource or descendant)
 					if distance and distance <= maxDistance then
 						return {
 							signature = signature,
