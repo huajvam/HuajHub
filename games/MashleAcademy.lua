@@ -4781,22 +4781,13 @@ local function setupAutoParryTab()
 			return false
 		end
 
-		if instance:IsA("Beam") or instance:IsA("Trail") or instance:IsA("ParticleEmitter") then
-			return hasProjectileKeyword(instance.Name) or isUnderLikelyProjectileFolder(instance)
-		end
-
-		if instance:IsA("Attachment") then
-			return hasProjectileKeyword(instance.Name) and isUnderLikelyProjectileFolder(instance)
-		end
-
-		if instance:IsA("BasePart") or instance:IsA("Model") then
+		if instance:IsA("BasePart") then
 			local distance = getProjectileCandidateDistance(instance, instance, instance)
 			if distance and distance > (tonumber(getOptionValue("AutoParryDistance", 18)) or 18) then
 				return false
 			end
 
-			local representativePart = getProjectileRepresentativeBasePart(instance)
-			local speed = representativePart and representativePart.AssemblyLinearVelocity.Magnitude or 0
+			local speed = instance.AssemblyLinearVelocity.Magnitude
 			if speed >= 30 then
 				return true
 			end
@@ -4898,27 +4889,6 @@ local function setupAutoParryTab()
 		table.clear(recentProjectileCandidates)
 		if not folder then
 			return
-		end
-
-		table.insert(recentProjectileFxConnections, folder.ChildAdded:Connect(function(child)
-			local branch = getProjectileTopLevelChild(child) or child
-			recentProjectileBranches[branch] = {
-				branch = branch,
-				lastSource = child,
-				seenAt = os.clock(),
-			}
-		end))
-		table.insert(recentProjectileFxConnections, folder.ChildRemoved:Connect(function(child)
-			recentProjectileBranches[child] = nil
-		end))
-
-		for _, child in ipairs(folder:GetChildren()) do
-			local branch = getProjectileTopLevelChild(child) or child
-			recentProjectileBranches[branch] = {
-				branch = branch,
-				lastSource = child,
-				seenAt = os.clock(),
-			}
 		end
 	end
 
