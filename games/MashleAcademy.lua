@@ -3291,6 +3291,7 @@ local function setupAutoParryTab()
 	local applyProjectileBuilderConfigData
 	local refreshProjectileDetectedDropdown
 	local getProjectileEffectsFolder
+	local isGenericProjectileContainerName
 	pcall(function()
 		ContextActionService:UnbindAction(AUTO_PARRY_BLOCK_ACTION)
 	end)
@@ -4389,7 +4390,7 @@ local function setupAutoParryTab()
 	local recentProjectileBranches = {}
 	local RECENT_PROJECTILE_CAPTURE_WINDOW = 1.25
 
-	local function isGenericProjectileContainerName(name)
+	isGenericProjectileContainerName = function(name)
 		local lowered = string.lower(tostring(name or ""))
 		return lowered == ""
 			or lowered == "fx"
