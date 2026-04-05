@@ -4700,14 +4700,19 @@ local function setupAutoParryTab()
 		}
 	end
 
-	local function registerDetectedProjectile(instance, distance, timeToImpact)
-		local signature, representative, signatureSource = getProjectileSignature(instance)
-		if not signature or not representative then
+	local function registerDetectedProjectileCandidate(candidate)
+		if type(candidate) ~= "table" then
 			return nil
 		end
 
-		local displayName = getProjectileRelativePathUnderFx(instance)
-			or getProjectileRelativePathUnderFx(signatureSource)
+		local signature = normalizeBuilderConfigId("Projectiles", candidate.signature)
+		local representative = candidate.representative
+		local signatureSource = candidate.signatureSource or representative
+		if not signature or signature == "" or not representative then
+			return nil
+		end
+
+		local displayName = getProjectileRelativePathUnderFx(signatureSource)
 			or getProjectileRelativePathUnderFx(representative)
 			or (signatureSource and signatureSource.Name)
 			or representative.Name
@@ -4715,9 +4720,9 @@ local function setupAutoParryTab()
 		lastProjectileCapture = {
 			sourceKey = "Projectiles",
 			animationId = signature,
-			wait = math.max(tonumber(timeToImpact) or 0, 0),
+			wait = math.max(tonumber(candidate.timeToImpact) or 0, 0),
 			nickname = displayName,
-			range = distance or 16,
+			range = candidate.distance or 16,
 			actionKind = "projectile",
 			capturedAt = os.clock(),
 		}
@@ -4727,14 +4732,40 @@ local function setupAutoParryTab()
 		}
 		entry.targetName = displayName or entry.targetName or "Unknown"
 		entry.animationName = displayName or entry.animationName or "Unknown"
-		entry.timePosition = math.max(tonumber(timeToImpact) or 0, 0)
-		entry.distance = tonumber(distance) or entry.distance or 16
+		entry.timePosition = math.max(tonumber(candidate.timeToImpact) or 0, 0)
+		entry.distance = tonumber(candidate.distance) or entry.distance or 16
 		entry.updatedAt = os.clock()
 		detectedAnimationEntries.Projectiles[signature] = entry
 		local selectedLabel = formatDetectedAnimationLabel(entry)
 		refreshProjectileDetectedDropdown(selectedLabel)
 		applyProjectileBuilderConfigData(lastProjectileCapture)
 		return signature, representative
+	end
+
+	local function registerDetectedProjectile(instance, distance, timeToImpact)
+		local builtCandidate = buildProjectileCandidateFromInstance(instance)
+		if not builtCandidate and instance then
+			local signature, representative, signatureSource = getProjectileSignature(instance)
+			if signature and representative then
+				builtCandidate = {
+					signature = signature,
+					representative = representative,
+					signatureSource = signatureSource or instance,
+					distance = distance,
+					timeToImpact = timeToImpact,
+				}
+			end
+		end
+		if not builtCandidate then
+			return nil
+		end
+		if distance ~= nil then
+			builtCandidate.distance = distance
+		end
+		if timeToImpact ~= nil then
+			builtCandidate.timeToImpact = timeToImpact
+		end
+		return registerDetectedProjectileCandidate(builtCandidate)
 	end
 
 	local function shouldTrackProjectileCandidate(instance)
@@ -4991,6 +5022,9 @@ local function setupAutoParryTab()
 		local maxDistance = tonumber(getOptionValue("AutoParryDistance", 18)) or 18
 		local candidate = findManualProjectileCandidate(maxDistance)
 		if candidate then
+			pcall(function()
+				registerDetectedProjectileCandidate(candidate)
+			end)
 			Library:Notify("Projectile probe found: " .. tostring(candidate.signature or "(none)"), 2)
 			return
 		end
@@ -6549,11 +6583,7 @@ local function setupAutoParryTab()
 		if projectileCandidate then
 			autoParryState.manualCaptureStage = "registerDetectedProjectile"
 			local projectileRegisterOk, projectileRegisterErr = pcall(function()
-				registerDetectedProjectile(
-					projectileCandidate.signatureSource or projectileCandidate.representative,
-					projectileCandidate.distance,
-					projectileCandidate.timeToImpact
-				)
+				registerDetectedProjectileCandidate(projectileCandidate)
 			end)
 			if not projectileRegisterOk then
 				setDebugText(string.format("%s -> projectile register failed: %s", actionKind, tostring(projectileRegisterErr)))
