@@ -4857,6 +4857,55 @@ local function setupAutoParryTab()
 		}
 	end
 
+	local function buildManualProjectileCandidateFromPart(projectilePart)
+		if not projectilePart or not projectilePart.Parent or not projectilePart:IsA("BasePart") then
+			return nil
+		end
+
+		if isBlacklistedProjectileFxInstance(projectilePart) then
+			return nil
+		end
+
+		local fxFolder = getProjectileFxFolder()
+		if not fxFolder or not projectilePart:IsDescendantOf(fxFolder) then
+			return nil
+		end
+
+		if projectilePart:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder")) then
+			return nil
+		end
+
+		local representative = projectilePart:FindFirstAncestorWhichIsA("Model") or projectilePart
+		local signature = normalizeBuilderConfigId(
+			"Projectiles",
+			getProjectileRelativePathUnderFx(projectilePart)
+				or getProjectileRelativePathUnderFx(representative)
+				or tostring(projectilePart.Name or "")
+		)
+		if not signature or signature == "" then
+			return nil
+		end
+
+		local distance = getProjectileCandidateDistance(projectilePart, representative, projectilePart)
+		if not distance then
+			return nil
+		end
+
+		local approachData = getProjectileApproachData(projectilePart) or getProjectileApproachData(representative)
+		local speed = projectilePart.AssemblyLinearVelocity.Magnitude
+
+		return {
+			signature = signature,
+			representative = representative,
+			signatureSource = projectilePart,
+			specificity = getProjectileSpecificityScore(projectilePart.Name),
+			distance = distance,
+			timeToImpact = (approachData and approachData.timeToImpact) or 0,
+			speed = speed,
+			seenAt = os.clock(),
+		}
+	end
+
 	local function rememberRecentProjectileCandidate(instance)
 		local candidate = buildProjectileCandidateFromInstance(instance)
 		if not candidate or not candidate.representative then
@@ -4934,17 +4983,20 @@ local function setupAutoParryTab()
 
 		local bestCandidate
 		for _, descendant in ipairs(fxFolder:GetDescendants()) do
-			if descendant
-				and descendant.Parent
-				and not descendant:IsDescendantOf(LocalPlayer and LocalPlayer.Character or Instance.new("Folder"))
-				and shouldTrackProjectileCandidate(descendant)
-			then
-				local candidate = buildProjectileCandidateFromInstance(descendant)
-				if candidate
-					and (candidate.distance == nil or candidate.distance <= maxDistance)
-					and scoreProjectileCandidate(candidate, bestCandidate)
-				then
-					bestCandidate = candidate
+			if descendant and descendant.Parent and descendant:IsA("BasePart") then
+				local candidate = buildManualProjectileCandidateFromPart(descendant)
+				if candidate and candidate.distance <= maxDistance then
+					if not bestCandidate then
+						bestCandidate = candidate
+					elseif (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) <= 0 then
+						bestCandidate = candidate
+					elseif (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) > 0 and candidate.timeToImpact < bestCandidate.timeToImpact then
+						bestCandidate = candidate
+					elseif (candidate.timeToImpact or 0) == (bestCandidate.timeToImpact or 0) and (candidate.speed or 0) > (bestCandidate.speed or 0) then
+						bestCandidate = candidate
+					elseif candidate.distance < bestCandidate.distance then
+						bestCandidate = candidate
+					end
 				end
 			end
 		end
