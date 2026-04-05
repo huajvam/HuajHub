@@ -4371,6 +4371,7 @@ local function setupAutoParryTab()
 	local recentProjectileCandidates = {}
 	local recentProjectileFxConnections = {}
 	local recentProjectileBranches = {}
+	local recentProjectilePartSeenAt = {}
 	local RECENT_PROJECTILE_CAPTURE_WINDOW = 1.25
 
 	isGenericProjectileContainerName = function(name)
@@ -4695,7 +4696,7 @@ local function setupAutoParryTab()
 		}
 	end
 
-	local function registerDetectedProjectileCandidate(candidate)
+	local function registerDetectedProjectileCandidate(candidate, captureRequestedAt)
 		if type(candidate) ~= "table" then
 			return nil
 		end
@@ -4718,6 +4719,16 @@ local function setupAutoParryTab()
 			if fallbackDistance > 0 and fallbackSpeed > 1 then
 				capturedWait = math.min(fallbackDistance / fallbackSpeed, 3)
 			end
+		end
+		if capturedWait <= 0 then
+			local reactionSeenAt = tonumber(candidate.seenAt) or 0
+			local reactionCapturedAt = tonumber(captureRequestedAt) or os.clock()
+			if reactionSeenAt > 0 and reactionCapturedAt >= reactionSeenAt then
+				capturedWait = math.min(math.max(reactionCapturedAt - reactionSeenAt, 0), 3)
+			end
+		end
+		if capturedWait <= 0 then
+			capturedWait = 0.05
 		end
 
 		lastProjectileCapture = {
@@ -4902,6 +4913,11 @@ local function setupAutoParryTab()
 
 		local approachData = getProjectileApproachData(projectilePart) or getProjectileApproachData(representative)
 		local speed = projectilePart.AssemblyLinearVelocity.Magnitude
+		local seenAt = recentProjectilePartSeenAt[projectilePart] or os.clock()
+		local age = math.max(0, os.clock() - seenAt)
+		if age > RECENT_PROJECTILE_CAPTURE_WINDOW and speed <= 2 then
+			return nil
+		end
 
 		return {
 			signature = signature,
@@ -4911,7 +4927,8 @@ local function setupAutoParryTab()
 			distance = distance,
 			timeToImpact = (approachData and approachData.timeToImpact) or 0,
 			speed = speed,
-			seenAt = os.clock(),
+			seenAt = seenAt,
+			age = age,
 		}
 	end
 
@@ -4940,6 +4957,19 @@ local function setupAutoParryTab()
 		end
 		table.clear(recentProjectileFxConnections)
 		table.clear(recentProjectileBranches)
+		table.clear(recentProjectilePartSeenAt)
+	end
+
+	local function rememberProjectileFxPart(instance)
+		if not instance or not instance.Parent or not instance:IsA("BasePart") then
+			return
+		end
+
+		if isBlacklistedProjectileFxInstance(instance) then
+			return
+		end
+
+		recentProjectilePartSeenAt[instance] = os.clock()
 	end
 
 	local function hookProjectileFxFolder(folder)
@@ -4948,6 +4978,20 @@ local function setupAutoParryTab()
 		if not folder then
 			return
 		end
+
+		for _, descendant in ipairs(folder:GetDescendants()) do
+			rememberProjectileFxPart(descendant)
+		end
+
+		table.insert(recentProjectileFxConnections, folder.DescendantAdded:Connect(function(descendant)
+			rememberProjectileFxPart(descendant)
+		end))
+
+		table.insert(recentProjectileFxConnections, folder.DescendantRemoving:Connect(function(descendant)
+			if descendant and descendant:IsA("BasePart") then
+				recentProjectilePartSeenAt[descendant] = nil
+			end
+		end))
 	end
 
 	local function buildProjectileCandidateFromBranch(branchEntry)
@@ -4990,20 +5034,60 @@ local function setupAutoParryTab()
 			return nil
 		end
 
+		local function shouldPreferProjectileCandidate(candidate, currentBest)
+			if not currentBest then
+				return true
+			end
+
+			local candidatePositive = (candidate.timeToImpact or 0) > 0
+			local bestPositive = (currentBest.timeToImpact or 0) > 0
+			if candidatePositive ~= bestPositive then
+				return candidatePositive
+			end
+
+			local candidateFresh = (candidate.age or math.huge) <= 0.45
+			local bestFresh = (currentBest.age or math.huge) <= 0.45
+			if candidateFresh ~= bestFresh then
+				return candidateFresh
+			end
+
+			if math.abs((candidate.age or math.huge) - (currentBest.age or math.huge)) > 0.08 then
+				return (candidate.age or math.huge) < (currentBest.age or math.huge)
+			end
+
+			if candidatePositive
+				and bestPositive
+				and math.abs((candidate.timeToImpact or 0) - (currentBest.timeToImpact or 0)) > 0.02
+			then
+				return (candidate.timeToImpact or math.huge) < (currentBest.timeToImpact or math.huge)
+			end
+
+			if math.abs((candidate.speed or 0) - (currentBest.speed or 0)) > 1 then
+				return (candidate.speed or 0) > (currentBest.speed or 0)
+			end
+
+			return (candidate.distance or math.huge) < (currentBest.distance or math.huge)
+		end
+
 		local bestCandidate
-		for _, descendant in ipairs(fxFolder:GetDescendants()) do
-			if descendant and descendant.Parent and descendant:IsA("BasePart") then
-				local candidate = buildManualProjectileCandidateFromPart(descendant)
-				if candidate and candidate.distance <= maxDistance then
-					if not bestCandidate then
-						bestCandidate = candidate
-					elseif (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) <= 0 then
-						bestCandidate = candidate
-					elseif (candidate.timeToImpact or 0) > 0 and (bestCandidate.timeToImpact or 0) > 0 and candidate.timeToImpact < bestCandidate.timeToImpact then
-						bestCandidate = candidate
-					elseif (candidate.timeToImpact or 0) == (bestCandidate.timeToImpact or 0) and (candidate.speed or 0) > (bestCandidate.speed or 0) then
-						bestCandidate = candidate
-					elseif candidate.distance < bestCandidate.distance then
+		local hadCachedParts = false
+		for projectilePart, _ in pairs(recentProjectilePartSeenAt) do
+			if projectilePart and projectilePart.Parent then
+				hadCachedParts = true
+				local candidate = buildManualProjectileCandidateFromPart(projectilePart)
+				if candidate and candidate.distance <= maxDistance and shouldPreferProjectileCandidate(candidate, bestCandidate) then
+					bestCandidate = candidate
+				end
+			else
+				recentProjectilePartSeenAt[projectilePart] = nil
+			end
+		end
+
+		if not hadCachedParts then
+			for _, descendant in ipairs(fxFolder:GetDescendants()) do
+				if descendant and descendant.Parent and descendant:IsA("BasePart") then
+					local candidate = buildManualProjectileCandidateFromPart(descendant)
+					if candidate and candidate.distance <= maxDistance and shouldPreferProjectileCandidate(candidate, bestCandidate) then
 						bestCandidate = candidate
 					end
 				end
@@ -6565,7 +6649,7 @@ local function setupAutoParryTab()
 		if projectileCandidate then
 			autoParryState.manualCaptureStage = "registerDetectedProjectile"
 			local projectileRegisterOk, projectileRegisterErr = pcall(function()
-				registerDetectedProjectileCandidate(projectileCandidate)
+				registerDetectedProjectileCandidate(projectileCandidate, captureRequestedAt)
 			end)
 			if not projectileRegisterOk then
 				setDebugText(string.format("%s -> projectile register failed: %s", actionKind, tostring(projectileRegisterErr)))
