@@ -6550,7 +6550,7 @@ local function setupAutoParryTab()
 			autoParryState.manualCaptureStage = "registerDetectedProjectile"
 			local projectileRegisterOk, projectileRegisterErr = pcall(function()
 				registerDetectedProjectile(
-					projectileCandidate.representative,
+					projectileCandidate.signatureSource or projectileCandidate.representative,
 					projectileCandidate.distance,
 					projectileCandidate.timeToImpact
 				)
