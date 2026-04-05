@@ -4377,8 +4377,6 @@ local function setupAutoParryTab()
 	local recentProjectileBranches = {}
 	local recentProjectilePartSeenAt = {}
 	local RECENT_PROJECTILE_CAPTURE_WINDOW = 1.25
-	local PROJECTILE_DETECTED_ENTRY_LIFETIME = 2.0
-
 	isGenericProjectileContainerName = function(name)
 		local lowered = string.lower(tostring(name or ""))
 		return lowered == ""
@@ -4989,13 +4987,6 @@ local function setupAutoParryTab()
 				or (now - (tonumber(seenAt) or 0)) > RECENT_PROJECTILE_CAPTURE_WINDOW
 			then
 				recentProjectilePartSeenAt[projectilePart] = nil
-			end
-		end
-
-		for signature, entry in pairs(detectedAnimationEntries.Projectiles) do
-			local updatedAt = tonumber(entry and entry.updatedAt) or 0
-			if updatedAt <= 0 or (now - updatedAt) > PROJECTILE_DETECTED_ENTRY_LIFETIME then
-				detectedAnimationEntries.Projectiles[signature] = nil
 			end
 		end
 	end
