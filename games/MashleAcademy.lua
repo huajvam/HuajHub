@@ -3288,6 +3288,7 @@ local function setupAutoParryTab()
 	local saveProjectileParryConfigsToFile
 	local getProjectileBuilderConfigData
 	local applyProjectileBuilderConfigData
+	local cleanupStaleProjectileState
 	local refreshProjectileDetectedDropdown
 	local getProjectileEffectsFolder
 	local isGenericProjectileContainerName
@@ -4980,7 +4981,7 @@ local function setupAutoParryTab()
 		table.clear(recentProjectilePartSeenAt)
 	end
 
-	local function cleanupStaleProjectileState()
+	cleanupStaleProjectileState = function()
 		local now = os.clock()
 		for projectilePart, seenAt in pairs(recentProjectilePartSeenAt) do
 			if not projectilePart
