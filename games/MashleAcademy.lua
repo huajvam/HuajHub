@@ -4439,18 +4439,26 @@ local function setupAutoParryTab()
 			return false
 		end
 
-		local relativePath = string.lower(tostring(getProjectileRelativePathUnderFx(instance) or ""))
-		local instanceName = string.lower(tostring(instance.Name or ""))
-		local function hasBlockedToken(value)
-			return string.find(value, "fakehead", 1, true) ~= nil
-				or string.find(value, "damageindicator", 1, true) ~= nil
-				or string.find(value, "deflectfx", 1, true) ~= nil
-				or string.find(value, "lines", 1, true) ~= nil
-				or string.find(value, "humanoidrootpart", 1, true) ~= nil
-				or string.find(value, "sparksfx", 1, true) ~= nil
-		end
+		local fxFolder = getProjectileFxFolder()
+		local current = instance
+		while current and current ~= fxFolder do
+			local loweredName = string.lower(tostring(current.Name or ""))
+			if string.find(loweredName, "fakehead", 1, true) ~= nil then
+				return true
+			end
 
-		return hasBlockedToken(relativePath) or hasBlockedToken(instanceName)
+			if loweredName == "damageindicator"
+				or loweredName == "deflectfx"
+				or loweredName == "lines"
+				or loweredName == "humanoidrootpart"
+				or loweredName == "sparksfx"
+			then
+				return true
+			end
+
+			current = current.Parent
+		end
+		return false
 	end
 
 	local function getProjectileTopLevelChild(instance)
