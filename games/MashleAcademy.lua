@@ -4933,7 +4933,17 @@ local function setupAutoParryTab()
 
 		local approachData = getProjectileApproachData(projectilePart) or getProjectileApproachData(representative)
 		local speed = projectilePart.AssemblyLinearVelocity.Magnitude
-		local seenAt = recentProjectilePartSeenAt[projectilePart] or os.clock()
+		local branch = getProjectileTopLevelChild(projectilePart) or getProjectileTopLevelChild(representative)
+		local branchSeenAt = tonumber(branch and recentProjectileBranches[branch] and recentProjectileBranches[branch].seenAt) or 0
+		local partSeenAt = tonumber(recentProjectilePartSeenAt[projectilePart]) or 0
+		local seenAt = os.clock()
+		if branchSeenAt > 0 and partSeenAt > 0 then
+			seenAt = math.min(branchSeenAt, partSeenAt)
+		elseif branchSeenAt > 0 then
+			seenAt = branchSeenAt
+		elseif partSeenAt > 0 then
+			seenAt = partSeenAt
+		end
 		local age = math.max(0, os.clock() - seenAt)
 		if age > RECENT_PROJECTILE_CAPTURE_WINDOW and speed <= 2 then
 			return nil
@@ -4990,6 +5000,17 @@ local function setupAutoParryTab()
 				recentProjectilePartSeenAt[projectilePart] = nil
 			end
 		end
+
+		for branch, branchInfo in pairs(recentProjectileBranches) do
+			local seenAt = tonumber(branchInfo and branchInfo.seenAt) or 0
+			if not branch
+				or not branch.Parent
+				or seenAt <= 0
+				or (now - seenAt) > RECENT_PROJECTILE_CAPTURE_WINDOW
+			then
+				recentProjectileBranches[branch] = nil
+			end
+		end
 	end
 
 	local function rememberProjectileFxPart(instance)
@@ -5001,7 +5022,23 @@ local function setupAutoParryTab()
 			return
 		end
 
-		recentProjectilePartSeenAt[instance] = os.clock()
+		local seenAt = os.clock()
+		recentProjectilePartSeenAt[instance] = seenAt
+
+		local branch = getProjectileTopLevelChild(instance)
+		if branch then
+			local branchInfo = recentProjectileBranches[branch]
+			if branchInfo then
+				branchInfo.lastSource = instance
+				branchInfo.seenAt = math.min(tonumber(branchInfo.seenAt) or seenAt, seenAt)
+			else
+				recentProjectileBranches[branch] = {
+					branch = branch,
+					lastSource = instance,
+					seenAt = seenAt,
+				}
+			end
+		end
 	end
 
 	local function hookProjectileFxFolder(folder)
