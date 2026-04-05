@@ -4731,19 +4731,20 @@ local function setupAutoParryTab()
 			or getProjectileRelativePathUnderFx(representative)
 			or (signatureSource and signatureSource.Name)
 			or representative.Name
-		local capturedWait = math.max(tonumber(candidate.timeToImpact) or 0, 0)
+		local reactionCapturedAt = tonumber(captureRequestedAt) or os.clock()
+		local reactionSeenAt = tonumber(candidate.seenAt) or 0
+		local capturedWait = 0
+		if reactionSeenAt > 0 and reactionCapturedAt >= reactionSeenAt then
+			capturedWait = math.min(math.max(reactionCapturedAt - reactionSeenAt, 0), 3)
+		end
+		if capturedWait <= 0 then
+			capturedWait = math.max(tonumber(candidate.timeToImpact) or 0, 0)
+		end
 		if capturedWait <= 0 then
 			local fallbackDistance = tonumber(candidate.distance) or 0
 			local fallbackSpeed = tonumber(candidate.speed) or 0
 			if fallbackDistance > 0 and fallbackSpeed > 1 then
 				capturedWait = math.min(fallbackDistance / fallbackSpeed, 3)
-			end
-		end
-		if capturedWait <= 0 then
-			local reactionSeenAt = tonumber(candidate.seenAt) or 0
-			local reactionCapturedAt = tonumber(captureRequestedAt) or os.clock()
-			if reactionSeenAt > 0 and reactionCapturedAt >= reactionSeenAt then
-				capturedWait = math.min(math.max(reactionCapturedAt - reactionSeenAt, 0), 3)
 			end
 		end
 		if capturedWait <= 0 then
