@@ -4711,11 +4711,19 @@ local function setupAutoParryTab()
 			or getProjectileRelativePathUnderFx(representative)
 			or (signatureSource and signatureSource.Name)
 			or representative.Name
+		local capturedWait = math.max(tonumber(candidate.timeToImpact) or 0, 0)
+		if capturedWait <= 0 then
+			local fallbackDistance = tonumber(candidate.distance) or 0
+			local fallbackSpeed = tonumber(candidate.speed) or 0
+			if fallbackDistance > 0 and fallbackSpeed > 1 then
+				capturedWait = math.min(fallbackDistance / fallbackSpeed, 3)
+			end
+		end
 
 		lastProjectileCapture = {
 			sourceKey = "Projectiles",
 			animationId = signature,
-			wait = math.max(tonumber(candidate.timeToImpact) or 0, 0),
+			wait = capturedWait,
 			nickname = displayName,
 			range = candidate.distance or 16,
 			actionKind = "projectile",
@@ -4727,7 +4735,7 @@ local function setupAutoParryTab()
 		}
 		entry.targetName = displayName or entry.targetName or "Unknown"
 		entry.animationName = displayName or entry.animationName or "Unknown"
-		entry.timePosition = math.max(tonumber(candidate.timeToImpact) or 0, 0)
+		entry.timePosition = capturedWait
 		entry.distance = tonumber(candidate.distance) or entry.distance or 16
 		entry.updatedAt = os.clock()
 		detectedAnimationEntries.Projectiles[signature] = entry
@@ -4853,6 +4861,7 @@ local function setupAutoParryTab()
 			specificity = getProjectileSpecificityScore(specificityName),
 			distance = distance,
 			timeToImpact = (approachData and approachData.timeToImpact) or 0,
+			speed = (getProjectileRepresentativeBasePart(representative) and getProjectileRepresentativeBasePart(representative).AssemblyLinearVelocity.Magnitude) or 0,
 			seenAt = os.clock(),
 		}
 	end
