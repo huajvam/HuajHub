@@ -3325,6 +3325,7 @@ local function setupAutoParryTab()
 		lastHeartbeatErrorMessage = nil,
 		lastHeartbeatErrorAt = 0,
 		heartbeatDisabled = false,
+		lastProjectileCleanupAt = 0,
 		visualizer = {
 			part = nil,
 		},
@@ -4302,6 +4303,8 @@ local function setupAutoParryTab()
 	end
 
 	refreshProjectileDetectedDropdown = function(selectedLabel)
+		cleanupStaleProjectileState()
+
 		local labels = {"(none)"}
 		projectileDetectedLabelMap = {}
 
@@ -4373,6 +4376,7 @@ local function setupAutoParryTab()
 	local recentProjectileBranches = {}
 	local recentProjectilePartSeenAt = {}
 	local RECENT_PROJECTILE_CAPTURE_WINDOW = 1.25
+	local PROJECTILE_DETECTED_ENTRY_LIFETIME = 2.0
 
 	isGenericProjectileContainerName = function(name)
 		local lowered = string.lower(tostring(name or ""))
@@ -4437,8 +4441,16 @@ local function setupAutoParryTab()
 
 		local relativePath = string.lower(tostring(getProjectileRelativePathUnderFx(instance) or ""))
 		local instanceName = string.lower(tostring(instance.Name or ""))
-		return string.find(relativePath, "fakehead", 1, true) ~= nil
-			or string.find(instanceName, "fakehead", 1, true) ~= nil
+		local function hasBlockedToken(value)
+			return string.find(value, "fakehead", 1, true) ~= nil
+				or string.find(value, "damageindicator", 1, true) ~= nil
+				or string.find(value, "deflectfx", 1, true) ~= nil
+				or string.find(value, "lines", 1, true) ~= nil
+				or string.find(value, "humanoidrootpart", 1, true) ~= nil
+				or string.find(value, "sparksfx", 1, true) ~= nil
+		end
+
+		return hasBlockedToken(relativePath) or hasBlockedToken(instanceName)
 	end
 
 	local function getProjectileTopLevelChild(instance)
@@ -4960,6 +4972,25 @@ local function setupAutoParryTab()
 		table.clear(recentProjectilePartSeenAt)
 	end
 
+	local function cleanupStaleProjectileState()
+		local now = os.clock()
+		for projectilePart, seenAt in pairs(recentProjectilePartSeenAt) do
+			if not projectilePart
+				or not projectilePart.Parent
+				or (now - (tonumber(seenAt) or 0)) > RECENT_PROJECTILE_CAPTURE_WINDOW
+			then
+				recentProjectilePartSeenAt[projectilePart] = nil
+			end
+		end
+
+		for signature, entry in pairs(detectedAnimationEntries.Projectiles) do
+			local updatedAt = tonumber(entry and entry.updatedAt) or 0
+			if updatedAt <= 0 or (now - updatedAt) > PROJECTILE_DETECTED_ENTRY_LIFETIME then
+				detectedAnimationEntries.Projectiles[signature] = nil
+			end
+		end
+	end
+
 	local function rememberProjectileFxPart(instance)
 		if not instance or not instance.Parent or not instance:IsA("BasePart") then
 			return
@@ -5033,6 +5064,8 @@ local function setupAutoParryTab()
 		if not fxFolder then
 			return nil
 		end
+
+		cleanupStaleProjectileState()
 
 		local function shouldPreferProjectileCandidate(candidate, currentBest)
 			if not currentBest then
@@ -7163,6 +7196,15 @@ local function setupAutoParryTab()
 	maid:GiveTask(RunService.Heartbeat:Connect(function()
 		if autoParryState.heartbeatDisabled then
 			return
+		end
+
+		local heartbeatNow = os.clock()
+		if (heartbeatNow - (tonumber(autoParryState.lastProjectileCleanupAt) or 0)) >= 0.35 then
+			autoParryState.lastProjectileCleanupAt = heartbeatNow
+			pcall(function()
+				cleanupStaleProjectileState()
+				refreshProjectileDetectedDropdown(tostring(getOptionValue("ProjectileParryMakerDetectedProjectile", "(none)") or "(none)"))
+			end)
 		end
 
 		local ok, err = pcall(autoParryRuntime.processAutoParryHeartbeat)
