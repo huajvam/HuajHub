@@ -627,7 +627,7 @@ function HyakuAsura.init(_context)
 			return normalizeBenchPromptText(text)
 		end
 
-		local function findNilInstanceByNameAndClass(name, className)
+		local function findNilInstances()
 			if type(getnilinstances) ~= "function" then
 				return nil
 			end
@@ -639,21 +639,88 @@ function HyakuAsura.init(_context)
 				return nil
 			end
 
+			return instances
+		end
+
+		local function isDescendantOfInstance(instance, ancestor)
+			if not instance or not ancestor or instance == ancestor then
+				return instance == ancestor
+			end
+
+			local current = instance
+			for _ = 1, 24 do
+				local okParent, parent = pcall(function()
+					return current.Parent
+				end)
+				if not okParent or not parent then
+					return false
+				end
+				if parent == ancestor then
+					return true
+				end
+				current = parent
+			end
+
+			return false
+		end
+
+		local function scanBenchPromptObjects()
+			local instances = findNilInstances()
+			if not instances then
+				return nil, nil
+			end
+
+			local foundFrame = nil
+			local foundLabel = nil
+
 			for _, instance in next, instances do
-				if instance and instance.Name == name and instance.ClassName == className then
-					return instance
+				if instance then
+					local okName, name = pcall(function()
+						return instance.Name
+					end)
+					local okClass, className = pcall(function()
+						return instance.ClassName
+					end)
+					if okName and okClass then
+						if not foundFrame
+							and (name == "KeyMinigame" or name == "KeyMiniGame")
+							and (className == "Frame" or className == "CanvasGroup")
+						then
+							foundFrame = instance
+						elseif name == "TextLabel" and className == "TextLabel" then
+							foundLabel = foundLabel or instance
+						end
+					end
 				end
 			end
 
-			return nil
+			if foundFrame then
+				for _, instance in next, instances do
+					if instance and instance ~= foundFrame then
+						local okName, name = pcall(function()
+							return instance.Name
+						end)
+						local okClass, className = pcall(function()
+							return instance.ClassName
+						end)
+						if okName and okClass and name == "TextLabel" and className == "TextLabel" then
+							if isDescendantOfInstance(instance, foundFrame) then
+								return foundFrame, instance
+							end
+						end
+					end
+				end
+			end
+
+			return foundFrame, foundLabel
 		end
 
 		local function getBenchPromptFrame()
 			if cachedBenchPromptFrame then
-				local okParent = pcall(function()
-					return cachedBenchPromptFrame.Parent
+				local okClassName, className = pcall(function()
+					return cachedBenchPromptFrame.ClassName
 				end)
-				if okParent then
+				if okClassName and (className == "Frame" or className == "CanvasGroup") then
 					return cachedBenchPromptFrame
 				end
 				cachedBenchPromptFrame = nil
@@ -678,10 +745,11 @@ function HyakuAsura.init(_context)
 				end
 			end
 
-			cachedBenchPromptFrame = findNilInstanceByNameAndClass("KeyMinigame", "Frame")
-				or findNilInstanceByNameAndClass("KeyMiniGame", "Frame")
-				or findNilInstanceByNameAndClass("KeyMinigame", "CanvasGroup")
-				or findNilInstanceByNameAndClass("KeyMiniGame", "CanvasGroup")
+			local scannedFrame, scannedLabel = scanBenchPromptObjects()
+			cachedBenchPromptFrame = scannedFrame
+			if scannedLabel then
+				cachedBenchPromptLabel = scannedLabel
+			end
 			return cachedBenchPromptFrame
 		end
 
@@ -729,7 +797,11 @@ function HyakuAsura.init(_context)
 				end
 			end
 
-			cachedBenchPromptLabel = findNilInstanceByNameAndClass("TextLabel", "TextLabel")
+			local scannedFrame, scannedLabel = scanBenchPromptObjects()
+			if scannedFrame then
+				cachedBenchPromptFrame = scannedFrame
+			end
+			cachedBenchPromptLabel = scannedLabel
 			if cachedBenchPromptLabel then
 				return cachedBenchPromptLabel
 			end
