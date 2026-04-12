@@ -710,7 +710,10 @@ function HyakuAsura.init(_context)
 
 			local anchorPart = nil
 			if spotModel:IsA("Model") then
-				anchorPart = spotModel.PrimaryPart or spotModel:FindFirstChildWhichIsA("BasePart", true)
+				anchorPart = spotModel:FindFirstChild("Seat", true)
+					or spotModel:FindFirstChildWhichIsA("Seat", true)
+					or spotModel.PrimaryPart
+					or spotModel:FindFirstChildWhichIsA("BasePart", true)
 			elseif spotModel:IsA("BasePart") then
 				anchorPart = spotModel
 			end
