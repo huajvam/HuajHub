@@ -521,6 +521,68 @@ function HyakuAsura.init(_context)
 			return ok
 		end
 
+		local function getBenchPromptLabel()
+			if type(getnilinstances) ~= "function" then
+				return nil
+			end
+
+			local ok, instances = pcall(function()
+				return getnilinstances()
+			end)
+			if not ok or type(instances) ~= "table" then
+				return nil
+			end
+
+			for _, instance in next, instances do
+				if instance
+					and instance.ClassName == "TextLabel"
+					and type(instance.Text) == "string"
+				then
+					local text = instance.Text:upper():match("^%s*(.-)%s*$") or ""
+					if text == "W" or text == "A" or text == "S" or text == "D" then
+						return instance
+					end
+				end
+			end
+
+			return nil
+		end
+
+		local function getBenchPromptKey()
+			local promptLabel = getBenchPromptLabel()
+			if not promptLabel then
+				return nil
+			end
+
+			local text = promptLabel.Text
+			if type(text) ~= "string" then
+				return nil
+			end
+
+			text = text:upper():match("^%s*(.-)%s*$") or ""
+			if text == "W" or text == "A" or text == "S" or text == "D" then
+				return text
+			end
+
+			return nil
+		end
+
+		local function pressBenchPromptKey(key)
+			local keyCode = Enum.KeyCode[key]
+			if not VirtualInputManager or not keyCode then
+				return false
+			end
+
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+			end)
+			task.wait(0.08)
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+			end)
+			return true
+		end
+
 		local function startAutoBench()
 			autoBenchToken += 1
 			local currentToken = autoBenchToken
@@ -562,36 +624,19 @@ function HyakuAsura.init(_context)
 								benchRemote:FireServer(unpack(startArgs))
 							end)
 							task.wait(0.6)
-
-							local function fireBenchKey(key)
-								local args = {
-									"PressKey",
-									{
-										Key = key,
-									},
-								}
-
-								pcall(function()
-									benchRemote:FireServer(unpack(args))
-								end)
-							end
 							
-							-- WASD Spam Loop
-							local keys = {"W", "A", "S", "D"}
+							-- Prompt-driven WASD loop
 							local benchEndAt = os.clock() + 60
 							while currentToken == autoBenchToken
 								and Toggles.AutoBenchEnabled.Value
 								and os.clock() < benchEndAt
 							do
-								for _, key in ipairs(keys) do
-									if not Toggles.AutoBenchEnabled.Value
-										or currentToken ~= autoBenchToken
-										or os.clock() >= benchEndAt
-									then
-										break
-									end
-									fireBenchKey(key)
-									task.wait(0.18)
+								local promptedKey = getBenchPromptKey()
+								if promptedKey then
+									pressBenchPromptKey(promptedKey)
+									task.wait(0.04)
+								else
+									task.wait(0.05)
 								end
 							end
 						end
