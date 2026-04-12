@@ -6,9 +6,10 @@ local Maid = sharedRequire("@utils/Maid.lua")
 local CharacterUtils = sharedRequire("@utils/CharacterUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
 
-local Players, MarketplaceService, RunService, VirtualInputManager = Services:Get(
+local Players, MarketplaceService, ReplicatedStorage, RunService, VirtualInputManager = Services:Get(
 	"Players",
 	"MarketplaceService",
+	"ReplicatedStorage",
 	"RunService",
 	"VirtualInputManager"
 )
@@ -316,6 +317,16 @@ function HyakuAsura.init(_context)
 		local cachedBenchPromptFrame = nil
 		local lastBenchVisibleKey = nil
 		local lastBenchPromptScanAt = 0
+		local trainingUiRemote = ReplicatedStorage
+			and ReplicatedStorage:FindFirstChild("Remotes")
+			and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi")
+		local activeTrainingPromptRemote = nil
+		local trainingPromptRemoteConnection = nil
+		local trainingUiRemoteConnection = nil
+		local trainingPromptQueue = {}
+		local trainingPromptSequence = 0
+		local lastTrainingPromptKey = nil
+		local lastTrainingPromptAt = 0
 		local rhythmChargeConnection
 		local staminaConnection
 
@@ -841,6 +852,124 @@ function HyakuAsura.init(_context)
 			end)
 		end
 
+		local function clearTrainingPromptQueue()
+			table.clear(trainingPromptQueue)
+			lastBenchVisibleKey = nil
+		end
+
+		local function pruneExpiredTrainingPrompts()
+			local now = os.clock()
+			while #trainingPromptQueue > 0 do
+				local prompt = trainingPromptQueue[1]
+				if prompt and prompt.expiresAt and prompt.expiresAt > now then
+					break
+				end
+				table.remove(trainingPromptQueue, 1)
+			end
+		end
+
+		local function enqueueTrainingPrompt(payload)
+			if type(payload) ~= "table" then
+				return
+			end
+
+			local key = normalizeBenchPromptText(payload.Key)
+			if not key then
+				return
+			end
+
+			local now = os.clock()
+			if lastTrainingPromptKey == key and (now - lastTrainingPromptAt) <= 0.03 then
+				return
+			end
+
+			lastTrainingPromptKey = key
+			lastTrainingPromptAt = now
+			trainingPromptSequence += 1
+			table.insert(trainingPromptQueue, {
+				id = trainingPromptSequence,
+				key = key,
+				expiresAt = now + math.max(tonumber(payload.Duration) or 0.2, 0.05),
+			})
+		end
+
+		local function handleTrainingClientEvent(eventName, payload)
+			if eventName == "MakeKey" then
+				enqueueTrainingPrompt(payload)
+				return
+			end
+
+			if eventName == "ForceClose" or eventName == "HideLeave" then
+				clearTrainingPromptQueue()
+			end
+		end
+
+		local function disconnectTrainingPromptListeners()
+			if trainingPromptRemoteConnection then
+				pcall(function()
+					trainingPromptRemoteConnection:Disconnect()
+				end)
+				trainingPromptRemoteConnection = nil
+			end
+			if trainingUiRemoteConnection then
+				pcall(function()
+					trainingUiRemoteConnection:Disconnect()
+				end)
+				trainingUiRemoteConnection = nil
+			end
+			activeTrainingPromptRemote = nil
+			clearTrainingPromptQueue()
+		end
+
+		local function connectTrainingPromptListeners(spotRemote)
+			if activeTrainingPromptRemote == spotRemote and trainingPromptRemoteConnection then
+				return
+			end
+
+			disconnectTrainingPromptListeners()
+			activeTrainingPromptRemote = spotRemote
+
+			if spotRemote and spotRemote.OnClientEvent then
+				trainingPromptRemoteConnection = spotRemote.OnClientEvent:Connect(function(eventName, payload)
+					handleTrainingClientEvent(eventName, payload)
+				end)
+			end
+
+			if trainingUiRemote and trainingUiRemote.OnClientEvent then
+				trainingUiRemoteConnection = trainingUiRemote.OnClientEvent:Connect(function(eventName, payload)
+					handleTrainingClientEvent(eventName, payload)
+				end)
+			end
+		end
+
+		local function getNextTrainingPrompt()
+			pruneExpiredTrainingPrompts()
+			local prompt = trainingPromptQueue[1]
+			if not prompt then
+				return nil
+			end
+			return prompt
+		end
+
+		local function consumeTrainingPrompt(promptId)
+			if #trainingPromptQueue == 0 then
+				return
+			end
+
+			local prompt = trainingPromptQueue[1]
+			if prompt and prompt.id == promptId then
+				table.remove(trainingPromptQueue, 1)
+				return
+			end
+
+			for index, entry in ipairs(trainingPromptQueue) do
+				if entry and entry.id == promptId then
+					table.remove(trainingPromptQueue, index)
+					return
+				end
+			end
+		end
+
 		local function getAutoTrainToken(toggleKey)
 			if toggleKey == "AutoBenchEnabled" then
 				return autoBenchToken
@@ -867,6 +996,9 @@ function HyakuAsura.init(_context)
 						local spotRemote = getTrainingSpotRemote(spotFolder)
 						
 						if spotModel and spotRemote then
+							connectTrainingPromptListeners(spotRemote)
+							clearTrainingPromptQueue()
+
 							-- Stealth Teleport with micro-wait to settle physics
 							teleportCharacterToTrainingSpot(character, spotModel)
 							task.wait(0.35)
@@ -896,15 +1028,12 @@ function HyakuAsura.init(_context)
 								and Toggles[toggleKey].Value
 								and os.clock() < trainingEndAt
 							do
-								local promptedKey = getBenchPromptKey()
-								if promptedKey then
-									if promptedKey ~= lastBenchVisibleKey then
-										lastBenchVisibleKey = promptedKey
-										submitTrainingPromptKey(spotRemote, promptedKey)
-										task.wait(0.01)
-									else
-										task.wait(0.01)
-									end
+								local prompt = getNextTrainingPrompt()
+								if prompt then
+									lastBenchVisibleKey = prompt.key
+									submitTrainingPromptKey(spotRemote, prompt.key)
+									consumeTrainingPrompt(prompt.id)
+									task.wait(0.005)
 								else
 									lastBenchVisibleKey = nil
 									task.wait(0.01)
@@ -913,6 +1042,10 @@ function HyakuAsura.init(_context)
 						end
 					end
 					task.wait(1)
+				end
+
+				if not ((Toggles.AutoBenchEnabled and Toggles.AutoBenchEnabled.Value) or (Toggles.AutoPullUpEnabled and Toggles.AutoPullUpEnabled.Value)) then
+					disconnectTrainingPromptListeners()
 				end
 			end)
 		end
@@ -976,6 +1109,9 @@ function HyakuAsura.init(_context)
 				startAutoBench()
 			else
 				autoBenchToken += 1
+				if not (Toggles and Toggles.AutoPullUpEnabled and Toggles.AutoPullUpEnabled.Value) then
+					disconnectTrainingPromptListeners()
+				end
 			end
 		end)
 
@@ -990,12 +1126,16 @@ function HyakuAsura.init(_context)
 				startAutoPullUp()
 			else
 				autoPullUpToken += 1
+				if not (Toggles and Toggles.AutoBenchEnabled and Toggles.AutoBenchEnabled.Value) then
+					disconnectTrainingPromptListeners()
+				end
 			end
 		end)
 
 		registerLibraryUnloadCallback(function()
 			stopInfiniteRhythmLoop()
 			stopInfiniteStaminaHook()
+			disconnectTrainingPromptListeners()
 			setSpeedBoostEnabled(false)
 			autoBenchToken += 1
 			autoPullUpToken += 1
