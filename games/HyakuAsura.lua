@@ -392,7 +392,7 @@ function HyakuAsura.init(_context)
 			BackOffset = 0,
 			UseBagAndPlayerDepth = true,
 			ManualDistance = 3.5,
-			YawOffsetDegrees = 0,
+			YawOffsetDegrees = 90,
 		}
 
 		local function getRhythmInputRemote()
