@@ -388,11 +388,11 @@ function HyakuAsura.init(_context)
 			Axis = "LookVector",
 			DistanceOffset = 0.35,
 			VerticalOffset = 0.15,
-			SideOffset = 5,
-			BackOffset = 5,
+			SideOffset = 0,
+			BackOffset = 0,
 			UseBagAndPlayerDepth = true,
 			ManualDistance = 3.5,
-			YawOffsetDegrees = 90,
+			YawOffsetDegrees = 0,
 		}
 
 		local function getRhythmInputRemote()
@@ -1861,6 +1861,8 @@ function HyakuAsura.init(_context)
 								bagRemote:FireServer(getAutoBagRemoteMode())
 							end)
 							task.wait(0.2)
+							teleportCharacterToPunchingBag(character, bagModel)
+							task.wait(0.1)
 
 							while currentToken == autoBagsToken and Toggles.AutoBagsEnabled and Toggles.AutoBagsEnabled.Value do
 								if isPunchingBagTrainingFinished(bagModel) then
