@@ -14,6 +14,8 @@ local Players, MarketplaceService, ReplicatedStorage, RunService, UserInputServi
 	"UserInputService",
 	"VirtualInputManager"
 )
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
 
 local Library = sharedRequire("ui/Linoria/Library.lua")
 local ThemeManager = sharedRequire("ui/Linoria/addons/ThemeManager.lua")
@@ -305,6 +307,7 @@ function HyakuAsura.init(_context)
 	local Tabs = {
 		Main = Window:AddTab(gameTabName),
 		ESP = Window:AddTab("ESP"),
+		Misc = Window:AddTab("Misc"),
 		Stats = Window:AddTab("Stats"),
 		Settings = Window:AddTab("Settings"),
 	}
@@ -322,6 +325,7 @@ function HyakuAsura.init(_context)
 		local autoBagsToken = 0
 		local autoSleepToken = 0
 		local autoEatToken = 0
+		local activeAutoBagModel = nil
 		local autoSleepInProgress = false
 		local autoEatInProgress = false
 		local cachedBenchPromptFrame = nil
@@ -388,11 +392,11 @@ function HyakuAsura.init(_context)
 			Axis = "LookVector",
 			DistanceOffset = 0.35,
 			VerticalOffset = 0.15,
-			SideOffset = 5,
-			BackOffset = 5,
+			SideOffset = 0,
+			BackOffset = 0,
 			UseBagAndPlayerDepth = true,
 			ManualDistance = 3.5,
-			YawOffsetDegrees = 90,
+			YawOffsetDegrees = 0,
 		}
 
 		local function getRhythmInputRemote()
@@ -1537,12 +1541,19 @@ function HyakuAsura.init(_context)
 			end
 		end
 
+		local function isAutoTrainLoopActive(toggleKey, currentToken)
+			return currentToken == getAutoTrainToken(toggleKey)
+				and Toggles
+				and Toggles[toggleKey]
+				and Toggles[toggleKey].Value == true
+		end
+
 		local function startTrainingSpotAutomation(toggleKey, spotName, options)
 			local currentToken = getAutoTrainToken(toggleKey)
 			options = options or {}
 			
 			task.spawn(function()
-				while currentToken == getAutoTrainToken(toggleKey) and Toggles[toggleKey] and Toggles[toggleKey].Value do
+				while isAutoTrainLoopActive(toggleKey, currentToken) do
 					if isRecoveryInProgress() then
 						task.wait(0.2)
 						continue
@@ -1556,16 +1567,26 @@ function HyakuAsura.init(_context)
 						local spotRemote = getTrainingSpotRemote(spotFolder)
 						
 						if spotModel and spotRemote then
+							if not isAutoTrainLoopActive(toggleKey, currentToken) then
+								break
+							end
+
 							connectTrainingPromptListeners(spotRemote)
 							clearTrainingPromptQueue()
 
 							-- Stealth Teleport with micro-wait to settle physics
 							teleportCharacterToTrainingSpot(character, spotModel)
 							task.wait(0.35)
+							if not isAutoTrainLoopActive(toggleKey, currentToken) then
+								break
+							end
 
 							if options.HoldEBeforeStart then
 								holdInteractionKey(options.HoldEDuration or 0.3)
 								task.wait(0.1)
+								if not isAutoTrainLoopActive(toggleKey, currentToken) then
+									break
+								end
 							end
 							
 							-- Start Training Remote
@@ -1580,14 +1601,14 @@ function HyakuAsura.init(_context)
 								spotRemote:FireServer(unpack(startArgs))
 							end)
 							task.wait(0.6)
+							if not isAutoTrainLoopActive(toggleKey, currentToken) then
+								break
+							end
 							
 							-- Prompt-driven WASD loop
 							lastBenchVisibleKey = nil
 							local trainingEndAt = os.clock() + (options.Duration or 60)
-							while currentToken == getAutoTrainToken(toggleKey)
-								and Toggles[toggleKey].Value
-								and os.clock() < trainingEndAt
-							do
+							while isAutoTrainLoopActive(toggleKey, currentToken) and os.clock() < trainingEndAt do
 								if isRecoveryInProgress() then
 									break
 								end
@@ -1690,6 +1711,22 @@ function HyakuAsura.init(_context)
 			return textValue ~= LocalPlayer.Name
 		end
 
+		local function isPunchingBagReservedByLocalPlayer(bagModel)
+			local reserved = getPunchingBagReservedValue(bagModel)
+			if not reserved then
+				return false
+			end
+
+			if reserved:IsA("ObjectValue") then
+				local value = reserved.Value
+				return value == LocalPlayer or value == (LocalPlayer and LocalPlayer.Character)
+			end
+
+			local textValue = tostring(reserved.Value or "")
+			textValue = textValue:match("^%s*(.-)%s*$") or ""
+			return textValue ~= "" and textValue == LocalPlayer.Name
+		end
+
 		local function isPunchingBagTrainingFinished(bagModel)
 			local reserved = getPunchingBagReservedValue(bagModel)
 			if not reserved then
@@ -1752,11 +1789,11 @@ function HyakuAsura.init(_context)
 			return bagModel:FindFirstChildWhichIsA("BasePart", true)
 		end
 
-		local function teleportCharacterToPunchingBag(character, bagModel)
+		local function getPunchingBagTargetCFrame(character, bagModel)
 			local bagPart = getPunchingBagPart(bagModel)
 			local root = character and getCharacterRoot(character)
 			if not bagPart or not root then
-				return false
+				return nil
 			end
 
 			local axisName = autoBagPlacementConfig.Axis or "LookVector"
@@ -1784,7 +1821,32 @@ function HyakuAsura.init(_context)
 			local delta = bagPart.Position - targetPosition
 			local baseYaw = math.atan2(-delta.X, -delta.Z)
 			local yawOffsetRadians = math.rad(tonumber(autoBagPlacementConfig.YawOffsetDegrees) or 0)
-			local targetCFrame = CFrame.new(targetPosition) * CFrame.Angles(0, baseYaw + yawOffsetRadians, 0)
+			return CFrame.new(targetPosition) * CFrame.Angles(0, baseYaw + yawOffsetRadians, 0)
+		end
+
+		local function isCharacterAlignedToPunchingBag(character, bagModel)
+			local root = character and getCharacterRoot(character)
+			local targetCFrame = getPunchingBagTargetCFrame(character, bagModel)
+			if not root or not targetCFrame then
+				return false
+			end
+
+			local positionDelta = (root.Position - targetCFrame.Position).Magnitude
+			if positionDelta > 1.25 then
+				return false
+			end
+
+			local lookDot = root.CFrame.LookVector:Dot(targetCFrame.LookVector)
+			return lookDot >= 0.96
+		end
+
+		local function teleportCharacterToPunchingBag(character, bagModel)
+			local root = character and getCharacterRoot(character)
+			local targetCFrame = getPunchingBagTargetCFrame(character, bagModel)
+			if not root or not targetCFrame then
+				return false
+			end
+
 			local success = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
@@ -1827,6 +1889,19 @@ function HyakuAsura.init(_context)
 			return closestBag
 		end
 
+		local function getAutoBagsTargetBag()
+			if activeAutoBagModel
+				and activeAutoBagModel.Parent
+				and not isPunchingBagTrainingFinished(activeAutoBagModel)
+				and isPunchingBagReservedByLocalPlayer(activeAutoBagModel)
+			then
+				return activeAutoBagModel
+			end
+
+			activeAutoBagModel = getClosestAvailablePunchingBag()
+			return activeAutoBagModel
+		end
+
 		local function getAutoBagRemoteMode()
 			local selectedMode = getOptionValue("AutoBagsMode", "Strength")
 			if selectedMode == "Attack Speed" then
@@ -1841,32 +1916,52 @@ function HyakuAsura.init(_context)
 			local currentToken = autoBagsToken
 
 			task.spawn(function()
-				while currentToken == autoBagsToken and Toggles.AutoBagsEnabled and Toggles.AutoBagsEnabled.Value do
+				while isAutoTrainLoopActive("AutoBagsEnabled", currentToken) do
 					if isRecoveryInProgress() then
 						task.wait(0.2)
 						continue
 					end
 
 					local character = LocalPlayer and LocalPlayer.Character
-					local bagModel = getClosestAvailablePunchingBag()
+					local bagModel = getAutoBagsTargetBag()
 					local bagRemote = bagModel and getPunchingBagRemote(bagModel)
 					if character and bagModel and bagRemote then
 						disconnectTrainingPromptListeners()
 
-						if teleportCharacterToPunchingBag(character, bagModel) then
+						if not isCharacterAlignedToPunchingBag(character, bagModel) then
+							teleportCharacterToPunchingBag(character, bagModel)
 							task.wait(0.2)
+						end
+
+						if isAutoTrainLoopActive("AutoBagsEnabled", currentToken) then
+							if not isAutoTrainLoopActive("AutoBagsEnabled", currentToken) then
+								break
+							end
 							holdInteractionKey(0.3)
 							task.wait(0.15)
+							if not isAutoTrainLoopActive("AutoBagsEnabled", currentToken) then
+								break
+							end
 							pcall(function()
 								bagRemote:FireServer(getAutoBagRemoteMode())
 							end)
 							task.wait(0.2)
-							teleportCharacterToPunchingBag(character, bagModel)
-							task.wait(0.1)
+							if not isCharacterAlignedToPunchingBag(character, bagModel) then
+								teleportCharacterToPunchingBag(character, bagModel)
+								task.wait(0.1)
+							end
 
-							while currentToken == autoBagsToken and Toggles.AutoBagsEnabled and Toggles.AutoBagsEnabled.Value do
+							while isAutoTrainLoopActive("AutoBagsEnabled", currentToken) do
 								if isPunchingBagTrainingFinished(bagModel) then
+									if activeAutoBagModel == bagModel then
+										activeAutoBagModel = nil
+									end
 									break
+								end
+
+								if not isCharacterAlignedToPunchingBag(character, bagModel) then
+									teleportCharacterToPunchingBag(character, bagModel)
+									task.wait(0.08)
 								end
 
 								sendLeftClickVirtualInput()
@@ -1877,6 +1972,8 @@ function HyakuAsura.init(_context)
 
 					task.wait(0.6)
 				end
+
+				activeAutoBagModel = nil
 			end)
 		end
 
@@ -2064,6 +2161,7 @@ function HyakuAsura.init(_context)
 				startAutoBench()
 			else
 				autoBenchToken += 1
+				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoBenchEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2079,6 +2177,7 @@ function HyakuAsura.init(_context)
 				startAutoPullUp()
 			else
 				autoPullUpToken += 1
+				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoPullUpEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2094,6 +2193,7 @@ function HyakuAsura.init(_context)
 				startAutoSquatMachine()
 			else
 				autoSquatMachineToken += 1
+				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoSquatMachineEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2109,6 +2209,7 @@ function HyakuAsura.init(_context)
 				startAutoTreadmill()
 			else
 				autoTreadmillToken += 1
+				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoTreadmillEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2124,6 +2225,7 @@ function HyakuAsura.init(_context)
 				startAutoBike()
 			else
 				autoBikeToken += 1
+				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoBikeEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2153,6 +2255,7 @@ function HyakuAsura.init(_context)
 				startAutoBags()
 			else
 				autoBagsToken += 1
+				activeAutoBagModel = nil
 				if not isAnyOtherAutoTrainEnabled("AutoBagsEnabled") then
 					disconnectTrainingPromptListeners()
 				end
@@ -2234,8 +2337,10 @@ function HyakuAsura.init(_context)
 			autoSquatMachineToken += 1
 			autoTreadmillToken += 1
 			autoBikeToken += 1
+			autoBagsToken += 1
 			autoSleepToken += 1
 			autoEatToken += 1
+			activeAutoBagModel = nil
 			autoSleepInProgress = false
 			autoEatInProgress = false
 			if Toggles and Toggles.InfiniteRhythmEnabled then
@@ -2274,6 +2379,90 @@ function HyakuAsura.init(_context)
 			if Toggles and Toggles.AutoEatEnabled then
 				pcall(function() Toggles.AutoEatEnabled:SetValue(false) end)
 			end
+		end)
+	end
+
+	do
+		local miscServerGroup = Tabs.Misc:AddLeftGroupbox("Server")
+
+		local function decodeServerListResponse(body)
+			if type(body) ~= "string" or body == "" then
+				return nil
+			end
+
+			local ok, decoded = pcall(function()
+				return HttpService:JSONDecode(body)
+			end)
+
+			if ok and type(decoded) == "table" then
+				return decoded
+			end
+
+			return nil
+		end
+
+		local function fetchPublicServerPage(cursor)
+			local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+			if type(cursor) == "string" and cursor ~= "" then
+				url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+			end
+
+			local ok, body = pcall(function()
+				return game:HttpGet(url)
+			end)
+
+			if not ok then
+				return nil
+			end
+
+			return decodeServerListResponse(body)
+		end
+
+		local function getLowestPopulationServerId()
+			local bestServerId = nil
+			local bestPlayerCount = math.huge
+			local cursor = nil
+			local pagesChecked = 0
+
+			while pagesChecked < 5 do
+				local page = fetchPublicServerPage(cursor)
+				if type(page) ~= "table" or type(page.data) ~= "table" then
+					break
+				end
+
+				for _, server in ipairs(page.data) do
+					local serverId = server.id
+					local playing = tonumber(server.playing) or math.huge
+					local maxPlayers = tonumber(server.maxPlayers) or 0
+					if serverId
+						and serverId ~= game.JobId
+						and playing < maxPlayers
+						and playing < bestPlayerCount
+					then
+						bestPlayerCount = playing
+						bestServerId = serverId
+					end
+				end
+
+				cursor = page.nextPageCursor
+				pagesChecked += 1
+				if type(cursor) ~= "string" or cursor == "" then
+					break
+				end
+			end
+
+			return bestServerId
+		end
+
+		miscServerGroup:AddButton("Lowest Population Server", function()
+			local targetServerId = getLowestPopulationServerId()
+			if not targetServerId then
+				return
+			end
+
+			pcall(function()
+				TeleportService:TeleportToPlaceInstance(game.PlaceId, targetServerId, LocalPlayer)
+			end)
 		end)
 	end
 
