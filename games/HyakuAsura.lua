@@ -1821,8 +1821,6 @@ function HyakuAsura.init(_context)
 								bagRemote:FireServer(getAutoBagRemoteMode())
 							end)
 							task.wait(0.2)
-							tapCombatKey()
-							task.wait(0.15)
 
 							while currentToken == autoBagsToken and Toggles.AutoBagsEnabled and Toggles.AutoBagsEnabled.Value do
 								if isPunchingBagTrainingFinished(bagModel) then
