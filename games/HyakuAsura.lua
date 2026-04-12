@@ -317,9 +317,32 @@ function HyakuAsura.init(_context)
 		local autoSquatMachineToken = 0
 		local autoTreadmillToken = 0
 		local autoBikeToken = 0
+		local autoSleepToken = 0
+		local autoSleepInProgress = false
 		local cachedBenchPromptFrame = nil
 		local lastBenchVisibleKey = nil
 		local lastBenchPromptScanAt = 0
+		local moderatorDetectorConnection = nil
+		local moderatorUserIds = {
+			[1915395703] = 999,
+			[4488906362] = 999,
+			[1464780145] = 999,
+			[1921021351] = 999,
+			[452637989] = 999,
+			[9869623665] = 999,
+			[8168050148] = 1,
+			[1042857413] = 1,
+			[5413881219] = 1,
+			[203443515] = 1,
+			[377144428] = 1,
+			[108493198] = 1,
+			[527936177] = 1,
+			[1149150663] = 1,
+			[992099552] = 1,
+			[892331036] = 1,
+			[4081878593] = 200,
+			[1015246692] = 200,
+		}
 		local trainingUiRemote = ReplicatedStorage
 			and ReplicatedStorage:FindFirstChild("Remotes")
 			and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi")
@@ -367,6 +390,16 @@ function HyakuAsura.init(_context)
 			local stamina = statsFolder and statsFolder:FindFirstChild("Stamina")
 			if stamina and stamina:IsA("NumberValue") then
 				return stamina
+			end
+
+			return nil
+		end
+
+		local function getBodyFatiqueValue()
+			local statsFolder = getLocalEntityStatsFolder()
+			local bodyFatique = statsFolder and (statsFolder:FindFirstChild("BodyFatique") or statsFolder:FindFirstChild("BodyFatigue"))
+			if bodyFatique and bodyFatique:IsA("NumberValue") then
+				return bodyFatique
 			end
 
 			return nil
@@ -451,6 +484,55 @@ function HyakuAsura.init(_context)
 			return true
 		end
 
+		local function stopModeratorDetector()
+			if moderatorDetectorConnection then
+				pcall(function()
+					moderatorDetectorConnection:Disconnect()
+				end)
+				moderatorDetectorConnection = nil
+			end
+		end
+
+		local function kickForModerator()
+			if LocalPlayer and type(LocalPlayer.Kick) == "function" then
+				pcall(function()
+					LocalPlayer:Kick("mod joined")
+				end)
+			end
+		end
+
+		local function isModeratorPlayer(player)
+			if not player or player == LocalPlayer then
+				return false
+			end
+
+			local userId = tonumber(player.UserId)
+			return userId ~= nil and moderatorUserIds[userId] ~= nil
+		end
+
+		local function checkPlayerForModerator(player)
+			if isModeratorPlayer(player) then
+				kickForModerator()
+				return true
+			end
+
+			return false
+		end
+
+		local function startModeratorDetector()
+			stopModeratorDetector()
+
+			for _, player in ipairs(Players:GetPlayers()) do
+				if checkPlayerForModerator(player) then
+					return
+				end
+			end
+
+			moderatorDetectorConnection = Players.PlayerAdded:Connect(function(player)
+				checkPlayerForModerator(player)
+			end)
+		end
+
 		local function startInfiniteRhythmChargeHook()
 			stopInfiniteRhythmChargeHook()
 			local rhythmCharge = getRhythmChargeValue()
@@ -529,6 +611,46 @@ function HyakuAsura.init(_context)
 
 			for _, folder in ipairs(trainingSpots:GetChildren()) do
 				if folder.Name == spotName then
+					local model = folder:FindFirstChildOfClass("Model") or folder:FindFirstChildWhichIsA("Model", true)
+					local part = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+					if part then
+						local d = (root.Position - part.Position).Magnitude
+						if d < dist then
+							dist = d
+							closest = folder
+						end
+					end
+				end
+			end
+
+			return closest
+		end
+
+		local function getClosestTrainingSpotByNames(spotNames)
+			if type(spotNames) ~= "table" then
+				return nil
+			end
+
+			local trainingSpots = workspace:FindFirstChild("TrainingSpots")
+			if not trainingSpots then
+				return nil
+			end
+
+			local allowedNames = {}
+			for _, name in ipairs(spotNames) do
+				if type(name) == "string" and name ~= "" then
+					allowedNames[name] = true
+				end
+			end
+
+			local closest, dist = nil, math.huge
+			local root = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+			if not root then
+				return nil
+			end
+
+			for _, folder in ipairs(trainingSpots:GetChildren()) do
+				if allowedNames[folder.Name] then
 					local model = folder:FindFirstChildOfClass("Model") or folder:FindFirstChildWhichIsA("Model", true)
 					local part = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
 					if part then
@@ -994,6 +1116,10 @@ function HyakuAsura.init(_context)
 				return autoBikeToken
 			end
 
+			if toggleKey == "AutoSleepEnabled" then
+				return autoSleepToken
+			end
+
 			return -1
 		end
 
@@ -1030,6 +1156,11 @@ function HyakuAsura.init(_context)
 			
 			task.spawn(function()
 				while currentToken == getAutoTrainToken(toggleKey) and Toggles[toggleKey] and Toggles[toggleKey].Value do
+					if autoSleepInProgress then
+						task.wait(0.2)
+						continue
+					end
+
 					local spotFolder = getClosestTrainingSpot(spotName)
 					local character = LocalPlayer and LocalPlayer.Character
 					
@@ -1070,6 +1201,10 @@ function HyakuAsura.init(_context)
 								and Toggles[toggleKey].Value
 								and os.clock() < trainingEndAt
 							do
+								if autoSleepInProgress then
+									break
+								end
+
 								local prompt = getNextTrainingPrompt()
 								if prompt then
 									lastBenchVisibleKey = prompt.key
@@ -1137,6 +1272,56 @@ function HyakuAsura.init(_context)
 			})
 		end
 
+		local function startAutoSleep()
+			autoSleepToken += 1
+			local currentToken = autoSleepToken
+
+			task.spawn(function()
+				while currentToken == autoSleepToken and Toggles.AutoSleepEnabled and Toggles.AutoSleepEnabled.Value do
+					if not autoSleepInProgress then
+						local bodyFatique = getBodyFatiqueValue()
+						local threshold = getOptionValue("AutoSleepThreshold", 80)
+						local currentFatique = bodyFatique and tonumber(bodyFatique.Value)
+
+						if currentFatique and currentFatique >= threshold then
+							local bedFolder = getClosestTrainingSpotByNames({ "HospitalBed", "Hospitalbed" })
+							local character = LocalPlayer and LocalPlayer.Character
+							local bedModel = bedFolder and getTrainingSpotTeleportModel(bedFolder)
+							local bedRemote = bedFolder and getTrainingSpotRemote(bedFolder)
+
+							if character and bedModel and bedRemote then
+								autoSleepInProgress = true
+								disconnectTrainingPromptListeners()
+								teleportCharacterToTrainingSpot(character, bedModel)
+								task.wait(0.35)
+								holdInteractionKey(0.3)
+								task.wait(0.2)
+
+								while currentToken == autoSleepToken and Toggles.AutoSleepEnabled.Value do
+									local fatigueValue = getBodyFatiqueValue()
+									local fatigueNumber = fatigueValue and tonumber(fatigueValue.Value)
+									if fatigueNumber ~= nil and fatigueNumber <= 0 then
+										pcall(function()
+											bedRemote:FireServer("Leave")
+										end)
+										task.wait(0.3)
+										break
+									end
+									task.wait(0.2)
+								end
+
+								autoSleepInProgress = false
+							end
+						end
+					end
+
+					task.wait(0.2)
+				end
+
+				autoSleepInProgress = false
+			end)
+		end
+
 		localCheatsGroup:AddToggle("InfiniteRhythmEnabled", {
 			Text = "Infinite Rhythm",
 			Default = false,
@@ -1165,6 +1350,17 @@ function HyakuAsura.init(_context)
 			Default = false,
 		}):OnChanged(function(enabled)
 			setSpeedBoostEnabled(enabled)
+		end)
+
+		localCheatsGroup:AddToggle("ModeratorDetectorEnabled", {
+			Text = "Mod Detector",
+			Default = false,
+		}):OnChanged(function(enabled)
+			if enabled then
+				startModeratorDetector()
+			else
+				stopModeratorDetector()
+			end
 		end)
 
 		autoTrainGroup:AddToggle("AutoBenchEnabled", {
@@ -1242,16 +1438,39 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
+		autoTrainGroup:AddToggle("AutoSleepEnabled", {
+			Text = "Auto Sleep",
+			Default = false,
+		}):OnChanged(function(enabled)
+			if enabled then
+				startAutoSleep()
+			else
+				autoSleepToken += 1
+				autoSleepInProgress = false
+			end
+		end)
+
+		autoTrainGroup:AddSlider("AutoSleepThreshold", {
+			Text = "Sleep Fatigue",
+			Default = 80,
+			Min = 0,
+			Max = 100,
+			Rounding = 0,
+		})
+
 		registerLibraryUnloadCallback(function()
 			stopInfiniteRhythmLoop()
 			stopInfiniteStaminaHook()
 			disconnectTrainingPromptListeners()
+			stopModeratorDetector()
 			setSpeedBoostEnabled(false)
 			autoBenchToken += 1
 			autoPullUpToken += 1
 			autoSquatMachineToken += 1
 			autoTreadmillToken += 1
 			autoBikeToken += 1
+			autoSleepToken += 1
+			autoSleepInProgress = false
 			if Toggles and Toggles.InfiniteRhythmEnabled then
 				pcall(function() Toggles.InfiniteRhythmEnabled:SetValue(false) end)
 			end
@@ -1260,6 +1479,9 @@ function HyakuAsura.init(_context)
 			end
 			if Toggles and Toggles.SpeedBoostEnabled then
 				pcall(function() Toggles.SpeedBoostEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.ModeratorDetectorEnabled then
+				pcall(function() Toggles.ModeratorDetectorEnabled:SetValue(false) end)
 			end
 			if Toggles and Toggles.AutoBenchEnabled then
 				pcall(function() Toggles.AutoBenchEnabled:SetValue(false) end)
@@ -1275,6 +1497,9 @@ function HyakuAsura.init(_context)
 			end
 			if Toggles and Toggles.AutoBikeEnabled then
 				pcall(function() Toggles.AutoBikeEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.AutoSleepEnabled then
+				pcall(function() Toggles.AutoSleepEnabled:SetValue(false) end)
 			end
 		end)
 	end
