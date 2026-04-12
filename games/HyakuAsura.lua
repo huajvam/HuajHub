@@ -6,11 +6,12 @@ local Maid = sharedRequire("@utils/Maid.lua")
 local CharacterUtils = sharedRequire("@utils/CharacterUtils.lua")
 local EntityESP = sharedRequire("classes/EntityESP.lua")
 
-local Players, MarketplaceService, ReplicatedStorage, RunService, VirtualInputManager = Services:Get(
+local Players, MarketplaceService, ReplicatedStorage, RunService, UserInputService, VirtualInputManager = Services:Get(
 	"Players",
 	"MarketplaceService",
 	"ReplicatedStorage",
 	"RunService",
+	"UserInputService",
 	"VirtualInputManager"
 )
 
@@ -311,6 +312,7 @@ function HyakuAsura.init(_context)
 	do
 		local localCheatsGroup = Tabs.Main:AddLeftGroupbox("Local Cheats")
 		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
+		local autoEatGroup = Tabs.Main:AddRightGroupbox("Auto Eat")
 		local infiniteRhythmLoopToken = 0
 		local autoBenchToken = 0
 		local autoPullUpToken = 0
@@ -318,7 +320,9 @@ function HyakuAsura.init(_context)
 		local autoTreadmillToken = 0
 		local autoBikeToken = 0
 		local autoSleepToken = 0
+		local autoEatToken = 0
 		local autoSleepInProgress = false
+		local autoEatInProgress = false
 		local cachedBenchPromptFrame = nil
 		local lastBenchVisibleKey = nil
 		local lastBenchPromptScanAt = 0
@@ -355,6 +359,16 @@ function HyakuAsura.init(_context)
 		local lastTrainingPromptAt = 0
 		local rhythmChargeConnection
 		local staminaConnection
+		local autoEatFoodNames = {
+			"Pizza",
+			"Kebab",
+			"Hotdog",
+			"Taco",
+			"Ramen",
+			"Onigiri",
+			"Fries",
+			"Burger",
+		}
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -403,6 +417,38 @@ function HyakuAsura.init(_context)
 			end
 
 			return nil
+		end
+
+		local function getHungerValue()
+			local statsFolder = getLocalEntityStatsFolder()
+			local hunger = statsFolder and statsFolder:FindFirstChild("Hunger")
+			if hunger and hunger:IsA("NumberValue") then
+				return hunger
+			end
+
+			return nil
+		end
+
+		local function getTrainingMachineValue()
+			local statsFolder = getLocalEntityStatsFolder()
+			local trainingMachine = statsFolder and statsFolder:FindFirstChild("TrainingMachine")
+			if trainingMachine and trainingMachine:IsA("ObjectValue") then
+				return trainingMachine
+			end
+
+			return nil
+		end
+
+		local function getCurrentTrainingMachineRemote()
+			local trainingMachineValue = getTrainingMachineValue()
+			local machine = trainingMachineValue and trainingMachineValue.Value
+			local radio = machine and machine:FindFirstChild("Radio")
+			local remote = radio and radio:FindFirstChild("Remote")
+			if remote and remote:IsA("RemoteEvent") then
+				return remote
+			end
+
+			return activeTrainingPromptRemote
 		end
 
 		local function getSpeedBoostValue()
@@ -999,6 +1045,96 @@ function HyakuAsura.init(_context)
 			end)
 		end
 
+		local function isRecoveryInProgress()
+			return autoSleepInProgress or autoEatInProgress
+		end
+
+		local function leaveCurrentTrainingMachine()
+			local trainingRemote = getCurrentTrainingMachineRemote()
+			if trainingRemote then
+				pcall(function()
+					trainingRemote:FireServer("Leave")
+				end)
+				return true
+			end
+
+			return false
+		end
+
+		local function getBackpack()
+			return LocalPlayer and LocalPlayer:FindFirstChildOfClass("Backpack")
+		end
+
+		local function getSelectedFoodNames()
+			local selectedFoods = {}
+			local dropdown = Options and Options.AutoEatFoods
+			if dropdown and type(dropdown.GetActiveValues) == "function" then
+				for _, foodName in ipairs(dropdown:GetActiveValues()) do
+					if type(foodName) == "string" then
+						table.insert(selectedFoods, foodName)
+					end
+				end
+			end
+
+			return selectedFoods
+		end
+
+		local function getFoodToolByName(foodName)
+			if type(foodName) ~= "string" or foodName == "" then
+				return nil
+			end
+
+			local backpack = getBackpack()
+			local character = LocalPlayer and LocalPlayer.Character
+			local tool = (backpack and backpack:FindFirstChild(foodName)) or (character and character:FindFirstChild(foodName))
+			if tool and tool:IsA("Tool") then
+				return tool
+			end
+
+			return nil
+		end
+
+		local function equipFoodTool(tool)
+			if not tool or not tool:IsA("Tool") then
+				return false
+			end
+
+			local character = LocalPlayer and LocalPlayer.Character
+			local humanoid = getCharacterHumanoid(character)
+			if not character then
+				return false
+			end
+
+			if humanoid then
+				pcall(function()
+					humanoid:EquipTool(tool)
+				end)
+			end
+
+			if tool.Parent ~= character then
+				pcall(function()
+					tool.Parent = character
+				end)
+			end
+
+			return tool.Parent == character
+		end
+
+		local function sendLeftClickVirtualInput()
+			if not VirtualInputManager or not UserInputService then
+				return false
+			end
+
+			local mousePosition = UserInputService:GetMouseLocation()
+			local success = pcall(function()
+				VirtualInputManager:SendMouseButtonEvent(mousePosition.X, mousePosition.Y, 0, true, game, 0)
+				task.wait(0.08)
+				VirtualInputManager:SendMouseButtonEvent(mousePosition.X, mousePosition.Y, 0, false, game, 0)
+			end)
+
+			return success
+		end
+
 		local function clearTrainingPromptQueue()
 			table.clear(trainingPromptQueue)
 			lastBenchVisibleKey = nil
@@ -1178,7 +1314,7 @@ function HyakuAsura.init(_context)
 			
 			task.spawn(function()
 				while currentToken == getAutoTrainToken(toggleKey) and Toggles[toggleKey] and Toggles[toggleKey].Value do
-					if autoSleepInProgress then
+					if isRecoveryInProgress() then
 						task.wait(0.2)
 						continue
 					end
@@ -1223,7 +1359,7 @@ function HyakuAsura.init(_context)
 								and Toggles[toggleKey].Value
 								and os.clock() < trainingEndAt
 							do
-								if autoSleepInProgress then
+								if isRecoveryInProgress() then
 									break
 								end
 
@@ -1300,7 +1436,7 @@ function HyakuAsura.init(_context)
 
 			task.spawn(function()
 				while currentToken == autoSleepToken and Toggles.AutoSleepEnabled and Toggles.AutoSleepEnabled.Value do
-					if not autoSleepInProgress then
+					if not autoSleepInProgress and not autoEatInProgress then
 						local bodyFatique = getBodyFatiqueValue()
 						local threshold = getOptionValue("AutoSleepThreshold", 80)
 						local currentFatique = bodyFatique and tonumber(bodyFatique.Value)
@@ -1313,10 +1449,7 @@ function HyakuAsura.init(_context)
 
 							if character and bedModel and bedRemote then
 								autoSleepInProgress = true
-								if activeTrainingPromptRemote then
-									pcall(function()
-										activeTrainingPromptRemote:FireServer("Leave")
-									end)
+								if leaveCurrentTrainingMachine() then
 									task.wait(0.2)
 								end
 								disconnectTrainingPromptListeners()
@@ -1347,6 +1480,74 @@ function HyakuAsura.init(_context)
 				end
 
 				autoSleepInProgress = false
+			end)
+		end
+
+		local function startAutoEat()
+			autoEatToken += 1
+			local currentToken = autoEatToken
+
+			task.spawn(function()
+				while currentToken == autoEatToken and Toggles.AutoEatEnabled and Toggles.AutoEatEnabled.Value do
+					if not autoEatInProgress and not autoSleepInProgress then
+						local hungerValue = getHungerValue()
+						local threshold = getOptionValue("AutoEatThreshold", 60)
+						local currentHunger = hungerValue and tonumber(hungerValue.Value)
+
+						if currentHunger and currentHunger <= threshold then
+							autoEatInProgress = true
+							if leaveCurrentTrainingMachine() then
+								task.wait(0.2)
+							end
+							disconnectTrainingPromptListeners()
+
+							while currentToken == autoEatToken and Toggles.AutoEatEnabled.Value do
+								local liveHungerValue = getHungerValue()
+								local liveHunger = liveHungerValue and tonumber(liveHungerValue.Value)
+								if liveHunger and liveHunger >= 100 then
+									break
+								end
+
+								local selectedFoods = getSelectedFoodNames()
+								local usedFood = false
+								for _, foodName in ipairs(selectedFoods) do
+									local foodTool = getFoodToolByName(foodName)
+									if foodTool and equipFoodTool(foodTool) then
+										local beforeHunger = liveHunger or 0
+										sendLeftClickVirtualInput()
+										local hungerRaised = false
+										local waitUntil = os.clock() + 1.5
+										while os.clock() < waitUntil do
+											local currentHungerValue = getHungerValue()
+											local currentHungerNumber = currentHungerValue and tonumber(currentHungerValue.Value)
+											if currentHungerNumber and currentHungerNumber > beforeHunger then
+												hungerRaised = true
+												break
+											end
+											task.wait(0.1)
+										end
+										usedFood = hungerRaised or foodTool.Parent ~= (LocalPlayer and LocalPlayer.Character)
+										if usedFood then
+											break
+										end
+									end
+								end
+
+								if not usedFood then
+									task.wait(0.5)
+								else
+									task.wait(0.2)
+								end
+							end
+
+							autoEatInProgress = false
+						end
+					end
+
+					task.wait(0.2)
+				end
+
+				autoEatInProgress = false
 			end)
 		end
 
@@ -1478,13 +1679,52 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddSlider("AutoSleepThreshold", {
+		local autoSleepOptions = autoTrainGroup:AddDependencyBox()
+		autoSleepOptions:SetupDependencies({
+			{ Toggles.AutoSleepEnabled, true },
+		})
+
+		autoSleepOptions:AddSlider("AutoSleepThreshold", {
 			Text = "Sleep Fatigue",
 			Default = 80,
 			Min = 0,
 			Max = 100,
 			Rounding = 0,
 		})
+
+		autoEatGroup:AddToggle("AutoEatEnabled", {
+			Text = "Auto Eat",
+			Default = false,
+		})
+
+		local autoEatOptions = autoEatGroup:AddDependencyBox()
+		autoEatOptions:SetupDependencies({
+			{ Toggles.AutoEatEnabled, true },
+		})
+
+		autoEatOptions:AddSlider("AutoEatThreshold", {
+			Text = "Eat Hunger",
+			Default = 60,
+			Min = 0,
+			Max = 100,
+			Rounding = 0,
+		})
+
+		autoEatOptions:AddDropdown("AutoEatFoods", {
+			Text = "Foods",
+			Values = autoEatFoodNames,
+			Default = autoEatFoodNames,
+			Multi = true,
+		})
+
+		Toggles.AutoEatEnabled:OnChanged(function(enabled)
+			if enabled then
+				startAutoEat()
+			else
+				autoEatToken += 1
+				autoEatInProgress = false
+			end
+		end)
 
 		registerLibraryUnloadCallback(function()
 			stopInfiniteRhythmLoop()
@@ -1498,7 +1738,9 @@ function HyakuAsura.init(_context)
 			autoTreadmillToken += 1
 			autoBikeToken += 1
 			autoSleepToken += 1
+			autoEatToken += 1
 			autoSleepInProgress = false
+			autoEatInProgress = false
 			if Toggles and Toggles.InfiniteRhythmEnabled then
 				pcall(function() Toggles.InfiniteRhythmEnabled:SetValue(false) end)
 			end
@@ -1528,6 +1770,9 @@ function HyakuAsura.init(_context)
 			end
 			if Toggles and Toggles.AutoSleepEnabled then
 				pcall(function() Toggles.AutoSleepEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.AutoEatEnabled then
+				pcall(function() Toggles.AutoEatEnabled:SetValue(false) end)
 			end
 		end)
 	end
