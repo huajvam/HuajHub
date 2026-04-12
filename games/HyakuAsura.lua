@@ -1749,7 +1749,12 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local targetCFrame = bagPart.CFrame * CFrame.new(0, 0.5, 3.5) * CFrame.Angles(0, math.rad(90), 0)
+			local bagHalfDepth = math.max(bagPart.Size.Z * 0.5, 0.5)
+			local playerHalfDepth = math.max(root.Size.Z * 0.5, 0.5)
+			local standDistance = bagHalfDepth + playerHalfDepth + 0.35
+			local targetPosition = bagPart.Position + (bagPart.CFrame.LookVector * standDistance) + Vector3.new(0, 0.15, 0)
+			local lookAtPosition = Vector3.new(bagPart.Position.X, targetPosition.Y, bagPart.Position.Z)
+			local targetCFrame = CFrame.lookAt(targetPosition, lookAtPosition)
 			local success = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
