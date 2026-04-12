@@ -481,14 +481,45 @@ function HyakuAsura.init(_context)
 							
 							-- Start Training Remote
 							benchRemote:FireServer("Start", { Macro = false })
+
+							local function fireBenchKey(key)
+								local keyCode = Enum.KeyCode[key]
+								if VirtualInputManager and keyCode then
+									pcall(function()
+										VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
+									end)
+								end
+
+								pcall(function()
+									benchRemote:FireServer("PressKey", {
+										Key = key,
+										IsDown = true,
+									})
+								end)
+
+								task.wait(0.06)
+
+								if VirtualInputManager and keyCode then
+									pcall(function()
+										VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+									end)
+								end
+
+								pcall(function()
+									benchRemote:FireServer("PressKey", {
+										Key = key,
+										IsDown = false,
+									})
+								end)
+							end
 							
 							-- WASD Spam Loop
 							local keys = {"W", "A", "S", "D"}
 							while currentToken == autoBenchToken and Toggles.AutoBenchEnabled.Value do
 								for _, key in ipairs(keys) do
 									if not Toggles.AutoBenchEnabled.Value then break end
-									benchRemote:FireServer("PressKey", { Key = key })
-									task.wait(0.05) 
+									fireBenchKey(key)
+									task.wait(0.05)
 								end
 							end
 						end
