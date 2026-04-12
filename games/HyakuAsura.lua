@@ -386,7 +386,7 @@ function HyakuAsura.init(_context)
 		}
 		local autoBagPlacementConfig = {
 			Axis = "LookVector",
-			DistanceOffset = 0.35,
+			DistanceOffset = 0.7,
 			VerticalOffset = 0.15,
 			UseBagAndPlayerDepth = true,
 			ManualDistance = 3.5,
