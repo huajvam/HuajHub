@@ -455,14 +455,8 @@ function HyakuAsura.init(_context)
 			return closest
 		end
 
-		local function getBenchRemote(benchFolder)
+		local function getBenchRemote()
 			local trainingSpots = workspace:FindFirstChild("TrainingSpots")
-			local radio = benchFolder and benchFolder:FindFirstChild("Radio")
-			local remote = radio and radio:FindFirstChild("Remote")
-			if remote and remote:IsA("RemoteEvent") then
-				return remote
-			end
-
 			local directBench = trainingSpots and trainingSpots:FindFirstChild("Bench")
 			local directRadio = directBench and directBench:FindFirstChild("Radio")
 			local directRemote = directRadio and directRadio:FindFirstChild("Remote")
@@ -484,12 +478,12 @@ function HyakuAsura.init(_context)
 					
 					if benchFolder and root then
 						local benchModel = benchFolder:FindFirstChildOfClass("Model")
-						local benchRemote = getBenchRemote(benchFolder)
+						local benchRemote = getBenchRemote()
 						
 						if benchModel and benchRemote then
 							-- Stealth Teleport with micro-wait to settle physics
 							root.CFrame = benchModel:GetPivot() * CFrame.new(0, 2, 0)
-							task.wait(0.2)
+							task.wait(0.35)
 
 							-- Simulate "E" Interaction
 							if VirtualInputManager then
@@ -500,6 +494,7 @@ function HyakuAsura.init(_context)
 							
 							-- Start Training Remote
 							benchRemote:FireServer("Start", { Macro = false })
+							task.wait(0.6)
 
 							local function fireBenchKey(key)
 								local args = {
@@ -520,7 +515,7 @@ function HyakuAsura.init(_context)
 								for _, key in ipairs(keys) do
 									if not Toggles.AutoBenchEnabled.Value then break end
 									fireBenchKey(key)
-									task.wait(0.05)
+									task.wait(0.18)
 								end
 							end
 						end
