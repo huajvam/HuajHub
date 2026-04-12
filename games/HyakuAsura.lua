@@ -384,6 +384,14 @@ function HyakuAsura.init(_context)
 			"Strength",
 			"Attack Speed",
 		}
+		local autoBagPlacementConfig = {
+			Axis = "LookVector",
+			DistanceOffset = 0.35,
+			VerticalOffset = 0.15,
+			UseBagAndPlayerDepth = true,
+			ManualDistance = 3.5,
+			YawOffsetDegrees = 0,
+		}
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -1749,12 +1757,25 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local bagHalfDepth = math.max(bagPart.Size.Z * 0.5, 0.5)
-			local playerHalfDepth = math.max(root.Size.Z * 0.5, 0.5)
-			local standDistance = bagHalfDepth + playerHalfDepth + 0.35
-			local targetPosition = bagPart.Position + (bagPart.CFrame.LookVector * standDistance) + Vector3.new(0, 0.15, 0)
-			local lookAtPosition = Vector3.new(bagPart.Position.X, targetPosition.Y, bagPart.Position.Z)
-			local targetCFrame = CFrame.lookAt(targetPosition, lookAtPosition)
+			local axisName = autoBagPlacementConfig.Axis or "LookVector"
+			local axisVector = bagPart.CFrame.LookVector
+			if axisName == "RightVector" then
+				axisVector = bagPart.CFrame.RightVector
+			elseif axisName == "UpVector" then
+				axisVector = bagPart.CFrame.UpVector
+			end
+
+			local standDistance = tonumber(autoBagPlacementConfig.ManualDistance) or 3.5
+			if autoBagPlacementConfig.UseBagAndPlayerDepth ~= false then
+				local bagDepth = axisName == "RightVector" and bagPart.Size.X or bagPart.Size.Z
+				local playerDepth = axisName == "RightVector" and root.Size.X or root.Size.Z
+				standDistance = math.max(bagDepth * 0.5, 0.5) + math.max(playerDepth * 0.5, 0.5) + (tonumber(autoBagPlacementConfig.DistanceOffset) or 0.35)
+			end
+
+			local targetPosition = bagPart.Position + (axisVector * standDistance) + Vector3.new(0, tonumber(autoBagPlacementConfig.VerticalOffset) or 0.15, 0)
+			local targetCFrame = CFrame.lookAt(targetPosition, Vector3.new(bagPart.Position.X, targetPosition.Y, bagPart.Position.Z))
+			local yawOffsetRadians = math.rad(tonumber(autoBagPlacementConfig.YawOffsetDegrees) or 0)
+			targetCFrame = targetCFrame * CFrame.Angles(0, yawOffsetRadians, 0)
 			local success = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
