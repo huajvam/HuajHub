@@ -1716,9 +1716,21 @@ function HyakuAsura.init(_context)
 					return bagNode
 				end
 
-				local nestedPart = bagNode:FindFirstChildWhichIsA("BasePart", true)
-				if nestedPart then
-					return nestedPart
+				local bestPart = nil
+				local bestMagnitude = -math.huge
+				for _, descendant in ipairs(bagNode:GetDescendants()) do
+					if descendant:IsA("BasePart") then
+						local size = descendant.Size
+						local magnitude = size.X * size.Y * size.Z
+						if magnitude > bestMagnitude then
+							bestMagnitude = magnitude
+							bestPart = descendant
+						end
+					end
+				end
+
+				if bestPart then
+					return bestPart
 				end
 			end
 
@@ -1732,7 +1744,9 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local targetCFrame = bagPart.CFrame * CFrame.new(0, 0.5, -3.5)
+			local forward = bagPart.CFrame.LookVector
+			local targetPosition = bagPart.Position - (forward * 3.5) + Vector3.new(0, 0.5, 0)
+			local targetCFrame = CFrame.lookAt(targetPosition, bagPart.Position)
 			local success = pcall(function()
 				character:PivotTo(targetCFrame)
 			end)
