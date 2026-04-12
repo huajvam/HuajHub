@@ -21,6 +21,8 @@ local GLOBAL_ENV = getgenv and getgenv() or _G
 local HUAJ_HUB_HYAKU_INIT_KEY = "__huaj_hub_hyaku_initialized_v1"
 local HUAJ_HUB_HYAKU_LIBRARY_KEY = "__huaj_hub_hyaku_library_v1"
 local HUAJ_HUB_HYAKU_ESP_DRAWINGS_KEY = "__huaj_hub_hyaku_esp_drawings_v1"
+local HUAJ_HUB_HYAKU_REMOTE_BLOCK_HOOK_KEY = "__huaj_hub_hyaku_remote_block_hook_v1"
+local HUAJ_HUB_HYAKU_REMOTE_BLOCK_CALLBACK_KEY = "__huaj_hub_hyaku_remote_block_callback_v1"
 local HYAKU_RHYTHM_REMOTE_INTERVAL = 0.03
 
 local LocalPlayer = Players.LocalPlayer
@@ -205,6 +207,43 @@ local function getLocalEntityAttributesFolder()
 	return mainScript:FindFirstChild("Attributes")
 end
 
+local function installRemoteBlockHook()
+	if GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_HOOK_KEY] then
+		return true
+	end
+
+	if type(hookmetamethod) ~= "function" or type(getnamecallmethod) ~= "function" then
+		return false
+	end
+
+	local hookWrapper = newcclosure or function(callback)
+		return callback
+	end
+
+	local originalNamecall
+	originalNamecall = hookmetamethod(game, "__namecall", hookWrapper(function(self, ...)
+		local args = table.pack(...)
+		local callback = GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_CALLBACK_KEY]
+		local isCallerCheckAvailable = type(checkcaller) == "function"
+
+		if (not isCallerCheckAvailable or not checkcaller())
+			and getnamecallmethod() == "FireServer"
+		then
+			if type(callback) == "function" then
+				local ok, shouldBlock = pcall(callback, self, args)
+				if ok and shouldBlock == true then
+					return nil
+				end
+			end
+		end
+
+		return originalNamecall(self, ...)
+	end))
+
+	GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_HOOK_KEY] = true
+	return true
+end
+
 function HyakuAsura.init(_context)
 	if GLOBAL_ENV[HUAJ_HUB_HYAKU_INIT_KEY] then
 		local existingLibrary = GLOBAL_ENV[HUAJ_HUB_HYAKU_LIBRARY_KEY]
@@ -220,10 +259,32 @@ function HyakuAsura.init(_context)
 
 	GLOBAL_ENV[HUAJ_HUB_HYAKU_INIT_KEY] = true
 	GLOBAL_ENV[HUAJ_HUB_HYAKU_LIBRARY_KEY] = Library
+	GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_CALLBACK_KEY] = nil
+
+	installRemoteBlockHook()
+
+	GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_CALLBACK_KEY] = function(remote, packedArgs)
+		if not remote or not packedArgs or remote.Name ~= "Toggle?" then
+			return false
+		end
+
+		local remoteParent = remote.Parent
+		if not remoteParent or remoteParent.Name ~= "MainScript" then
+			return false
+		end
+
+		local payload = packedArgs[1]
+		if type(payload) ~= "table" then
+			return false
+		end
+
+		return payload.Action == "Run"
+	end
 
 	local gameTabName = getGameTabName()
 
 	Library:OnUnload(function()
+		GLOBAL_ENV[HUAJ_HUB_HYAKU_REMOTE_BLOCK_CALLBACK_KEY] = nil
 		for _, callback in ipairs(unloadCallbacks) do
 			pcall(callback)
 		end
