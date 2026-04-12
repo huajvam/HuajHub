@@ -311,16 +311,6 @@ end
 
 local gameModule = sharedRequire(("games/%s.lua"):format(gameKey))
 local loadedGameModulePath = GLOBAL_ENV.__huaj_hub_last_module_source and GLOBAL_ENV.__huaj_hub_last_module_source[("games/%s.lua"):format(gameKey)]
-if loadedGameModulePath then
-	print("[HuajHub Loader] game module source:", loadedGameModulePath)
-	pcall(function()
-		game:GetService("StarterGui"):SetCore("SendNotification", {
-			Title = "Huaj Hub Loader",
-			Text = "Loaded " .. tostring(gameKey) .. " from " .. tostring(loadedGameModulePath),
-			Duration = 6,
-		})
-	end)
-end
 
 if type(gameModule) ~= "table" or type(gameModule.init) ~= "function" then
 	error(("HuajHub game module '%s' is missing init(context)"):format(tostring(gameKey)))
