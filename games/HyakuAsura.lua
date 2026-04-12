@@ -639,6 +639,77 @@ function HyakuAsura.init(_context)
 		end
 
 		-- Auto Train Automation Module
+		local function getTrainingSpotTeleportModel(spotFolder)
+			if not spotFolder then
+				return nil
+			end
+
+			if spotFolder:IsA("Model") then
+				return spotFolder
+			end
+
+			local directModel = spotFolder:FindFirstChildOfClass("Model")
+			if directModel then
+				return directModel
+			end
+
+			local nestedModel = spotFolder:FindFirstChildWhichIsA("Model", true)
+			if nestedModel then
+				return nestedModel
+			end
+
+			local anyPart = spotFolder:FindFirstChildWhichIsA("BasePart", true)
+			if anyPart then
+				return anyPart.Parent
+			end
+
+			return nil
+		end
+
+		local function getTrainingSpotSeat(spotFolder)
+			local spotModel = getTrainingSpotTeleportModel(spotFolder)
+			if not spotModel then
+				return nil
+			end
+
+			if spotModel:IsA("Seat") then
+				return spotModel
+			end
+
+			if spotModel:IsA("Model") then
+				return spotModel:FindFirstChild("Seat", true) or spotModel:FindFirstChildWhichIsA("Seat", true)
+			end
+
+			return nil
+		end
+
+		local function isTrainingSpotOccupied(spotFolder)
+			local seat = getTrainingSpotSeat(spotFolder)
+			if not seat then
+				return false
+			end
+
+			return seat:FindFirstChildWhichIsA("Sound") ~= nil
+		end
+
+		local function getTrainingSpotDistancePart(spotFolder)
+			local seat = getTrainingSpotSeat(spotFolder)
+			if seat then
+				return seat
+			end
+
+			local model = getTrainingSpotTeleportModel(spotFolder)
+			if model and model:IsA("Model") then
+				return model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true)
+			end
+
+			if model and model:IsA("BasePart") then
+				return model
+			end
+
+			return nil
+		end
+
 		local function getClosestTrainingSpot(spotName)
 			if type(spotName) ~= "string" or spotName == "" then
 				return nil
@@ -656,9 +727,8 @@ function HyakuAsura.init(_context)
 			end
 
 			for _, folder in ipairs(trainingSpots:GetChildren()) do
-				if folder.Name == spotName then
-					local model = folder:FindFirstChildOfClass("Model") or folder:FindFirstChildWhichIsA("Model", true)
-					local part = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+				if folder.Name == spotName and not isTrainingSpotOccupied(folder) then
+					local part = getTrainingSpotDistancePart(folder)
 					if part then
 						local d = (root.Position - part.Position).Magnitude
 						if d < dist then
@@ -696,9 +766,8 @@ function HyakuAsura.init(_context)
 			end
 
 			for _, folder in ipairs(trainingSpots:GetChildren()) do
-				if allowedNames[folder.Name] then
-					local model = folder:FindFirstChildOfClass("Model") or folder:FindFirstChildWhichIsA("Model", true)
-					local part = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
+				if allowedNames[folder.Name] and not isTrainingSpotOccupied(folder) then
+					local part = getTrainingSpotDistancePart(folder)
 					if part then
 						local d = (root.Position - part.Position).Magnitude
 						if d < dist then
@@ -710,33 +779,6 @@ function HyakuAsura.init(_context)
 			end
 
 			return closest
-		end
-
-		local function getTrainingSpotTeleportModel(spotFolder)
-			if not spotFolder then
-				return nil
-			end
-
-			if spotFolder:IsA("Model") then
-				return spotFolder
-			end
-
-			local directModel = spotFolder:FindFirstChildOfClass("Model")
-			if directModel then
-				return directModel
-			end
-
-			local nestedModel = spotFolder:FindFirstChildWhichIsA("Model", true)
-			if nestedModel then
-				return nestedModel
-			end
-
-			local anyPart = spotFolder:FindFirstChildWhichIsA("BasePart", true)
-			if anyPart then
-				return anyPart.Parent
-			end
-
-			return nil
 		end
 
 		local function getTrainingSpotRemote(spotFolder)
@@ -1101,8 +1143,26 @@ function HyakuAsura.init(_context)
 
 			local character = LocalPlayer and LocalPlayer.Character
 			local humanoid = getCharacterHumanoid(character)
+			local customHotbarRemote = ReplicatedStorage
+				and ReplicatedStorage:FindFirstChild("Remotes")
+				and ReplicatedStorage.Remotes:FindFirstChild("CustomHotbar")
 			if not character then
 				return false
+			end
+
+			if tool.Parent == character then
+				return true
+			end
+
+			if customHotbarRemote and customHotbarRemote:IsA("RemoteEvent") then
+				pcall(function()
+					customHotbarRemote:FireServer(tool)
+				end)
+				task.wait(0.15)
+			end
+
+			if tool.Parent == character then
+				return true
 			end
 
 			if humanoid then
