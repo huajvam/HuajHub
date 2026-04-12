@@ -314,7 +314,6 @@ function HyakuAsura.init(_context)
 		local autoBenchToken = 0
 		local autoPullUpToken = 0
 		local cachedBenchPromptFrame = nil
-		local cachedBenchPromptLabel = nil
 		local lastBenchVisibleKey = nil
 		local lastBenchPromptScanAt = 0
 		local rhythmChargeConnection
@@ -747,42 +746,61 @@ function HyakuAsura.init(_context)
 
 			local scannedFrame, scannedLabel = scanBenchPromptObjects()
 			cachedBenchPromptFrame = scannedFrame
-			if scannedLabel then
-				cachedBenchPromptLabel = scannedLabel
-			end
 			return cachedBenchPromptFrame
 		end
 
-		local function getBenchPromptLabel()
-			local promptFrame = getBenchPromptFrame()
-			if not promptFrame then
-				cachedBenchPromptLabel = nil
+		local function getPromptKeyFromPromptUi(promptUi)
+			if not promptUi then
 				return nil
 			end
 
-			if cachedBenchPromptLabel then
-				if getPromptLabelKey(cachedBenchPromptLabel) then
-					return cachedBenchPromptLabel
+			local okDescendants, descendants = pcall(function()
+				return promptUi:GetDescendants()
+			end)
+			if not okDescendants or type(descendants) ~= "table" then
+				return nil
+			end
+
+			for _, instance in ipairs(descendants) do
+				if instance and instance.Name == "TextLabel" then
+					local key = getPromptLabelKey(instance)
+					if key then
+						return key
+					end
 				end
 			end
 
-			local okDescendants, descendants = pcall(function()
-				return promptFrame:GetDescendants()
-			end)
-			if okDescendants and type(descendants) == "table" then
-				for _, instance in ipairs(descendants) do
-					if instance and instance.Name == "TextLabel" and getPromptLabelKey(instance) then
-						cachedBenchPromptLabel = instance
-						return cachedBenchPromptLabel
-					end
+			for _, instance in ipairs(descendants) do
+				local key = getPromptLabelKey(instance)
+				if key then
+					return key
 				end
+			end
 
-				for _, instance in ipairs(descendants) do
-					if getPromptLabelKey(instance) then
-						cachedBenchPromptLabel = instance
-						return cachedBenchPromptLabel
+			return nil
+		end
+
+		local function getBenchPromptKey()
+			local promptFrame = getBenchPromptFrame()
+			if not promptFrame then
+				return nil
+			end
+
+			local okChildren, children = pcall(function()
+				return promptFrame:GetChildren()
+			end)
+			if okChildren and type(children) == "table" then
+				for _, child in ipairs(children) do
+					local key = getPromptKeyFromPromptUi(child)
+					if key then
+						return key
 					end
 				end
+			end
+
+			local keyFromFrame = getPromptKeyFromPromptUi(promptFrame)
+			if keyFromFrame then
+				return keyFromFrame
 			end
 
 			local scannedFrame, scannedLabel = scanBenchPromptObjects()
@@ -790,36 +808,21 @@ function HyakuAsura.init(_context)
 				cachedBenchPromptFrame = scannedFrame
 			end
 			if scannedLabel and getPromptLabelKey(scannedLabel) then
-				cachedBenchPromptLabel = scannedLabel
-				return cachedBenchPromptLabel
+				return getPromptLabelKey(scannedLabel)
 			end
-
-			cachedBenchPromptLabel = nil
 
 			return nil
 		end
 
-		local function getBenchPromptKey()
-			local promptLabel = getBenchPromptLabel()
-			if not promptLabel then
-				return nil
-			end
-
-			return getPromptLabelKey(promptLabel)
-		end
-
-		local function pressBenchPromptKey(key)
-			local keyCode = Enum.KeyCode[key]
-			if not VirtualInputManager or not keyCode then
+		local function submitTrainingPromptKey(remote, key)
+			if not remote or type(key) ~= "string" then
 				return false
 			end
 
 			pcall(function()
-				VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-			end)
-			task.wait(0.08)
-			pcall(function()
-				VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
+				remote:FireServer("PressKey", {
+					Key = key,
+				})
 			end)
 			return true
 		end
@@ -897,14 +900,14 @@ function HyakuAsura.init(_context)
 								if promptedKey then
 									if promptedKey ~= lastBenchVisibleKey then
 										lastBenchVisibleKey = promptedKey
-										pressBenchPromptKey(promptedKey)
-										task.wait(0.04)
+										submitTrainingPromptKey(spotRemote, promptedKey)
+										task.wait(0.01)
 									else
-										task.wait(0.02)
+										task.wait(0.01)
 									end
 								else
 									lastBenchVisibleKey = nil
-									task.wait(0.05)
+									task.wait(0.01)
 								end
 							end
 						end
