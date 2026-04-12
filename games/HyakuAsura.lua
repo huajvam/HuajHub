@@ -810,6 +810,35 @@ function HyakuAsura.init(_context)
 			return closest
 		end
 
+		local function getClosestHospitalBed()
+			local trainingSpots = workspace:FindFirstChild("TrainingSpots")
+			if not trainingSpots then
+				return nil
+			end
+
+			local root = getCharacterRoot(LocalPlayer and LocalPlayer.Character)
+			if not root then
+				return nil
+			end
+
+			local closest = nil
+			local dist = math.huge
+			for _, folder in ipairs(trainingSpots:GetChildren()) do
+				if folder.Name == "HospitalBed" or folder.Name == "Hospitalbed" then
+					local part = getTrainingSpotDistancePart(folder)
+					if part then
+						local d = (root.Position - part.Position).Magnitude
+						if d < dist then
+							dist = d
+							closest = folder
+						end
+					end
+				end
+			end
+
+			return closest
+		end
+
 		local function getTrainingSpotRemote(spotFolder)
 			local directRadio = spotFolder and spotFolder:FindFirstChild("Radio")
 			local directRemote = directRadio and directRadio:FindFirstChild("Remote")
@@ -1989,7 +2018,7 @@ function HyakuAsura.init(_context)
 						local currentFatique = bodyFatique and tonumber(bodyFatique.Value)
 
 						if currentFatique and currentFatique >= threshold then
-							local bedFolder = getClosestTrainingSpotByNames({ "HospitalBed", "Hospitalbed" })
+							local bedFolder = getClosestHospitalBed()
 							local character = LocalPlayer and LocalPlayer.Character
 							local bedModel = bedFolder and getTrainingSpotTeleportModel(bedFolder)
 							local bedRemote = bedFolder and getTrainingSpotRemote(bedFolder)
@@ -2004,6 +2033,8 @@ function HyakuAsura.init(_context)
 								task.wait(0.35)
 								holdInteractionKey(3)
 								task.wait(0.2)
+								teleportCharacterToTrainingSpot(character, bedModel)
+								task.wait(0.15)
 
 								while currentToken == autoSleepToken and Toggles.AutoSleepEnabled.Value do
 									local fatigueValue = getBodyFatiqueValue()
