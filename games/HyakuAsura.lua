@@ -250,6 +250,9 @@ function HyakuAsura.init(_context)
 		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
 		local infiniteRhythmLoopToken = 0
 		local autoBenchToken = 0
+		local cachedBenchPromptLabel = nil
+		local lastBenchPromptKey = nil
+		local lastBenchPromptAt = 0
 		local rhythmChargeConnection
 		local staminaConnection
 
@@ -521,7 +524,37 @@ function HyakuAsura.init(_context)
 			return ok
 		end
 
+		local function normalizeBenchPromptText(text)
+			if type(text) ~= "string" then
+				return nil
+			end
+
+			text = text:upper():match("^%s*(.-)%s*$") or ""
+			if text == "W" or text == "A" or text == "S" or text == "D" then
+				return text
+			end
+
+			return nil
+		end
+
 		local function getBenchPromptLabel()
+			if cachedBenchPromptLabel and cachedBenchPromptLabel.Parent then
+				local cachedText = normalizeBenchPromptText(cachedBenchPromptLabel.Text)
+				if cachedText then
+					return cachedBenchPromptLabel
+				end
+			end
+
+			local playerGui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
+			if playerGui then
+				for _, instance in ipairs(playerGui:GetDescendants()) do
+					if instance:IsA("TextLabel") and normalizeBenchPromptText(instance.Text) then
+						cachedBenchPromptLabel = instance
+						return instance
+					end
+				end
+			end
+
 			if type(getnilinstances) ~= "function" then
 				return nil
 			end
@@ -536,12 +569,10 @@ function HyakuAsura.init(_context)
 			for _, instance in next, instances do
 				if instance
 					and instance.ClassName == "TextLabel"
-					and type(instance.Text) == "string"
+					and normalizeBenchPromptText(instance.Text)
 				then
-					local text = instance.Text:upper():match("^%s*(.-)%s*$") or ""
-					if text == "W" or text == "A" or text == "S" or text == "D" then
-						return instance
-					end
+					cachedBenchPromptLabel = instance
+					return instance
 				end
 			end
 
@@ -551,16 +582,16 @@ function HyakuAsura.init(_context)
 		local function getBenchPromptKey()
 			local promptLabel = getBenchPromptLabel()
 			if not promptLabel then
+				if os.clock() - lastBenchPromptAt <= 0.25 then
+					return lastBenchPromptKey
+				end
 				return nil
 			end
 
-			local text = promptLabel.Text
-			if type(text) ~= "string" then
-				return nil
-			end
-
-			text = text:upper():match("^%s*(.-)%s*$") or ""
-			if text == "W" or text == "A" or text == "S" or text == "D" then
+			local text = normalizeBenchPromptText(promptLabel.Text)
+			if text then
+				lastBenchPromptKey = text
+				lastBenchPromptAt = os.clock()
 				return text
 			end
 
