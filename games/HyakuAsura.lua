@@ -538,6 +538,17 @@ function HyakuAsura.init(_context)
 							-- Stealth Teleport with micro-wait to settle physics
 							teleportCharacterToBench(character, benchModel)
 							task.wait(0.35)
+
+							if VirtualInputManager then
+								pcall(function()
+									VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+								end)
+								task.wait(0.3)
+								pcall(function()
+									VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+								end)
+								task.wait(0.1)
+							end
 							
 							-- Start Training Remote
 							local startArgs = {
