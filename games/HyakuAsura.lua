@@ -311,6 +311,7 @@ function HyakuAsura.init(_context)
 		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
 		local infiniteRhythmLoopToken = 0
 		local autoBenchToken = 0
+		local autoPullUpToken = 0
 		local cachedBenchPromptLabel = nil
 		local lastBenchVisibleKey = nil
 		local rhythmChargeConnection
@@ -493,8 +494,12 @@ function HyakuAsura.init(_context)
 			fireInfiniteRhythmRemote(false)
 		end
 
-		-- Auto Bench Automation Module
-		local function getClosestBench()
+		-- Auto Train Automation Module
+		local function getClosestTrainingSpot(spotName)
+			if type(spotName) ~= "string" or spotName == "" then
+				return nil
+			end
+
 			local trainingSpots = workspace:FindFirstChild("TrainingSpots")
 			if not trainingSpots then
 				return nil
@@ -507,7 +512,7 @@ function HyakuAsura.init(_context)
 			end
 
 			for _, folder in ipairs(trainingSpots:GetChildren()) do
-				if folder.Name == "Bench" then
+				if folder.Name == spotName then
 					local model = folder:FindFirstChildOfClass("Model") or folder:FindFirstChildWhichIsA("Model", true)
 					local part = model and (model.PrimaryPart or model:FindFirstChildWhichIsA("BasePart", true))
 					if part then
@@ -523,26 +528,26 @@ function HyakuAsura.init(_context)
 			return closest
 		end
 
-		local function getBenchTeleportModel(benchFolder)
-			if not benchFolder then
+		local function getTrainingSpotTeleportModel(spotFolder)
+			if not spotFolder then
 				return nil
 			end
 
-			if benchFolder:IsA("Model") then
-				return benchFolder
+			if spotFolder:IsA("Model") then
+				return spotFolder
 			end
 
-			local directModel = benchFolder:FindFirstChildOfClass("Model")
+			local directModel = spotFolder:FindFirstChildOfClass("Model")
 			if directModel then
 				return directModel
 			end
 
-			local nestedModel = benchFolder:FindFirstChildWhichIsA("Model", true)
+			local nestedModel = spotFolder:FindFirstChildWhichIsA("Model", true)
 			if nestedModel then
 				return nestedModel
 			end
 
-			local anyPart = benchFolder:FindFirstChildWhichIsA("BasePart", true)
+			local anyPart = spotFolder:FindFirstChildWhichIsA("BasePart", true)
 			if anyPart then
 				return anyPart.Parent
 			end
@@ -550,8 +555,8 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
-		local function getBenchRemote(benchFolder)
-			local directRadio = benchFolder and benchFolder:FindFirstChild("Radio")
+		local function getTrainingSpotRemote(spotFolder)
+			local directRadio = spotFolder and spotFolder:FindFirstChild("Radio")
 			local directRemote = directRadio and directRadio:FindFirstChild("Remote")
 			if directRemote and directRemote:IsA("RemoteEvent") then
 				return directRemote
@@ -560,12 +565,12 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
-		local function teleportCharacterToBench(character, benchModel)
-			if not character or not benchModel then
+		local function teleportCharacterToTrainingSpot(character, spotModel)
+			if not character or not spotModel then
 				return false
 			end
 
-			local targetCFrame = benchModel:GetPivot() * CFrame.new(0, 2, 0)
+			local targetCFrame = spotModel:GetPivot() * CFrame.new(0, 2, 0)
 			local root = getCharacterRoot(character)
 
 			if root then
@@ -665,32 +670,52 @@ function HyakuAsura.init(_context)
 			return true
 		end
 
-		local function startAutoBench()
-			autoBenchToken += 1
-			local currentToken = autoBenchToken
+		local function holdInteractionKey(duration)
+			if not VirtualInputManager then
+				return
+			end
+
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
+			end)
+			task.wait(duration or 0.3)
+			pcall(function()
+				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
+			end)
+		end
+
+		local function getAutoTrainToken(toggleKey)
+			if toggleKey == "AutoBenchEnabled" then
+				return autoBenchToken
+			end
+
+			if toggleKey == "AutoPullUpEnabled" then
+				return autoPullUpToken
+			end
+
+			return -1
+		end
+
+		local function startTrainingSpotAutomation(toggleKey, spotName, options)
+			local currentToken = getAutoTrainToken(toggleKey)
+			options = options or {}
 			
 			task.spawn(function()
-				while currentToken == autoBenchToken and Toggles.AutoBenchEnabled and Toggles.AutoBenchEnabled.Value do
-					local benchFolder = getClosestBench()
+				while currentToken == getAutoTrainToken(toggleKey) and Toggles[toggleKey] and Toggles[toggleKey].Value do
+					local spotFolder = getClosestTrainingSpot(spotName)
 					local character = LocalPlayer and LocalPlayer.Character
 					
-					if benchFolder and character then
-						local benchModel = getBenchTeleportModel(benchFolder)
-						local benchRemote = getBenchRemote(benchFolder)
+					if spotFolder and character then
+						local spotModel = getTrainingSpotTeleportModel(spotFolder)
+						local spotRemote = getTrainingSpotRemote(spotFolder)
 						
-						if benchModel and benchRemote then
+						if spotModel and spotRemote then
 							-- Stealth Teleport with micro-wait to settle physics
-							teleportCharacterToBench(character, benchModel)
+							teleportCharacterToTrainingSpot(character, spotModel)
 							task.wait(0.35)
 
-							if VirtualInputManager then
-								pcall(function()
-									VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.E, false, game)
-								end)
-								task.wait(0.3)
-								pcall(function()
-									VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.E, false, game)
-								end)
+							if options.HoldEBeforeStart then
+								holdInteractionKey(options.HoldEDuration or 0.3)
 								task.wait(0.1)
 							end
 							
@@ -703,15 +728,16 @@ function HyakuAsura.init(_context)
 							}
 
 							pcall(function()
-								benchRemote:FireServer(unpack(startArgs))
+								spotRemote:FireServer(unpack(startArgs))
 							end)
 							task.wait(0.6)
 							
 							-- Prompt-driven WASD loop
-							local benchEndAt = os.clock() + 60
-							while currentToken == autoBenchToken
-								and Toggles.AutoBenchEnabled.Value
-								and os.clock() < benchEndAt
+							lastBenchVisibleKey = nil
+							local trainingEndAt = os.clock() + (options.Duration or 60)
+							while currentToken == getAutoTrainToken(toggleKey)
+								and Toggles[toggleKey].Value
+								and os.clock() < trainingEndAt
 							do
 								local promptedKey = getBenchPromptKey()
 								if promptedKey then
@@ -732,6 +758,24 @@ function HyakuAsura.init(_context)
 					task.wait(1)
 				end
 			end)
+		end
+
+		local function startAutoBench()
+			autoBenchToken += 1
+			startTrainingSpotAutomation("AutoBenchEnabled", "Bench", {
+				HoldEBeforeStart = true,
+				HoldEDuration = 0.3,
+				Duration = 60,
+			})
+		end
+
+		local function startAutoPullUp()
+			autoPullUpToken += 1
+			startTrainingSpotAutomation("AutoPullUpEnabled", "PullUp", {
+				HoldEBeforeStart = true,
+				HoldEDuration = 0.3,
+				Duration = 60,
+			})
 		end
 
 		localCheatsGroup:AddToggle("InfiniteRhythmEnabled", {
@@ -769,9 +813,26 @@ function HyakuAsura.init(_context)
 			Default = false,
 		}):OnChanged(function(enabled)
 			if enabled then
+				if Toggles and Toggles.AutoPullUpEnabled and Toggles.AutoPullUpEnabled.Value then
+					pcall(function() Toggles.AutoPullUpEnabled:SetValue(false) end)
+				end
 				startAutoBench()
 			else
 				autoBenchToken += 1
+			end
+		end)
+
+		autoTrainGroup:AddToggle("AutoPullUpEnabled", {
+			Text = "Auto PullUp",
+			Default = false,
+		}):OnChanged(function(enabled)
+			if enabled then
+				if Toggles and Toggles.AutoBenchEnabled and Toggles.AutoBenchEnabled.Value then
+					pcall(function() Toggles.AutoBenchEnabled:SetValue(false) end)
+				end
+				startAutoPullUp()
+			else
+				autoPullUpToken += 1
 			end
 		end)
 
@@ -780,6 +841,7 @@ function HyakuAsura.init(_context)
 			stopInfiniteStaminaHook()
 			setSpeedBoostEnabled(false)
 			autoBenchToken += 1
+			autoPullUpToken += 1
 			if Toggles and Toggles.InfiniteRhythmEnabled then
 				pcall(function() Toggles.InfiniteRhythmEnabled:SetValue(false) end)
 			end
@@ -791,6 +853,9 @@ function HyakuAsura.init(_context)
 			end
 			if Toggles and Toggles.AutoBenchEnabled then
 				pcall(function() Toggles.AutoBenchEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.AutoPullUpEnabled then
+				pcall(function() Toggles.AutoPullUpEnabled:SetValue(false) end)
 			end
 		end)
 	end
