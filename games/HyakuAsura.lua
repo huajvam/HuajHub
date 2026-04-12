@@ -247,6 +247,7 @@ function HyakuAsura.init(_context)
 
 	do
 		local localCheatsGroup = Tabs.Main:AddLeftGroupbox("Local Cheats")
+		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
 		local infiniteRhythmLoopToken = 0
 		local autoBenchToken = 0
 		local rhythmChargeConnection
@@ -483,33 +484,15 @@ function HyakuAsura.init(_context)
 							benchRemote:FireServer("Start", { Macro = false })
 
 							local function fireBenchKey(key)
-								local keyCode = Enum.KeyCode[key]
-								if VirtualInputManager and keyCode then
-									pcall(function()
-										VirtualInputManager:SendKeyEvent(true, keyCode, false, game)
-									end)
-								end
+								local args = {
+									"PressKey",
+									{
+										Key = key,
+									},
+								}
 
 								pcall(function()
-									benchRemote:FireServer("PressKey", {
-										Key = key,
-										IsDown = true,
-									})
-								end)
-
-								task.wait(0.06)
-
-								if VirtualInputManager and keyCode then
-									pcall(function()
-										VirtualInputManager:SendKeyEvent(false, keyCode, false, game)
-									end)
-								end
-
-								pcall(function()
-									benchRemote:FireServer("PressKey", {
-										Key = key,
-										IsDown = false,
-									})
+									benchRemote:FireServer(unpack(args))
 								end)
 							end
 							
@@ -559,7 +542,7 @@ function HyakuAsura.init(_context)
 			setSpeedBoostEnabled(enabled)
 		end)
 
-		localCheatsGroup:AddToggle("AutoBenchEnabled", {
+		autoTrainGroup:AddToggle("AutoBenchEnabled", {
 			Text = "Auto Bench",
 			Default = false,
 		}):OnChanged(function(enabled)
