@@ -1322,7 +1322,7 @@ function HyakuAsura.init(_context)
 								disconnectTrainingPromptListeners()
 								teleportCharacterToTrainingSpot(character, bedModel)
 								task.wait(0.35)
-								holdInteractionKey(0.3)
+								holdInteractionKey(3)
 								task.wait(0.2)
 
 								while currentToken == autoSleepToken and Toggles.AutoSleepEnabled.Value do
