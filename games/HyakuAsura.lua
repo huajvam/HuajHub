@@ -369,6 +369,16 @@ function HyakuAsura.init(_context)
 			"Fries",
 			"Burger",
 		}
+		local autoEatPurchaseNameMap = {
+			["burger"] = "Burger",
+			["kebab"] = "Kebab",
+			["pizza"] = "Pizza",
+			["ramen"] = "Ramen",
+			["onigiri"] = "Onigiri",
+			["taco"] = "Taco",
+			["hotdog"] = "Hotdog",
+			["fries"] = "Fries",
+		}
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -1136,6 +1146,131 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
+		local function getFoodQuantityValue(foodName)
+			local tool = getFoodToolByName(foodName)
+			local quantityValue = tool and tool:FindFirstChild("Quantity")
+			if quantityValue and quantityValue:IsA("IntValue") then
+				return quantityValue
+			end
+
+			return nil
+		end
+
+		local function getFoodQuantity(foodName)
+			local quantityValue = getFoodQuantityValue(foodName)
+			local quantityNumber = quantityValue and tonumber(quantityValue.Value)
+			return quantityNumber or 0
+		end
+
+		local function getPurchasableItemsCommonFolder()
+			local purchasableItems = workspace:FindFirstChild("PurchasableItems")
+			return purchasableItems and purchasableItems:FindFirstChild("Common")
+		end
+
+		local function resolveFoodPurchaseObject(foodName)
+			local commonFolder = getPurchasableItemsCommonFolder()
+			if not commonFolder then
+				return nil
+			end
+
+			local directMappings = {
+				Taco = function()
+					local children = commonFolder:GetChildren()
+					return children[2] and children[2]:FindFirstChild("Taco")
+				end,
+				Burger = function()
+					local children = commonFolder:GetChildren()
+					return children[11] and (children[11]:FindFirstChild("burger") or children[11]:FindFirstChild("Burger"))
+				end,
+				Hotdog = function()
+					local part = commonFolder:FindFirstChild("Part")
+					return part and part:FindFirstChild("Meshes/Food drinkfbx_Hotdog")
+				end,
+				Kebab = function()
+					local children = commonFolder:GetChildren()
+					return children[16] and (children[16]:FindFirstChild("kebab") or children[16]:FindFirstChild("Kebab"))
+				end,
+				Pizza = function()
+					local children = commonFolder:GetChildren()
+					return children[15] and (children[15]:FindFirstChild("Pizza") or children[15]:FindFirstChild("pizza"))
+				end,
+				Ramen = function()
+					local children = commonFolder:GetChildren()
+					return children[14] and (children[14]:FindFirstChild("Ramen") or children[14]:FindFirstChild("ramen"))
+				end,
+				Onigiri = function()
+					local children = commonFolder:GetChildren()
+					return children[13] and (children[13]:FindFirstChild("Onigiri") or children[13]:FindFirstChild("onigiri"))
+				end,
+				Fries = function()
+					return commonFolder:FindFirstChild("Fries", true) or commonFolder:FindFirstChild("fries", true)
+				end,
+			}
+
+			local resolver = directMappings[foodName]
+			local purchaseObject = resolver and resolver()
+			if purchaseObject then
+				return purchaseObject
+			end
+
+			for _, descendant in ipairs(commonFolder:GetDescendants()) do
+				local mappedName = autoEatPurchaseNameMap[string.lower(descendant.Name or "")]
+				if mappedName == foodName then
+					return descendant
+				end
+			end
+
+			return nil
+		end
+
+		local function getFoodPurchaseClickDetector(foodName)
+			local purchaseObject = resolveFoodPurchaseObject(foodName)
+			if not purchaseObject then
+				return nil
+			end
+
+			if purchaseObject:IsA("ClickDetector") then
+				return purchaseObject
+			end
+
+			return purchaseObject:FindFirstChildWhichIsA("ClickDetector", true)
+		end
+
+		local function buyFoodUpToMax(foodName, maxQuantity)
+			if type(foodName) ~= "string" or foodName == "" then
+				return false
+			end
+
+			if type(fireclickdetector) ~= "function" then
+				return false
+			end
+
+			local clickDetector = getFoodPurchaseClickDetector(foodName)
+			if not clickDetector then
+				return false
+			end
+
+			local boughtAny = false
+			local cap = tonumber(maxQuantity) or 5
+			local attempts = 0
+
+			while attempts < cap do
+				local currentQuantity = getFoodQuantity(foodName)
+				if currentQuantity >= cap then
+					break
+				end
+
+				pcall(function()
+					fireclickdetector(clickDetector)
+				end)
+				boughtAny = true
+				attempts += 1
+				task.wait(0.18)
+			end
+
+			return boughtAny
+		end
+
 		local function equipFoodTool(tool)
 			if not tool or not tool:IsA("Tool") then
 				return false
@@ -1594,6 +1729,19 @@ function HyakuAsura.init(_context)
 								end
 
 								if not usedFood then
+									if Toggles.AutoBuyFoodEnabled and Toggles.AutoBuyFoodEnabled.Value then
+										local selectedFoods = getSelectedFoodNames()
+										local boughtFood = false
+										for _, foodName in ipairs(selectedFoods) do
+											if getFoodQuantity(foodName) < 5 and buyFoodUpToMax(foodName, 5) then
+												boughtFood = true
+												task.wait(0.3)
+											end
+										end
+										if boughtFood then
+											task.wait(0.2)
+										end
+									end
 									task.wait(0.5)
 								else
 									task.wait(0.2)
@@ -1775,6 +1923,11 @@ function HyakuAsura.init(_context)
 			Values = autoEatFoodNames,
 			Default = autoEatFoodNames,
 			Multi = true,
+		})
+
+		autoEatOptions:AddToggle("AutoBuyFoodEnabled", {
+			Text = "Auto Buy Food",
+			Default = false,
 		})
 
 		Toggles.AutoEatEnabled:OnChanged(function(enabled)
