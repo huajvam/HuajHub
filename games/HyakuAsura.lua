@@ -1712,6 +1712,11 @@ function HyakuAsura.init(_context)
 
 			local bagNode = bagModel:FindFirstChild("Bag")
 			if bagNode then
+				local humanoidRootPart = bagNode:FindFirstChild("HumanoidRootPart", true)
+				if humanoidRootPart and humanoidRootPart:IsA("BasePart") then
+					return humanoidRootPart
+				end
+
 				if bagNode:IsA("BasePart") then
 					return bagNode
 				end
@@ -1744,9 +1749,7 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local forward = bagPart.CFrame.LookVector
-			local targetPosition = bagPart.Position - (forward * 3.5) + Vector3.new(0, 0.5, 0)
-			local targetCFrame = CFrame.lookAt(targetPosition, bagPart.Position)
+			local targetCFrame = bagPart.CFrame * CFrame.new(0, 0.5, 3.5)
 			local success = pcall(function()
 				character:PivotTo(targetCFrame)
 			end)
