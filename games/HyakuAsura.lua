@@ -1518,17 +1518,23 @@ function HyakuAsura.init(_context)
 			activeDeliveryFarmTween = rootTween
 
 			local success = pcall(function()
+				local character = root.Parent
+				local humanoid = character and getCharacterHumanoid(character)
+				local wasPlatformStand = humanoid and humanoid.PlatformStand or false
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
-				local wasAnchored = root.Anchored
-				root.Anchored = true
+				if humanoid then
+					humanoid.PlatformStand = true
+				end
 				rootTween:Play()
 				if platformTween then
 					platformTween:Play()
 				end
 				rootTween.Completed:Wait()
 				root.CFrame = targetCFrame
-				root.Anchored = wasAnchored
+				if humanoid then
+					humanoid.PlatformStand = wasPlatformStand
+				end
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
 			end)
