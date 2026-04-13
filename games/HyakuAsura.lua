@@ -1530,12 +1530,22 @@ function HyakuAsura.init(_context)
 				return nil
 			end
 
-			local targetPart = partValue.Value
-			if targetPart
-				and targetPart:IsA("BasePart")
-				and targetPart.Name == "DeliverySpot"
-			then
-				return targetPart
+			local targetInstance = partValue.Value
+			if not targetInstance then
+				return nil
+			end
+
+			if targetInstance:IsA("BasePart") then
+				return targetInstance
+			end
+
+			if targetInstance:IsA("Model") or targetInstance:IsA("Folder") then
+				local deliveryPart = targetInstance:FindFirstChild("DeliverySpot", true)
+				if deliveryPart and deliveryPart:IsA("BasePart") then
+					return deliveryPart
+				end
+
+				return targetInstance:FindFirstChildWhichIsA("BasePart", true)
 			end
 
 			return nil
@@ -2454,9 +2464,15 @@ function HyakuAsura.init(_context)
 					local activeSpot = getActiveDeliverySpot()
 					if not deliveryActive then
 						startDeliveryQuest(character)
-						task.wait(0.75)
-						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-						activeSpot = getActiveDeliverySpot()
+						local waitUntil = os.clock() + 3
+						while os.clock() < waitUntil do
+							deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
+							activeSpot = getActiveDeliverySpot()
+							if deliveryActive and activeSpot then
+								break
+							end
+							task.wait(0.1)
+						end
 					end
 
 					if deliveryActive and activeSpot then
