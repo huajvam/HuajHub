@@ -333,6 +333,8 @@ function HyakuAsura.init(_context)
 		local activeDeliveryFarmTween = nil
 		local activeDeliveryFarmPlatform = nil
 		local activeDeliveryFarmGyro = nil
+		local activeDeliveryFarmBaseY = nil
+		local activeDeliveryFarmUndergroundY = nil
 		local autoSleepInProgress = false
 		local autoEatInProgress = false
 		local antiAfkConnection = nil
@@ -1701,6 +1703,8 @@ function HyakuAsura.init(_context)
 			end
 
 			task.wait(0.2)
+			activeDeliveryFarmBaseY = startCFrame.Position.Y
+			activeDeliveryFarmUndergroundY = activeDeliveryFarmBaseY - 12
 			holdInteractionKey(0.5)
 			local timeoutAt = os.clock() + 3
 			while os.clock() < timeoutAt do
@@ -1722,8 +1726,9 @@ function HyakuAsura.init(_context)
 			local basePosition = spotPart.Position
 			local currentPosition = root.Position
 			local deltaToSpot = basePosition - currentPosition
-			local undergroundY = currentPosition.Y - 12
-			local surfaceY = currentPosition.Y + 2
+			local baseY = tonumber(activeDeliveryFarmBaseY) or currentPosition.Y
+			local undergroundY = tonumber(activeDeliveryFarmUndergroundY) or (baseY - 12)
+			local surfaceY = baseY + 2
 			local targetX = currentPosition.X + deltaToSpot.X
 			local targetZ = currentPosition.Z + deltaToSpot.Z
 			local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
@@ -2496,6 +2501,10 @@ function HyakuAsura.init(_context)
 						runDeliveryToSpot(character, activeSpot)
 						task.wait(0.5)
 					else
+						if not deliveryActive then
+							activeDeliveryFarmBaseY = nil
+							activeDeliveryFarmUndergroundY = nil
+						end
 						task.wait(0.5)
 					end
 				end
@@ -2503,6 +2512,8 @@ function HyakuAsura.init(_context)
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
+				activeDeliveryFarmBaseY = nil
+				activeDeliveryFarmUndergroundY = nil
 			end)
 		end
 
@@ -2730,6 +2741,8 @@ function HyakuAsura.init(_context)
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
+				activeDeliveryFarmBaseY = nil
+				activeDeliveryFarmUndergroundY = nil
 			end
 		end)
 
@@ -2916,6 +2929,8 @@ function HyakuAsura.init(_context)
 			cancelDeliveryFarmTween()
 			destroyDeliveryFarmGyro()
 			destroyDeliveryFarmPlatform()
+			activeDeliveryFarmBaseY = nil
+			activeDeliveryFarmUndergroundY = nil
 			setSpeedBoostEnabled(false)
 			deliveryFarmToken += 1
 			autoBenchToken += 1
