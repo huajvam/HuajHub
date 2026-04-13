@@ -1532,7 +1532,7 @@ function HyakuAsura.init(_context)
 			end
 
 			task.wait(0.2)
-			holdInteractionKey(0.3)
+			holdInteractionKey(0.5)
 			task.wait(0.5)
 			return true
 		end
