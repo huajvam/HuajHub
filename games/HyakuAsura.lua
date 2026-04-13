@@ -471,6 +471,15 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
+		local function getLocalEntityActiveEffectsFolder()
+			local mainScript = getLocalEntityMainScript()
+			if not mainScript then
+				return nil
+			end
+
+			return mainScript:FindFirstChild("ActiveEffects")
+		end
+
 		local function getTrainingMachineValue()
 			local statsFolder = getLocalEntityStatsFolder()
 			local trainingMachine = statsFolder and statsFolder:FindFirstChild("TrainingMachine")
@@ -1479,6 +1488,27 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
+		local function hasActiveDeliveryEffect()
+			local activeEffects = getLocalEntityActiveEffectsFolder()
+			if not activeEffects then
+				return false
+			end
+
+			local children = activeEffects:GetChildren()
+			local indexedChild = children[3]
+			if indexedChild and indexedChild:IsA("StringValue") then
+				return true
+			end
+
+			for _, child in ipairs(children) do
+				if child:IsA("StringValue") then
+					return true
+				end
+			end
+
+			return false
+		end
+
 		local function tweenCharacterRootTo(root, targetCFrame, overrideDuration)
 			if not root or not targetCFrame then
 				return false
@@ -1533,8 +1563,15 @@ function HyakuAsura.init(_context)
 
 			task.wait(0.2)
 			holdInteractionKey(0.5)
-			task.wait(0.5)
-			return true
+			local timeoutAt = os.clock() + 3
+			while os.clock() < timeoutAt do
+				if hasActiveDeliveryEffect() then
+					return true
+				end
+				task.wait(0.1)
+			end
+
+			return false
 		end
 
 		local function runDeliveryToSpot(character, spotPart)
