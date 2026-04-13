@@ -2610,7 +2610,7 @@ function HyakuAsura.init(_context)
 			Rounding = 0,
 		})
 
-		deliveryFarmOptions:AddLabel("Warning: anything above 50 is bannable")
+		deliveryFarmOptions:AddLabel("⚠ anything above 50 is bannable")
 
 		Toggles.DeliveryFarmEnabled:OnChanged(function(enabled)
 			if enabled then
