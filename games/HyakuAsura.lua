@@ -1494,19 +1494,8 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local children = activeEffects:GetChildren()
-			local indexedChild = children[3]
-			if indexedChild and indexedChild:IsA("StringValue") then
-				return true
-			end
-
-			for _, child in ipairs(children) do
-				if child:IsA("StringValue") then
-					return true
-				end
-			end
-
-			return false
+			local navigationBeam = activeEffects:FindFirstChild("NavigationBeam")
+			return navigationBeam ~= nil and navigationBeam:IsA("StringValue")
 		end
 
 		local function tweenCharacterRootTo(root, targetCFrame, overrideDuration)
@@ -1550,6 +1539,10 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
+			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				return true
+			end
+
 			cancelDeliveryFarmTween()
 			destroyDeliveryFarmPlatform()
 			local success = pcall(function()
@@ -1565,7 +1558,7 @@ function HyakuAsura.init(_context)
 			holdInteractionKey(0.5)
 			local timeoutAt = os.clock() + 3
 			while os.clock() < timeoutAt do
-				if hasActiveDeliveryEffect() then
+				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
 					return true
 				end
 				task.wait(0.1)
@@ -2288,12 +2281,12 @@ function HyakuAsura.init(_context)
 						continue
 					end
 
-					local deliveryActive = hasActiveDeliveryEffect()
+					local deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
 					local activeSpot = getActiveDeliverySpot()
 					if not deliveryActive then
 						startDeliveryQuest(character)
 						task.wait(0.75)
-						deliveryActive = hasActiveDeliveryEffect()
+						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
 						activeSpot = getActiveDeliverySpot()
 					end
 
