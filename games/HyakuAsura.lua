@@ -1721,7 +1721,7 @@ function HyakuAsura.init(_context)
 
 			local basePosition = spotPart.Position
 			local currentPosition = root.Position
-			local undergroundY = basePosition.Y - 12
+			local undergroundY = currentPosition.Y - 12
 			local surfaceY = basePosition.Y + 2
 			local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 			if flatLook.Magnitude <= 0.001 then
