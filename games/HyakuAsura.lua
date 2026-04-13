@@ -332,7 +332,6 @@ function HyakuAsura.init(_context)
 		local activeAutoBagModel = nil
 		local activeDeliveryFarmTween = nil
 		local activeDeliveryFarmPlatform = nil
-		local activeDeliveryFarmGyro = nil
 		local autoSleepInProgress = false
 		local autoEatInProgress = false
 		local antiAfkConnection = nil
@@ -1451,37 +1450,6 @@ function HyakuAsura.init(_context)
 			end
 		end
 
-		local function destroyDeliveryFarmGyro()
-			if activeDeliveryFarmGyro then
-				pcall(function()
-					activeDeliveryFarmGyro:Destroy()
-				end)
-				activeDeliveryFarmGyro = nil
-			end
-		end
-
-		local function ensureDeliveryFarmGyro(root)
-			if not root then
-				return nil
-			end
-
-			if activeDeliveryFarmGyro and activeDeliveryFarmGyro.Parent == root then
-				return activeDeliveryFarmGyro
-			end
-
-			destroyDeliveryFarmGyro()
-
-			local gyro = Instance.new("BodyGyro")
-			gyro.Name = "HuajHubDeliveryGyro"
-			gyro.MaxTorque = Vector3.new(1e9, 1e9, 1e9)
-			gyro.P = 1e6
-			gyro.D = 2e3
-			gyro.CFrame = root.CFrame
-			gyro.Parent = root
-			activeDeliveryFarmGyro = gyro
-			return gyro
-		end
-
 		local function ensureDeliveryFarmPlatform(root)
 			if not root then
 				return nil
@@ -1571,7 +1539,6 @@ function HyakuAsura.init(_context)
 				local startCFrame = root.CFrame
 				local startTime = os.clock()
 				local endTime = startTime + duration
-				local gyro = ensureDeliveryFarmGyro(root)
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
 				while not cancelled do
@@ -1579,9 +1546,6 @@ function HyakuAsura.init(_context)
 					local alpha = duration <= 0 and 1 or math.clamp((now - startTime) / duration, 0, 1)
 					local currentCFrame = startCFrame:Lerp(targetCFrame, alpha)
 					root.CFrame = currentCFrame
-					if gyro then
-						gyro.CFrame = currentCFrame
-					end
 					if platform then
 						platform.CFrame = currentCFrame * CFrame.new(0, -3.5, 0)
 					end
@@ -1595,9 +1559,6 @@ function HyakuAsura.init(_context)
 
 				if not cancelled then
 					root.CFrame = targetCFrame
-					if gyro then
-						gyro.CFrame = targetCFrame
-					end
 					if platform then
 						platform.CFrame = targetCFrame * CFrame.new(0, -3.5, 0)
 					end
@@ -1629,13 +1590,11 @@ function HyakuAsura.init(_context)
 
 			if humanoid then
 				if enabled then
-					ensureDeliveryFarmGyro(getCharacterRoot(character))
 					pcall(function()
 						humanoid:ChangeState(Enum.HumanoidStateType.Physics)
 					end)
 					humanoid.PlatformStand = true
 				else
-					destroyDeliveryFarmGyro()
 					humanoid.PlatformStand = false
 					pcall(function()
 						humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
@@ -2462,7 +2421,6 @@ function HyakuAsura.init(_context)
 				end
 
 				cancelDeliveryFarmTween()
-				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
 			end)
 		end
@@ -2689,7 +2647,6 @@ function HyakuAsura.init(_context)
 			else
 				deliveryFarmToken += 1
 				cancelDeliveryFarmTween()
-				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
 			end
 		end)
@@ -2875,7 +2832,6 @@ function HyakuAsura.init(_context)
 			stopModeratorDetector()
 			stopAntiAfk()
 			cancelDeliveryFarmTween()
-			destroyDeliveryFarmGyro()
 			destroyDeliveryFarmPlatform()
 			setSpeedBoostEnabled(false)
 			deliveryFarmToken += 1
