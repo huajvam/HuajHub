@@ -1721,8 +1721,11 @@ function HyakuAsura.init(_context)
 
 			local basePosition = spotPart.Position
 			local currentPosition = root.Position
+			local deltaToSpot = basePosition - currentPosition
 			local undergroundY = currentPosition.Y - 12
-			local surfaceY = basePosition.Y + 2
+			local surfaceY = currentPosition.Y + 2
+			local targetX = currentPosition.X + deltaToSpot.X
+			local targetZ = currentPosition.Z + deltaToSpot.Z
 			local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 			if flatLook.Magnitude <= 0.001 then
 				flatLook = Vector3.new(0, 0, -1)
@@ -1736,9 +1739,9 @@ function HyakuAsura.init(_context)
 			end
 
 			local startUndergroundCFrame = uprightDeliveryCFrame(currentPosition.X, undergroundY, currentPosition.Z)
-			local undergroundCFrame = uprightDeliveryCFrame(basePosition.X, undergroundY, basePosition.Z)
-			local surfaceCFrame = uprightDeliveryCFrame(basePosition.X, surfaceY, basePosition.Z)
-			local retreatCFrame = uprightDeliveryCFrame(basePosition.X, undergroundY, basePosition.Z)
+			local undergroundCFrame = uprightDeliveryCFrame(targetX, undergroundY, targetZ)
+			local surfaceCFrame = uprightDeliveryCFrame(targetX, surfaceY, targetZ)
+			local retreatCFrame = uprightDeliveryCFrame(targetX, undergroundY, targetZ)
 			local collisionStates = setCharacterDeliveryPhysics(character, true)
 
 			local descendSuccess = pcall(function()
