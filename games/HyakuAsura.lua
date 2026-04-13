@@ -1469,18 +1469,24 @@ function HyakuAsura.init(_context)
 		end
 
 		local function getActiveDeliverySpot()
-			local spotsFolder = getDeliverySpotsFolder()
-			if not spotsFolder then
+			local activeEffects = getLocalEntityActiveEffectsFolder()
+			if not activeEffects then
 				return nil
 			end
 
-			for _, descendant in ipairs(spotsFolder:GetDescendants()) do
-				if descendant:IsA("BasePart")
-					and descendant.Name == "DeliverySpot"
-					and descendant:FindFirstChildWhichIsA("TouchInterest")
-				then
-					return descendant
-				end
+			local navigationBeam = activeEffects:FindFirstChild("NavigationBeam")
+			if not navigationBeam or not navigationBeam:IsA("StringValue") then
+				return nil
+			end
+
+			local partValue = navigationBeam:FindFirstChild("Part")
+			if not partValue or not partValue:IsA("ObjectValue") then
+				return nil
+			end
+
+			local targetPart = partValue.Value
+			if targetPart and targetPart:IsA("BasePart") and targetPart.Name == "DeliverySpot" then
+				return targetPart
 			end
 
 			return nil
