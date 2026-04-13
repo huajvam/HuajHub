@@ -1518,29 +1518,66 @@ function HyakuAsura.init(_context)
 			activeDeliveryFarmTween = rootTween
 
 			local success = pcall(function()
-				local character = root.Parent
-				local humanoid = character and getCharacterHumanoid(character)
-				local wasPlatformStand = humanoid and humanoid.PlatformStand or false
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
-				if humanoid then
-					humanoid.PlatformStand = true
-				end
 				rootTween:Play()
 				if platformTween then
 					platformTween:Play()
 				end
 				rootTween.Completed:Wait()
 				root.CFrame = targetCFrame
-				if humanoid then
-					humanoid.PlatformStand = wasPlatformStand
-				end
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
 			end)
 
 			activeDeliveryFarmTween = nil
 			return success
+		end
+
+		local function setCharacterDeliveryPhysics(character, enabled)
+			if not character then
+				return nil
+			end
+
+			local humanoid = getCharacterHumanoid(character)
+			local collisionStates = nil
+			if enabled then
+				collisionStates = {}
+				for _, descendant in ipairs(character:GetDescendants()) do
+					if descendant:IsA("BasePart") then
+						collisionStates[descendant] = descendant.CanCollide
+						descendant.CanCollide = false
+					end
+				end
+			end
+
+			if humanoid then
+				if enabled then
+					pcall(function()
+						humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+					end)
+					humanoid.PlatformStand = true
+				else
+					humanoid.PlatformStand = false
+					pcall(function()
+						humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+					end)
+				end
+			end
+
+			return collisionStates
+		end
+
+		local function restoreCharacterCollisionStates(collisionStates)
+			if type(collisionStates) ~= "table" then
+				return
+			end
+
+			for part, canCollide in pairs(collisionStates) do
+				if part and part.Parent then
+					part.CanCollide = canCollide
+				end
+			end
 		end
 
 		local function startDeliveryQuest(character)
@@ -1589,6 +1626,7 @@ function HyakuAsura.init(_context)
 			local undergroundCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
 			local surfaceCFrame = CFrame.new(basePosition.X, basePosition.Y + 2, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
 			local retreatCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
+			local collisionStates = setCharacterDeliveryPhysics(character, true)
 
 			local descendSuccess = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
@@ -1596,21 +1634,30 @@ function HyakuAsura.init(_context)
 				root.CFrame = startUndergroundCFrame
 			end)
 			if not descendSuccess then
+				restoreCharacterCollisionStates(collisionStates)
+				setCharacterDeliveryPhysics(character, false)
 				return false
 			end
 
 			task.wait(0.05)
 
 			if not tweenCharacterRootTo(root, undergroundCFrame) then
+				restoreCharacterCollisionStates(collisionStates)
+				setCharacterDeliveryPhysics(character, false)
 				return false
 			end
 
 			if not tweenCharacterRootTo(root, surfaceCFrame, 2) then
+				restoreCharacterCollisionStates(collisionStates)
+				setCharacterDeliveryPhysics(character, false)
 				return false
 			end
 
 			task.wait(0.2)
-			return tweenCharacterRootTo(root, retreatCFrame, 0.4)
+			local success = tweenCharacterRootTo(root, retreatCFrame, 0.4)
+			restoreCharacterCollisionStates(collisionStates)
+			setCharacterDeliveryPhysics(character, false)
+			return success
 		end
 
 		local function clearTrainingPromptQueue()
