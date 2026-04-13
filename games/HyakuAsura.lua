@@ -1544,11 +1544,15 @@ function HyakuAsura.init(_context)
 				if deliveryPart and deliveryPart:IsA("BasePart") then
 					return deliveryPart
 				end
-
-				return targetInstance:FindFirstChildWhichIsA("BasePart", true)
 			end
 
 			return nil
+		end
+
+		local function isDeliverySpotStillActive(spotPart)
+			return spotPart ~= nil
+				and spotPart.Parent ~= nil
+				and spotPart:FindFirstChildWhichIsA("TouchInterest") ~= nil
 		end
 
 		local function hasActiveDeliveryEffect()
@@ -1762,7 +1766,17 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			task.wait(0.2)
+			local waitUntil = os.clock() + 2
+			while os.clock() < waitUntil do
+				if not isDeliverySpotStillActive(spotPart) then
+					break
+				end
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = surfaceCFrame
+				task.wait(0.05)
+			end
+
 			local success = tweenCharacterRootTo(root, retreatCFrame, 0.4)
 			restoreCharacterCollisionStates(collisionStates)
 			setCharacterDeliveryPhysics(character, false)
