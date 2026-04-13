@@ -333,8 +333,6 @@ function HyakuAsura.init(_context)
 		local activeDeliveryFarmTween = nil
 		local activeDeliveryFarmPlatform = nil
 		local activeDeliveryFarmGyro = nil
-		local activeDeliveryFarmBaseY = nil
-		local activeDeliveryFarmUndergroundY = nil
 		local autoSleepInProgress = false
 		local autoEatInProgress = false
 		local antiAfkConnection = nil
@@ -428,7 +426,6 @@ function HyakuAsura.init(_context)
 				0.743861377, -6.30315853e-08, 0.668333948
 			),
 		}
-		local deliveryQuestDefaultBaseY = 24.6887817
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -1518,11 +1515,6 @@ function HyakuAsura.init(_context)
 		end
 
 		local function getActiveDeliverySpot()
-			local spotsFolder = getDeliverySpotsFolder()
-			if not spotsFolder then
-				return nil
-			end
-
 			local activeEffects = getLocalEntityActiveEffectsFolder()
 			if not activeEffects then
 				return nil
@@ -1538,35 +1530,12 @@ function HyakuAsura.init(_context)
 				return nil
 			end
 
-			local targetInstance = partValue.Value
-			if not targetInstance then
-				return nil
-			end
-
-			if targetInstance:IsA("BasePart")
-				and targetInstance.Name == "DeliverySpot"
-				and targetInstance:IsDescendantOf(spotsFolder)
-			then
-				return targetInstance
-			end
-
-			if targetInstance:IsA("Model") or targetInstance:IsA("Folder") then
-				local deliveryPart = targetInstance:FindFirstChild("DeliverySpot", true)
-				if deliveryPart
-					and deliveryPart:IsA("BasePart")
-					and deliveryPart:IsDescendantOf(spotsFolder)
-				then
-					return deliveryPart
-				end
+			local targetPart = partValue.Value
+			if targetPart and targetPart:IsA("BasePart") and targetPart.Name == "DeliverySpot" then
+				return targetPart
 			end
 
 			return nil
-		end
-
-		local function isDeliverySpotStillActive(spotPart)
-			return spotPart ~= nil
-				and spotPart.Parent ~= nil
-				and spotPart:FindFirstChildWhichIsA("TouchInterest") ~= nil
 		end
 
 		local function hasActiveDeliveryEffect()
@@ -1599,9 +1568,7 @@ function HyakuAsura.init(_context)
 			end
 
 			local success = pcall(function()
-				local startPosition = root.Position
-				local targetPosition = targetCFrame.Position
-				local targetRotation = targetCFrame - targetPosition
+				local startCFrame = root.CFrame
 				local startTime = os.clock()
 				local endTime = startTime + duration
 				local gyro = ensureDeliveryFarmGyro(root)
@@ -1610,8 +1577,7 @@ function HyakuAsura.init(_context)
 				while not cancelled do
 					local now = os.clock()
 					local alpha = duration <= 0 and 1 or math.clamp((now - startTime) / duration, 0, 1)
-					local currentPosition = startPosition:Lerp(targetPosition, alpha)
-					local currentCFrame = CFrame.new(currentPosition) * targetRotation
+					local currentCFrame = startCFrame:Lerp(targetCFrame, alpha)
 					root.CFrame = currentCFrame
 					if gyro then
 						gyro.CFrame = currentCFrame
@@ -1699,12 +1665,6 @@ function HyakuAsura.init(_context)
 			end
 
 			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-				if activeDeliveryFarmBaseY == nil then
-					activeDeliveryFarmBaseY = deliveryQuestDefaultBaseY
-				end
-				if activeDeliveryFarmUndergroundY == nil then
-					activeDeliveryFarmUndergroundY = activeDeliveryFarmBaseY - 8
-				end
 				return true
 			end
 
@@ -1721,8 +1681,6 @@ function HyakuAsura.init(_context)
 			end
 
 			task.wait(0.2)
-			activeDeliveryFarmBaseY = startCFrame.Position.Y
-			activeDeliveryFarmUndergroundY = activeDeliveryFarmBaseY - 8
 			holdInteractionKey(0.5)
 			local timeoutAt = os.clock() + 3
 			while os.clock() < timeoutAt do
@@ -1743,11 +1701,8 @@ function HyakuAsura.init(_context)
 
 			local basePosition = spotPart.Position
 			local currentPosition = root.Position
-			local baseY = tonumber(activeDeliveryFarmBaseY) or deliveryQuestDefaultBaseY
-			local undergroundY = tonumber(activeDeliveryFarmUndergroundY) or (baseY - 12)
+			local undergroundY = basePosition.Y - 12
 			local surfaceY = basePosition.Y + 2
-			local targetX = basePosition.X
-			local targetZ = basePosition.Z
 			local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 			if flatLook.Magnitude <= 0.001 then
 				flatLook = Vector3.new(0, 0, -1)
@@ -1761,9 +1716,9 @@ function HyakuAsura.init(_context)
 			end
 
 			local startUndergroundCFrame = uprightDeliveryCFrame(currentPosition.X, undergroundY, currentPosition.Z)
-			local undergroundCFrame = uprightDeliveryCFrame(targetX, undergroundY, targetZ)
-			local surfaceCFrame = uprightDeliveryCFrame(targetX, surfaceY, targetZ)
-			local retreatCFrame = uprightDeliveryCFrame(targetX, undergroundY, targetZ)
+			local undergroundCFrame = uprightDeliveryCFrame(basePosition.X, undergroundY, basePosition.Z)
+			local surfaceCFrame = uprightDeliveryCFrame(basePosition.X, surfaceY, basePosition.Z)
+			local retreatCFrame = uprightDeliveryCFrame(basePosition.X, undergroundY, basePosition.Z)
 			local collisionStates = setCharacterDeliveryPhysics(character, true)
 
 			local descendSuccess = pcall(function()
@@ -1791,17 +1746,7 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local waitUntil = os.clock() + 2
-			while os.clock() < waitUntil do
-				if not isDeliverySpotStillActive(spotPart) then
-					break
-				end
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = surfaceCFrame
-				task.wait(0.05)
-			end
-
+			task.wait(0.2)
 			local success = tweenCharacterRootTo(root, retreatCFrame, 0.4)
 			restoreCharacterCollisionStates(collisionStates)
 			setCharacterDeliveryPhysics(character, false)
@@ -2503,25 +2448,15 @@ function HyakuAsura.init(_context)
 					local activeSpot = getActiveDeliverySpot()
 					if not deliveryActive then
 						startDeliveryQuest(character)
-						local waitUntil = os.clock() + 3
-						while os.clock() < waitUntil do
-							deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-							activeSpot = getActiveDeliverySpot()
-							if deliveryActive and activeSpot then
-								break
-							end
-							task.wait(0.1)
-						end
+						task.wait(0.75)
+						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
+						activeSpot = getActiveDeliverySpot()
 					end
 
 					if deliveryActive and activeSpot then
 						runDeliveryToSpot(character, activeSpot)
 						task.wait(0.5)
 					else
-						if not deliveryActive then
-							activeDeliveryFarmBaseY = nil
-							activeDeliveryFarmUndergroundY = nil
-						end
 						task.wait(0.5)
 					end
 				end
@@ -2529,8 +2464,6 @@ function HyakuAsura.init(_context)
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
-				activeDeliveryFarmBaseY = nil
-				activeDeliveryFarmUndergroundY = nil
 			end)
 		end
 
@@ -2758,8 +2691,6 @@ function HyakuAsura.init(_context)
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmGyro()
 				destroyDeliveryFarmPlatform()
-				activeDeliveryFarmBaseY = nil
-				activeDeliveryFarmUndergroundY = nil
 			end
 		end)
 
@@ -2946,8 +2877,6 @@ function HyakuAsura.init(_context)
 			cancelDeliveryFarmTween()
 			destroyDeliveryFarmGyro()
 			destroyDeliveryFarmPlatform()
-			activeDeliveryFarmBaseY = nil
-			activeDeliveryFarmUndergroundY = nil
 			setSpeedBoostEnabled(false)
 			deliveryFarmToken += 1
 			autoBenchToken += 1
