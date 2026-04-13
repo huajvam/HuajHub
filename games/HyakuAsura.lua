@@ -1568,7 +1568,9 @@ function HyakuAsura.init(_context)
 			end
 
 			local success = pcall(function()
-				local startCFrame = root.CFrame
+				local startPosition = root.Position
+				local targetPosition = targetCFrame.Position
+				local targetRotation = targetCFrame - targetPosition
 				local startTime = os.clock()
 				local endTime = startTime + duration
 				local gyro = ensureDeliveryFarmGyro(root)
@@ -1577,7 +1579,8 @@ function HyakuAsura.init(_context)
 				while not cancelled do
 					local now = os.clock()
 					local alpha = duration <= 0 and 1 or math.clamp((now - startTime) / duration, 0, 1)
-					local currentCFrame = startCFrame:Lerp(targetCFrame, alpha)
+					local currentPosition = startPosition:Lerp(targetPosition, alpha)
+					local currentCFrame = CFrame.new(currentPosition) * targetRotation
 					root.CFrame = currentCFrame
 					if gyro then
 						gyro.CFrame = currentCFrame
