@@ -428,6 +428,7 @@ function HyakuAsura.init(_context)
 				0.743861377, -6.30315853e-08, 0.668333948
 			),
 		}
+		local deliveryQuestDefaultBaseY = 24.6887817
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -1687,6 +1688,12 @@ function HyakuAsura.init(_context)
 			end
 
 			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				if activeDeliveryFarmBaseY == nil then
+					activeDeliveryFarmBaseY = deliveryQuestDefaultBaseY
+				end
+				if activeDeliveryFarmUndergroundY == nil then
+					activeDeliveryFarmUndergroundY = activeDeliveryFarmBaseY - 12
+				end
 				return true
 			end
 
@@ -1725,12 +1732,11 @@ function HyakuAsura.init(_context)
 
 			local basePosition = spotPart.Position
 			local currentPosition = root.Position
-			local deltaToSpot = basePosition - currentPosition
-			local baseY = tonumber(activeDeliveryFarmBaseY) or currentPosition.Y
+			local baseY = tonumber(activeDeliveryFarmBaseY) or deliveryQuestDefaultBaseY
 			local undergroundY = tonumber(activeDeliveryFarmUndergroundY) or (baseY - 12)
-			local surfaceY = baseY + 2
-			local targetX = currentPosition.X + deltaToSpot.X
-			local targetZ = currentPosition.Z + deltaToSpot.Z
+			local surfaceY = basePosition.Y + 2
+			local targetX = basePosition.X
+			local targetZ = basePosition.Z
 			local flatLook = Vector3.new(root.CFrame.LookVector.X, 0, root.CFrame.LookVector.Z)
 			if flatLook.Magnitude <= 0.001 then
 				flatLook = Vector3.new(0, 0, -1)
