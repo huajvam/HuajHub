@@ -16,6 +16,7 @@ local Players, MarketplaceService, ReplicatedStorage, RunService, UserInputServi
 )
 local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
+local TweenService = game:GetService("TweenService")
 
 local Library = sharedRequire("ui/Linoria/Library.lua")
 local ThemeManager = sharedRequire("ui/Linoria/addons/ThemeManager.lua")
@@ -315,9 +316,11 @@ function HyakuAsura.init(_context)
 
 	do
 		local localCheatsGroup = Tabs.Main:AddLeftGroupbox("Local Cheats")
+		local autoFarmGroup = Tabs.Main:AddLeftGroupbox("Auto Farm")
 		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
 		local autoEatGroup = Tabs.Main:AddRightGroupbox("Auto Eat")
 		local infiniteRhythmLoopToken = 0
+		local deliveryFarmToken = 0
 		local autoBenchToken = 0
 		local autoPullUpToken = 0
 		local autoSquatMachineToken = 0
@@ -327,6 +330,8 @@ function HyakuAsura.init(_context)
 		local autoSleepToken = 0
 		local autoEatToken = 0
 		local activeAutoBagModel = nil
+		local activeDeliveryFarmTween = nil
+		local activeDeliveryFarmPlatform = nil
 		local autoSleepInProgress = false
 		local autoEatInProgress = false
 		local antiAfkConnection = nil
@@ -400,6 +405,12 @@ function HyakuAsura.init(_context)
 			ManualDistance = 3.5,
 			YawOffsetDegrees = 0,
 		}
+		local deliveryQuestStartCFrame = CFrame.new(
+			1438.35718, 24.6887817, -374.204132,
+			0.055374939, -5.22860111e-09, -0.998465657,
+			5.50765904e-08, 1, -2.18208629e-09,
+			0.998465657, -5.48712507e-08, 0.055374939
+		)
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -827,6 +838,12 @@ function HyakuAsura.init(_context)
 			local dist = math.huge
 			for _, folder in ipairs(trainingSpots:GetChildren()) do
 				if folder.Name == "HospitalBed" or folder.Name == "Hospitalbed" then
+					local seat = getTrainingSpotSeat(folder)
+					local seatWeld = seat and seat:FindFirstChild("SeatWeld")
+					if seat and seatWeld then
+						continue
+					end
+
 					local part = getTrainingSpotDistancePart(folder)
 					if part then
 						local d = (root.Position - part.Position).Magnitude
@@ -1392,6 +1409,155 @@ function HyakuAsura.init(_context)
 			end)
 
 			return success
+		end
+
+		local function cancelDeliveryFarmTween()
+			if activeDeliveryFarmTween then
+				pcall(function()
+					activeDeliveryFarmTween:Cancel()
+				end)
+				activeDeliveryFarmTween = nil
+			end
+		end
+
+		local function destroyDeliveryFarmPlatform()
+			if activeDeliveryFarmPlatform then
+				pcall(function()
+					activeDeliveryFarmPlatform:Destroy()
+				end)
+				activeDeliveryFarmPlatform = nil
+			end
+		end
+
+		local function ensureDeliveryFarmPlatform(root)
+			if not root then
+				return nil
+			end
+
+			if activeDeliveryFarmPlatform and activeDeliveryFarmPlatform.Parent then
+				return activeDeliveryFarmPlatform
+			end
+
+			local platform = Instance.new("Part")
+			platform.Name = "HuajHubDeliveryPlatform"
+			platform.Size = Vector3.new(10, 1, 10)
+			platform.Anchored = true
+			platform.CanCollide = true
+			platform.Transparency = 1
+			platform.CastShadow = false
+			platform.CFrame = root.CFrame * CFrame.new(0, -3.5, 0)
+			platform.Parent = workspace
+			activeDeliveryFarmPlatform = platform
+			return platform
+		end
+
+		local function getDeliveryTweenSpeed()
+			return math.max(tonumber(getOptionValue("DeliveryFarmTweenSpeed", 15)) or 15, 1)
+		end
+
+		local function getDeliverySpotsFolder()
+			local jobs = workspace:FindFirstChild("Jobs")
+			local delivery = jobs and jobs:FindFirstChild("Delivery")
+			return delivery and delivery:FindFirstChild("Spots")
+		end
+
+		local function getActiveDeliverySpot()
+			local spotsFolder = getDeliverySpotsFolder()
+			if not spotsFolder then
+				return nil
+			end
+
+			for _, descendant in ipairs(spotsFolder:GetDescendants()) do
+				if descendant:IsA("BasePart")
+					and descendant.Name == "DeliverySpot"
+					and descendant:FindFirstChildWhichIsA("TouchInterest")
+				then
+					return descendant
+				end
+			end
+
+			return nil
+		end
+
+		local function tweenCharacterRootTo(root, targetCFrame, overrideDuration)
+			if not root or not targetCFrame then
+				return false
+			end
+
+			cancelDeliveryFarmTween()
+
+			local platform = ensureDeliveryFarmPlatform(root)
+			local duration = tonumber(overrideDuration)
+			if not duration then
+				local distance = (root.Position - targetCFrame.Position).Magnitude
+				duration = math.max(distance / getDeliveryTweenSpeed(), 0.05)
+			end
+
+			local tweenInfo = TweenInfo.new(duration, Enum.EasingStyle.Linear, Enum.EasingDirection.InOut)
+			local rootTween = TweenService:Create(root, tweenInfo, { CFrame = targetCFrame })
+			local platformTween = platform and TweenService:Create(platform, tweenInfo, { CFrame = targetCFrame * CFrame.new(0, -3.5, 0) }) or nil
+			activeDeliveryFarmTween = rootTween
+
+			local success = pcall(function()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				rootTween:Play()
+				if platformTween then
+					platformTween:Play()
+				end
+				rootTween.Completed:Wait()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+			end)
+
+			activeDeliveryFarmTween = nil
+			return success
+		end
+
+		local function startDeliveryQuest(character)
+			local root = character and getCharacterRoot(character)
+			if not root then
+				return false
+			end
+
+			cancelDeliveryFarmTween()
+			destroyDeliveryFarmPlatform()
+			local success = pcall(function()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = deliveryQuestStartCFrame
+			end)
+			if not success then
+				return false
+			end
+
+			task.wait(0.2)
+			holdInteractionKey(0.3)
+			task.wait(0.5)
+			return true
+		end
+
+		local function runDeliveryToSpot(character, spotPart)
+			local root = character and getCharacterRoot(character)
+			if not root or not spotPart then
+				return false
+			end
+
+			local basePosition = spotPart.Position
+			local undergroundCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
+			local surfaceCFrame = CFrame.new(basePosition.X, basePosition.Y + 2, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
+			local retreatCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
+
+			if not tweenCharacterRootTo(root, undergroundCFrame) then
+				return false
+			end
+
+			if not tweenCharacterRootTo(root, surfaceCFrame, 2) then
+				return false
+			end
+
+			task.wait(0.2)
+			return tweenCharacterRootTo(root, retreatCFrame, 0.4)
 		end
 
 		local function clearTrainingPromptQueue()
@@ -2072,6 +2238,39 @@ function HyakuAsura.init(_context)
 			end)
 		end
 
+		local function startDeliveryFarm()
+			deliveryFarmToken += 1
+			local currentToken = deliveryFarmToken
+
+			task.spawn(function()
+				while currentToken == deliveryFarmToken and Toggles.DeliveryFarmEnabled and Toggles.DeliveryFarmEnabled.Value do
+					local character = LocalPlayer and LocalPlayer.Character
+					local root = character and getCharacterRoot(character)
+					if not character or not root then
+						task.wait(0.5)
+						continue
+					end
+
+					local activeSpot = getActiveDeliverySpot()
+					if not activeSpot then
+						startDeliveryQuest(character)
+						task.wait(0.75)
+						activeSpot = getActiveDeliverySpot()
+					end
+
+					if activeSpot then
+						runDeliveryToSpot(character, activeSpot)
+						task.wait(0.5)
+					else
+						task.wait(0.5)
+					end
+				end
+
+				cancelDeliveryFarmTween()
+				destroyDeliveryFarmPlatform()
+			end)
+		end
+
 		local function startAutoSleep()
 			autoSleepToken += 1
 			local currentToken = autoSleepToken
@@ -2268,6 +2467,36 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
+		autoFarmGroup:AddToggle("DeliveryFarmEnabled", {
+			Text = "Delivery Farm",
+			Default = false,
+		})
+
+		local deliveryFarmOptions = autoFarmGroup:AddDependencyBox()
+		deliveryFarmOptions:SetupDependencies({
+			{ Toggles.DeliveryFarmEnabled, true },
+		})
+
+		deliveryFarmOptions:AddSlider("DeliveryFarmTweenSpeed", {
+			Text = "Tween Speed",
+			Default = 15,
+			Min = 1,
+			Max = 100,
+			Rounding = 0,
+		})
+
+		deliveryFarmOptions:AddLabel("Warning: anything above 50 is bannable")
+
+		Toggles.DeliveryFarmEnabled:OnChanged(function(enabled)
+			if enabled then
+				startDeliveryFarm()
+			else
+				deliveryFarmToken += 1
+				cancelDeliveryFarmTween()
+				destroyDeliveryFarmPlatform()
+			end
+		end)
+
 		autoTrainGroup:AddToggle("AutoBenchEnabled", {
 			Text = "Auto Bench",
 			Default = false,
@@ -2448,7 +2677,10 @@ function HyakuAsura.init(_context)
 			disconnectTrainingPromptListeners()
 			stopModeratorDetector()
 			stopAntiAfk()
+			cancelDeliveryFarmTween()
+			destroyDeliveryFarmPlatform()
 			setSpeedBoostEnabled(false)
+			deliveryFarmToken += 1
 			autoBenchToken += 1
 			autoPullUpToken += 1
 			autoSquatMachineToken += 1
@@ -2474,6 +2706,9 @@ function HyakuAsura.init(_context)
 			end
 			if Toggles and Toggles.AntiAfkEnabled then
 				pcall(function() Toggles.AntiAfkEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.DeliveryFarmEnabled then
+				pcall(function() Toggles.DeliveryFarmEnabled:SetValue(false) end)
 			end
 			if Toggles and Toggles.AutoBenchEnabled then
 				pcall(function() Toggles.AutoBenchEnabled:SetValue(false) end)
