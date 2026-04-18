@@ -412,6 +412,7 @@ function HyakuAsura.init(_context)
 		}
 		local deliveryRouteStorageFolder = "HuajHub"
 		local deliveryRouteStoragePath = deliveryRouteStorageFolder .. "\\hyaku_delivery_route.json"
+		local deliveryRouteRunSpeedThreshold = 18
 		local autoBagPlacementConfig = {
 			Axis = "LookVector",
 			DistanceOffset = 0.35,
@@ -1479,6 +1480,47 @@ function HyakuAsura.init(_context)
 			return math.max(tonumber(getOptionValue("DeliveryFarmTweenSpeed", 15)) or 15, 1)
 		end
 
+		local function getRecordedDeliveryRoutePointPosition(point)
+			if typeof(point) == "Vector3" then
+				return point
+			end
+
+			if type(point) == "table" and typeof(point.position) == "Vector3" then
+				return point.position
+			end
+
+			return nil
+		end
+
+		local function getRecordedDeliveryRoutePointMoveMode(point)
+			if type(point) == "table" and point.mode == "run" then
+				return "run"
+			end
+
+			return "walk"
+		end
+
+		local function createRecordedDeliveryRoutePoint(position, moveMode)
+			if typeof(position) ~= "Vector3" then
+				return nil
+			end
+
+			return {
+				position = position,
+				mode = moveMode == "run" and "run" or "walk",
+			}
+		end
+
+		local function getHorizontalSpeed(character)
+			local root = character and getCharacterRoot(character)
+			if not root then
+				return 0
+			end
+
+			local velocity = root.AssemblyLinearVelocity
+			return Vector3.new(velocity.X, 0, velocity.Z).Magnitude
+		end
+
 		local function getDeliverySpotsFolder()
 			local jobs = workspace:FindFirstChild("Jobs")
 			local delivery = jobs and jobs:FindFirstChild("Delivery")
@@ -1509,11 +1551,15 @@ function HyakuAsura.init(_context)
 			}
 
 			for _, point in ipairs(recordedDeliveryRoute) do
-				table.insert(payload.points, {
-					x = point.X,
-					y = point.Y,
-					z = point.Z,
-				})
+				local position = getRecordedDeliveryRoutePointPosition(point)
+				if position then
+					table.insert(payload.points, {
+						x = position.X,
+						y = position.Y,
+						z = position.Z,
+						mode = getRecordedDeliveryRoutePointMoveMode(point),
+					})
+				end
 			end
 
 			local encoded = HttpService:JSONEncode(payload)
@@ -1560,7 +1606,13 @@ function HyakuAsura.init(_context)
 					local y = tonumber(point.y)
 					local z = tonumber(point.z)
 					if x and y and z then
-						table.insert(recordedDeliveryRoute, Vector3.new(x, y, z))
+						local routePoint = createRecordedDeliveryRoutePoint(
+							Vector3.new(x, y, z),
+							point.mode
+						)
+						if routePoint then
+							table.insert(recordedDeliveryRoute, routePoint)
+						end
 					end
 				end
 			end
@@ -1587,11 +1639,14 @@ function HyakuAsura.init(_context)
 			local closestIndex = 1
 			local closestDistanceSquared = math.huge
 			for index, point in ipairs(recordedDeliveryRoute) do
-				local delta = point - position
-				local distanceSquared = delta:Dot(delta)
-				if distanceSquared < closestDistanceSquared then
-					closestDistanceSquared = distanceSquared
-					closestIndex = index
+				local routePosition = getRecordedDeliveryRoutePointPosition(point)
+				if routePosition then
+					local delta = routePosition - position
+					local distanceSquared = delta:Dot(delta)
+					if distanceSquared < closestDistanceSquared then
+						closestDistanceSquared = distanceSquared
+						closestIndex = index
+					end
 				end
 			end
 
@@ -1604,12 +1659,16 @@ function HyakuAsura.init(_context)
 			}
 
 			for _, point in ipairs(recordedDeliveryRoute) do
-				table.insert(lines, string.format(
-					"\tVector3.new(%.3f, %.3f, %.3f),",
-					point.X,
-					point.Y,
-					point.Z
-				))
+				local position = getRecordedDeliveryRoutePointPosition(point)
+				if position then
+					table.insert(lines, string.format(
+						"\t{ position = Vector3.new(%.3f, %.3f, %.3f), mode = %q },",
+						position.X,
+						position.Y,
+						position.Z,
+						getRecordedDeliveryRoutePointMoveMode(point)
+					))
+				end
 			end
 
 			table.insert(lines, "}")
@@ -1651,16 +1710,23 @@ function HyakuAsura.init(_context)
 					if root then
 						local sampleDistance = math.max(tonumber(getOptionValue("DeliveryRouteSampleDistance", 8)) or 8, 1)
 						local position = root.Position
+						local moveMode = getHorizontalSpeed(character) >= deliveryRouteRunSpeedThreshold and "run" or "walk"
 
 						if not lastRecordedPosition then
-							table.insert(recordedDeliveryRoute, position)
+							local routePoint = createRecordedDeliveryRoutePoint(position, moveMode)
+							if routePoint then
+								table.insert(recordedDeliveryRoute, routePoint)
+							end
 							lastRecordedPosition = position
 							saveRecordedDeliveryRoute()
 							updateDeliveryRouteStatusLabel()
 						else
 							local delta = position - lastRecordedPosition
 							if delta:Dot(delta) >= (sampleDistance * sampleDistance) then
-								table.insert(recordedDeliveryRoute, position)
+								local routePoint = createRecordedDeliveryRoutePoint(position, moveMode)
+								if routePoint then
+									table.insert(recordedDeliveryRoute, routePoint)
+								end
 								lastRecordedPosition = position
 								saveRecordedDeliveryRoute()
 								updateDeliveryRouteStatusLabel()
@@ -1760,48 +1826,7 @@ function HyakuAsura.init(_context)
 			return true
 		end
 
-		local function walkCharacterToPosition(character, targetPosition, stopDistance, currentToken)
-			local humanoid = character and getCharacterHumanoid(character)
-			local root = character and getCharacterRoot(character)
-			if not humanoid or not root or not targetPosition then
-				return false
-			end
-
-			stopDistance = math.max(tonumber(stopDistance) or 6, 2)
-			local stopDistanceSquared = stopDistance * stopDistance
-			local initialOffset = root.Position - targetPosition
-			if initialOffset:Dot(initialOffset) <= stopDistanceSquared then
-				return true
-			end
-
-			local timeoutAt = os.clock() + 30
-
-			while os.clock() < timeoutAt do
-				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
-					return false
-				end
-
-				local currentRoot = getCharacterRoot(character)
-				if not currentRoot then
-					return false
-				end
-
-				local currentOffset = currentRoot.Position - targetPosition
-				if currentOffset:Dot(currentOffset) <= stopDistanceSquared then
-					return true
-				end
-
-				pcall(function()
-					humanoid:MoveTo(targetPosition)
-				end)
-
-				task.wait(0.1)
-			end
-
-			return false
-		end
-
-		local function steerCharacterToPosition(character, targetPosition, stopDistance, currentToken)
+		local function runCharacterToPosition(character, targetPosition, stopDistance, currentToken)
 			local humanoid = character and getCharacterHumanoid(character)
 			local root = character and getCharacterRoot(character)
 			if not humanoid or not root or not targetPosition then
@@ -1819,6 +1844,7 @@ function HyakuAsura.init(_context)
 			local staminaRecoveryThreshold = 95
 			local timeoutAt = os.clock() + 30
 			local originalAutoRotate = humanoid.AutoRotate
+			local lastSteerAt = 0
 			humanoid.AutoRotate = false
 			startDeliveryRunInput()
 
@@ -1864,12 +1890,15 @@ function HyakuAsura.init(_context)
 					startDeliveryRunInput()
 				end
 
-				local flatTarget = Vector3.new(targetPosition.X, currentRoot.Position.Y, targetPosition.Z)
-				local flatDelta = flatTarget - currentRoot.Position
-				if flatDelta:Dot(flatDelta) > 0.001 then
-					pcall(function()
-						currentRoot.CFrame = CFrame.lookAt(currentRoot.Position, flatTarget)
-					end)
+				if os.clock() - lastSteerAt >= 0.15 then
+					local flatTarget = Vector3.new(targetPosition.X, currentRoot.Position.Y, targetPosition.Z)
+					local flatDelta = flatTarget - currentRoot.Position
+					if flatDelta:Dot(flatDelta) > 0.001 then
+						pcall(function()
+							currentRoot.CFrame = CFrame.lookAt(currentRoot.Position, flatTarget)
+						end)
+					end
+					lastSteerAt = os.clock()
 				end
 
 				task.wait(0.05)
@@ -1877,6 +1906,47 @@ function HyakuAsura.init(_context)
 
 			stopDeliveryRunInput()
 			humanoid.AutoRotate = originalAutoRotate
+			return false
+		end
+
+		local function walkCharacterToPosition(character, targetPosition, stopDistance, currentToken)
+			local humanoid = character and getCharacterHumanoid(character)
+			local root = character and getCharacterRoot(character)
+			if not humanoid or not root or not targetPosition then
+				return false
+			end
+
+			stopDistance = math.max(tonumber(stopDistance) or 6, 2)
+			local stopDistanceSquared = stopDistance * stopDistance
+			local initialOffset = root.Position - targetPosition
+			if initialOffset:Dot(initialOffset) <= stopDistanceSquared then
+				return true
+			end
+
+			local timeoutAt = os.clock() + 30
+
+			while os.clock() < timeoutAt do
+				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
+					return false
+				end
+
+				local currentRoot = getCharacterRoot(character)
+				if not currentRoot then
+					return false
+				end
+
+				local currentOffset = currentRoot.Position - targetPosition
+				if currentOffset:Dot(currentOffset) <= stopDistanceSquared then
+					return true
+				end
+
+				pcall(function()
+					humanoid:MoveTo(targetPosition)
+				end)
+
+				task.wait(0.1)
+			end
+
 			return false
 		end
 
@@ -1896,7 +1966,17 @@ function HyakuAsura.init(_context)
 					return false
 				end
 
-				if not steerCharacterToPosition(character, recordedDeliveryRoute[index], 6, currentToken) then
+				local routePoint = recordedDeliveryRoute[index]
+				local routePosition = getRecordedDeliveryRoutePointPosition(routePoint)
+				if not routePosition then
+					continue
+				end
+
+				local mover = getRecordedDeliveryRoutePointMoveMode(routePoint) == "run"
+					and runCharacterToPosition
+					or walkCharacterToPosition
+
+				if not mover(character, routePosition, 6, currentToken) then
 					return false
 				end
 
@@ -1904,7 +1984,11 @@ function HyakuAsura.init(_context)
 			end
 
 			if typeof(finalTargetPosition) == "Vector3" then
-				return steerCharacterToPosition(character, finalTargetPosition, 7, currentToken)
+				local finalRoutePoint = recordedDeliveryRoute[#recordedDeliveryRoute]
+				local mover = getRecordedDeliveryRoutePointMoveMode(finalRoutePoint) == "run"
+					and runCharacterToPosition
+					or walkCharacterToPosition
+				return mover(character, finalTargetPosition, 7, currentToken)
 			end
 
 			return true
