@@ -2615,115 +2615,6 @@ local function getCurrentCamera()
 			end
 		end
 
-		local function startDeliveryQuest(character)
-			local root = character and getCharacterRoot(character)
-			if not root then
-				return false
-			end
-
-			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-				return true
-			end
-
-			local boardPos = configState.deliveryQuestStartCFrame.Position
-
-			cancelDeliveryFarmTween()
-
-			local collisionStates = setCharacterDeliveryPhysics(character, true)
-			local platform = ensureDeliveryFarmPlatform(root)
-
-			local ok = pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
-				if platform and platform.Parent then
-					platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
-				end
-			end)
-
-			if not ok then
-				restoreCharacterCollisionStates(collisionStates)
-				setCharacterDeliveryPhysics(character, false)
-				destroyDeliveryFarmPlatform()
-				return false
-			end
-
-			task.wait(0.1)
-
-			pcall(function()
-				local map = workspace:FindFirstChild("Map")
-				local folder = map and map:FindFirstChild("Folder")
-				local jobBoard = folder and folder:GetChildren()[57]
-				local jobChild = jobBoard and jobBoard:FindFirstChild("Job")
-				local proximityPrompt = jobChild and jobChild:FindFirstChild("ProximityPrompt")
-				if proximityPrompt then
-					fireproximityprompt(proximityPrompt)
-				end
-			end)
-
-			local gotQuest = false
-			local timeoutAt = os.clock() + 3
-			while os.clock() < timeoutAt do
-				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-					gotQuest = true
-					break
-				end
-				task.wait(0.1)
-			end
-
-			restoreCharacterCollisionStates(collisionStates)
-			setCharacterDeliveryPhysics(character, false)
-			return gotQuest
-		end
-
-		local function runDeliveryToSpot(character, spotPart)
-			local root = character and getCharacterRoot(character)
-			if not root or not spotPart then
-				return false
-			end
-
-			local spotPos = spotPart.Position
-			local collisionStates = setCharacterDeliveryPhysics(character, true)
-			local platform = ensureDeliveryFarmPlatform(root)
-
-			local ok = pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = CFrame.new(spotPos.X, spotPos.Y - 15, spotPos.Z)
-				if platform and platform.Parent then
-					platform.CFrame = CFrame.new(spotPos.X, spotPos.Y - 18.5, spotPos.Z)
-				end
-			end)
-
-			if not ok then
-				restoreCharacterCollisionStates(collisionStates)
-				setCharacterDeliveryPhysics(character, false)
-				destroyDeliveryFarmPlatform()
-				return false
-			end
-
-			task.wait(8)
-
-			pcall(function()
-				firetouchinterest(spotPart, root, 0)
-			end)
-
-			task.wait(8)
-
-			local boardPos = configState.deliveryQuestStartCFrame.Position
-			pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
-				if platform and platform.Parent then
-					platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
-				end
-			end)
-
-			restoreCharacterCollisionStates(collisionStates)
-			setCharacterDeliveryPhysics(character, false)
-			return true
-		end
 
 		local function clearTrainingPromptQueue()
 			table.clear(trainingPromptState.queue)
@@ -3408,31 +3299,93 @@ local function getCurrentCamera()
 			local currentToken = runtimeState.deliveryFarmToken
 
 			task.spawn(function()
-				while currentToken == runtimeState.deliveryFarmToken and Toggles.DeliveryFarmEnabled and Toggles.DeliveryFarmEnabled.Value do
-					local character = LocalPlayer and LocalPlayer.Character
-					local root = character and getCharacterRoot(character)
+				local function isActive()
+					return currentToken == runtimeState.deliveryFarmToken
+						and Toggles.DeliveryFarmEnabled
+						and Toggles.DeliveryFarmEnabled.Value
+				end
+
+				local character = LocalPlayer and LocalPlayer.Character
+				local root = character and getCharacterRoot(character)
+				if not character or not root then
+					return
+				end
+
+				local collisionStates = setCharacterDeliveryPhysics(character, true)
+				local platform = ensureDeliveryFarmPlatform(root)
+				local boardPos = configState.deliveryQuestStartCFrame.Position
+
+				local function teleportUnderground(pos)
+					pcall(function()
+						root.AssemblyLinearVelocity = Vector3.zero
+						root.AssemblyAngularVelocity = Vector3.zero
+						root.CFrame = CFrame.new(pos.X, pos.Y - 15, pos.Z)
+						if platform and platform.Parent then
+							platform.CFrame = CFrame.new(pos.X, pos.Y - 18.5, pos.Z)
+						end
+					end)
+				end
+
+				teleportUnderground(boardPos)
+
+				while isActive() do
+					character = LocalPlayer and LocalPlayer.Character
+					root = character and getCharacterRoot(character)
 					if not character or not root then
 						task.wait(0.5)
 						continue
 					end
 
-					local deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-					local activeSpot = getActiveDeliverySpot()
-					if not deliveryActive then
-						startDeliveryQuest(character)
-						task.wait(0.75)
-						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-						activeSpot = getActiveDeliverySpot()
+					if not hasActiveDeliveryEffect() and not getActiveDeliverySpot() then
+						pcall(function()
+							local map = workspace:FindFirstChild("Map")
+							local folder = map and map:FindFirstChild("Folder")
+							local jobBoard = folder and folder:GetChildren()[57]
+							local jobChild = jobBoard and jobBoard:FindFirstChild("Job")
+							local proximityPrompt = jobChild and jobChild:FindFirstChild("ProximityPrompt")
+							if proximityPrompt then
+								fireproximityprompt(proximityPrompt)
+							end
+						end)
+
+						local timeoutAt = os.clock() + 3
+						while os.clock() < timeoutAt and isActive() do
+							if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+								break
+							end
+							task.wait(0.1)
+						end
+
+						if not isActive() then break end
 					end
 
-					if deliveryActive and activeSpot then
-						runDeliveryToSpot(character, activeSpot)
-						task.wait(0.5)
-					else
-						task.wait(0.5)
+					while isActive() and (hasActiveDeliveryEffect() or getActiveDeliverySpot()) do
+						local activeSpot = getActiveDeliverySpot()
+						if not activeSpot then
+							task.wait(0.1)
+							continue
+						end
+
+						teleportUnderground(activeSpot.Position)
+						task.wait(8)
+						if not isActive() then break end
+
+						pcall(function()
+							firetouchinterest(activeSpot, root, 0)
+						end)
+
+						task.wait(8)
+						if not isActive() then break end
 					end
+
+					if not isActive() then break end
+
+					teleportUnderground(boardPos)
+					task.wait(0.3)
 				end
 
+				restoreCharacterCollisionStates(collisionStates)
+				setCharacterDeliveryPhysics(character, false)
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmPlatform()
 			end)
