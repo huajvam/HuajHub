@@ -451,6 +451,11 @@ function HyakuAsura.init(_context)
 			5.50765904e-08, 1, -2.18208629e-09,
 			0.998465657, -5.48712507e-08, 0.055374939
 		)
+		local pathfindingDeliveryAllowedTargets = {
+			CFrame.new(1786.80493, 21.8695087, -720.351196, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+			CFrame.new(1762.08618, 22.1983051, 367.691803, 1, 0, 0, 0, 0.999999702, -0.000776898232, 0, 0.000776898232, 0.999999702),
+			CFrame.new(1156.96301, 22.1883698, -663.800781, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+		}
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -1553,6 +1558,76 @@ function HyakuAsura.init(_context)
 			return delivery and delivery:FindFirstChild("Spots")
 		end
 
+		local function getCancelJobRemote()
+			local remotes = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Remotes")
+			local cancelJob = remotes and remotes:FindFirstChild("CancelJob")
+			if cancelJob and cancelJob:IsA("RemoteEvent") then
+				return cancelJob
+			end
+
+			return nil
+		end
+
+		local function hasDeliverySpotTouchInterest(spotPart)
+			return spotPart and spotPart.Parent and spotPart:FindFirstChildOfClass("TouchInterest") ~= nil
+		end
+
+		local function getAllowedPathfindingDeliverySpots()
+			local spotsFolder = getDeliverySpotsFolder()
+			if not spotsFolder then
+				return {}
+			end
+
+			local foundSpots = {}
+			for _, targetCFrame in ipairs(pathfindingDeliveryAllowedTargets) do
+				local closestSpot = nil
+				local closestDistanceSquared = math.huge
+				for _, descendant in ipairs(spotsFolder:GetDescendants()) do
+					if descendant:IsA("BasePart") and descendant.Name == "DeliverySpot" then
+						local delta = descendant.Position - targetCFrame.Position
+						local distanceSquared = delta:Dot(delta)
+						if distanceSquared < closestDistanceSquared then
+							closestDistanceSquared = distanceSquared
+							closestSpot = descendant
+						end
+					end
+				end
+
+				if closestSpot and closestDistanceSquared <= (25 * 25) then
+					table.insert(foundSpots, closestSpot)
+				end
+			end
+
+			return foundSpots
+		end
+
+		local function getAllowedActivePathfindingDeliverySpot()
+			for _, spotPart in ipairs(getAllowedPathfindingDeliverySpots()) do
+				if hasDeliverySpotTouchInterest(spotPart) then
+					return spotPart
+				end
+			end
+
+			return nil
+		end
+
+		local function abandonCurrentDeliveryJob()
+			local cancelJobRemote = getCancelJobRemote()
+			if not cancelJobRemote then
+				return false
+			end
+
+			local ok = pcall(function()
+				cancelJobRemote:FireServer()
+			end)
+
+			if ok then
+				task.wait(0.35)
+			end
+
+			return ok
+		end
+
 		local function updateDeliveryRouteStatusLabel()
 			if deliveryRecorderState.statusLabel and type(deliveryRecorderState.statusLabel.SetText) == "function" then
 				local recordingEnabled = Toggles
@@ -2315,8 +2390,14 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startPathfindingDeliveryQuest(character, currentToken)
-			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+			local allowedActiveSpot = getAllowedActivePathfindingDeliverySpot()
+			if allowedActiveSpot then
 				return true
+			end
+
+			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				abandonCurrentDeliveryJob()
+				return false
 			end
 
 			local boardPosition = deliveryQuestStartCFrame.Position
@@ -2326,13 +2407,20 @@ function HyakuAsura.init(_context)
 
 			task.wait(0.15)
 			holdInteractionKey(0.5)
-			local timeoutAt = os.clock() + 3
+			local timeoutAt = os.clock() + 2.5
 			while os.clock() < timeoutAt do
-				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				local currentAllowedSpot = getAllowedActivePathfindingDeliverySpot()
+				if currentAllowedSpot then
 					return true
+				end
+
+				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+					break
 				end
 				task.wait(0.1)
 			end
+
+			abandonCurrentDeliveryJob()
 
 			return false
 		end
@@ -3279,19 +3367,22 @@ function HyakuAsura.init(_context)
 						continue
 					end
 
-					local deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-					local activeSpot = getActiveDeliverySpot()
+					local activeSpot = getAllowedActivePathfindingDeliverySpot()
+					local deliveryActive = activeSpot ~= nil
 					if not deliveryActive then
 						startPathfindingDeliveryQuest(character, currentToken)
 						task.wait(0.4)
-						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-						activeSpot = getActiveDeliverySpot()
+						activeSpot = getAllowedActivePathfindingDeliverySpot()
+						deliveryActive = activeSpot ~= nil
 					end
 
 					if deliveryActive and activeSpot then
 						runPathfindingDeliveryToSpot(character, activeSpot, currentToken)
 						task.wait(0.2)
 					else
+						if hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil then
+							abandonCurrentDeliveryJob()
+						end
 						task.wait(0.5)
 					end
 				end
