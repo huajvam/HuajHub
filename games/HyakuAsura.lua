@@ -1801,7 +1801,7 @@ function HyakuAsura.init(_context)
 			local humanoid = character and getCharacterHumanoid(character)
 			if humanoid then
 				pcall(function()
-					humanoid:MoveTo(getCharacterRoot(character) and getCharacterRoot(character).Position or Vector3.zero)
+					humanoid:Move(Vector3.zero, false)
 				end)
 			end
 		end
@@ -1826,7 +1826,7 @@ function HyakuAsura.init(_context)
 			return true
 		end
 
-		local function runCharacterToPosition(character, targetPosition, stopDistance, currentToken)
+		local function nativeMoveCharacterToPosition(character, targetPosition, stopDistance, currentToken, moveMode)
 			local humanoid = character and getCharacterHumanoid(character)
 			local root = character and getCharacterRoot(character)
 			if not humanoid or not root or not targetPosition then
@@ -1840,72 +1840,87 @@ function HyakuAsura.init(_context)
 				return true
 			end
 
+			local shouldRun = moveMode == "run"
 			local staminaLowThreshold = 20
 			local staminaRecoveryThreshold = 95
 			local timeoutAt = os.clock() + 30
-			local originalAutoRotate = humanoid.AutoRotate
-			local lastSteerAt = 0
-			humanoid.AutoRotate = false
-			startDeliveryRunInput()
+			if shouldRun then
+				startDeliveryRunInput()
+			else
+				stopDeliveryRunInput()
+			end
 
 			while os.clock() < timeoutAt do
 				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
 					stopDeliveryRunInput()
-					humanoid.AutoRotate = originalAutoRotate
+					pcall(function()
+						humanoid:Move(Vector3.zero, false)
+					end)
 					return false
 				end
 
 				local currentRoot = getCharacterRoot(character)
 				if not currentRoot then
 					stopDeliveryRunInput()
-					humanoid.AutoRotate = originalAutoRotate
+					pcall(function()
+						humanoid:Move(Vector3.zero, false)
+					end)
 					return false
 				end
 
 				local currentOffset = currentRoot.Position - targetPosition
 				if currentOffset:Dot(currentOffset) <= stopDistanceSquared then
 					stopDeliveryRunInput()
-					humanoid.AutoRotate = originalAutoRotate
+					pcall(function()
+						humanoid:Move(Vector3.zero, false)
+					end)
 					return true
 				end
 
-				local staminaValue = getStaminaValue()
-				local staminaNumber = staminaValue and tonumber(staminaValue.Value)
-				if staminaNumber and staminaNumber <= staminaLowThreshold then
-					stopDeliveryRunInput()
-					local recoveryDeadline = os.clock() + 10
-					while os.clock() < recoveryDeadline do
-						if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
-							humanoid.AutoRotate = originalAutoRotate
-							return false
-						end
+				if shouldRun then
+					local staminaValue = getStaminaValue()
+					local staminaNumber = staminaValue and tonumber(staminaValue.Value)
+					if staminaNumber and staminaNumber <= staminaLowThreshold then
+						stopDeliveryRunInput()
+						pcall(function()
+							humanoid:Move(Vector3.zero, false)
+						end)
+						local recoveryDeadline = os.clock() + 10
+						while os.clock() < recoveryDeadline do
+							if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
+								pcall(function()
+									humanoid:Move(Vector3.zero, false)
+								end)
+								return false
+							end
 
-						local liveStaminaValue = getStaminaValue()
-						local liveStaminaNumber = liveStaminaValue and tonumber(liveStaminaValue.Value)
-						if liveStaminaNumber and liveStaminaNumber >= staminaRecoveryThreshold then
-							break
+							local liveStaminaValue = getStaminaValue()
+							local liveStaminaNumber = liveStaminaValue and tonumber(liveStaminaValue.Value)
+							if liveStaminaNumber and liveStaminaNumber >= staminaRecoveryThreshold then
+								break
+							end
+							task.wait(0.1)
 						end
-						task.wait(0.1)
+						startDeliveryRunInput()
 					end
-					startDeliveryRunInput()
 				end
 
-				if os.clock() - lastSteerAt >= 0.15 then
-					local flatTarget = Vector3.new(targetPosition.X, currentRoot.Position.Y, targetPosition.Z)
-					local flatDelta = flatTarget - currentRoot.Position
-					if flatDelta:Dot(flatDelta) > 0.001 then
-						pcall(function()
-							currentRoot.CFrame = CFrame.lookAt(currentRoot.Position, flatTarget)
-						end)
-					end
-					lastSteerAt = os.clock()
+				local flatTarget = Vector3.new(targetPosition.X, currentRoot.Position.Y, targetPosition.Z)
+				local flatDelta = flatTarget - currentRoot.Position
+				if flatDelta:Dot(flatDelta) > 0.001 then
+					local direction = flatDelta.Unit
+					pcall(function()
+						humanoid:Move(Vector3.new(direction.X, 0, direction.Z), false)
+					end)
 				end
 
 				task.wait(0.05)
 			end
 
 			stopDeliveryRunInput()
-			humanoid.AutoRotate = originalAutoRotate
+			pcall(function()
+				humanoid:Move(Vector3.zero, false)
+			end)
 			return false
 		end
 
@@ -1972,11 +1987,8 @@ function HyakuAsura.init(_context)
 					continue
 				end
 
-				local mover = getRecordedDeliveryRoutePointMoveMode(routePoint) == "run"
-					and runCharacterToPosition
-					or walkCharacterToPosition
-
-				if not mover(character, routePosition, 6, currentToken) then
+				local moveMode = getRecordedDeliveryRoutePointMoveMode(routePoint)
+				if not nativeMoveCharacterToPosition(character, routePosition, 6, currentToken, moveMode) then
 					return false
 				end
 
@@ -1985,10 +1997,13 @@ function HyakuAsura.init(_context)
 
 			if typeof(finalTargetPosition) == "Vector3" then
 				local finalRoutePoint = recordedDeliveryRoute[#recordedDeliveryRoute]
-				local mover = getRecordedDeliveryRoutePointMoveMode(finalRoutePoint) == "run"
-					and runCharacterToPosition
-					or walkCharacterToPosition
-				return mover(character, finalTargetPosition, 7, currentToken)
+				return nativeMoveCharacterToPosition(
+					character,
+					finalTargetPosition,
+					7,
+					currentToken,
+					getRecordedDeliveryRoutePointMoveMode(finalRoutePoint)
+				)
 			end
 
 			return true
