@@ -323,33 +323,25 @@ function HyakuAsura.init(_context)
 		local autoFarmGroup = Tabs.Main:AddLeftGroupbox("Auto Farm")
 		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
 		local autoEatGroup = Tabs.Main:AddRightGroupbox("Auto Eat")
-		local runtimeState = {
-			infiniteRhythmLoopToken = 0,
-			deliveryFarmToken = 0,
-			pathfindingDeliveryFarmToken = 0,
-			deliveryRouteRecorderToken = 0,
-			autoBenchToken = 0,
-			autoPullUpToken = 0,
-			autoSquatMachineToken = 0,
-			autoTreadmillToken = 0,
-			autoBikeToken = 0,
-			autoBagsToken = 0,
-			autoSleepToken = 0,
-			autoEatToken = 0,
-			activeAutoBagModel = nil,
-			activeDeliveryFarmTween = nil,
-			activeDeliveryFarmPlatform = nil,
-			autoSleepInProgress = false,
-			autoEatInProgress = false,
-			antiAfkConnection = nil,
-			deliveryRunWHeld = false,
-			cachedBenchPromptFrame = nil,
-			lastBenchVisibleKey = nil,
-			lastBenchPromptScanAt = 0,
-			moderatorDetectorConnection = nil,
-			rhythmChargeConnection = nil,
-			staminaConnection = nil,
-		}
+		local infiniteRhythmLoopToken = 0
+		local deliveryFarmToken = 0
+		local pathfindingDeliveryFarmToken = 0
+		local deliveryRouteRecorderToken = 0
+		local autoBenchToken = 0
+		local autoPullUpToken = 0
+		local autoSquatMachineToken = 0
+		local autoTreadmillToken = 0
+		local autoBikeToken = 0
+		local autoBagsToken = 0
+		local autoSleepToken = 0
+		local autoEatToken = 0
+		local activeAutoBagModel = nil
+		local activeDeliveryFarmTween = nil
+		local activeDeliveryFarmPlatform = nil
+		local autoSleepInProgress = false
+		local autoEatInProgress = false
+		local antiAfkConnection = nil
+		local deliveryRunWHeld = false
 		local savedDeliveryRoute = {
 		}
 		local recordedDeliveryRoute = table.clone and table.clone(savedDeliveryRoute) or {}
@@ -377,6 +369,10 @@ function HyakuAsura.init(_context)
 				MouseButton2 = true,
 			},
 		}
+		local cachedBenchPromptFrame = nil
+		local lastBenchVisibleKey = nil
+		local lastBenchPromptScanAt = 0
+		local moderatorDetectorConnection = nil
 		local moderatorUserIds = {
 			[1915395703] = 999,
 			[4488906362] = 999,
@@ -397,89 +393,18 @@ function HyakuAsura.init(_context)
 			[4081878593] = 200,
 			[1015246692] = 200,
 		}
-		local trainingPromptState = {
-			uiRemote = ReplicatedStorage
-				and ReplicatedStorage:FindFirstChild("Remotes")
-				and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi"),
-			activeRemote = nil,
-			remoteConnection = nil,
-			uiConnection = nil,
-			queue = {},
-			sequence = 0,
-			lastKey = nil,
-			lastAt = 0,
-		}
-		local stateBridgeMap = {
-			infiniteRhythmLoopToken = { runtimeState, "infiniteRhythmLoopToken" },
-			deliveryFarmToken = { runtimeState, "deliveryFarmToken" },
-			pathfindingDeliveryFarmToken = { runtimeState, "pathfindingDeliveryFarmToken" },
-			deliveryRouteRecorderToken = { runtimeState, "deliveryRouteRecorderToken" },
-			autoBenchToken = { runtimeState, "autoBenchToken" },
-			autoPullUpToken = { runtimeState, "autoPullUpToken" },
-			autoSquatMachineToken = { runtimeState, "autoSquatMachineToken" },
-			autoTreadmillToken = { runtimeState, "autoTreadmillToken" },
-			autoBikeToken = { runtimeState, "autoBikeToken" },
-			autoBagsToken = { runtimeState, "autoBagsToken" },
-			autoSleepToken = { runtimeState, "autoSleepToken" },
-			autoEatToken = { runtimeState, "autoEatToken" },
-			activeAutoBagModel = { runtimeState, "activeAutoBagModel" },
-			activeDeliveryFarmTween = { runtimeState, "activeDeliveryFarmTween" },
-			activeDeliveryFarmPlatform = { runtimeState, "activeDeliveryFarmPlatform" },
-			autoSleepInProgress = { runtimeState, "autoSleepInProgress" },
-			autoEatInProgress = { runtimeState, "autoEatInProgress" },
-			antiAfkConnection = { runtimeState, "antiAfkConnection" },
-			deliveryRunWHeld = { runtimeState, "deliveryRunWHeld" },
-			cachedBenchPromptFrame = { runtimeState, "cachedBenchPromptFrame" },
-			lastBenchVisibleKey = { runtimeState, "lastBenchVisibleKey" },
-			lastBenchPromptScanAt = { runtimeState, "lastBenchPromptScanAt" },
-			moderatorDetectorConnection = { runtimeState, "moderatorDetectorConnection" },
-			rhythmChargeConnection = { runtimeState, "rhythmChargeConnection" },
-			staminaConnection = { runtimeState, "staminaConnection" },
-			trainingUiRemote = { trainingPromptState, "uiRemote" },
-			activeTrainingPromptRemote = { trainingPromptState, "activeRemote" },
-			trainingPromptRemoteConnection = { trainingPromptState, "remoteConnection" },
-			trainingUiRemoteConnection = { trainingPromptState, "uiConnection" },
-			trainingPromptQueue = { trainingPromptState, "queue" },
-			trainingPromptSequence = { trainingPromptState, "sequence" },
-			lastTrainingPromptKey = { trainingPromptState, "lastKey" },
-			lastTrainingPromptAt = { trainingPromptState, "lastAt" },
-		}
-		local currentEnv = getfenv and getfenv() or _G
-		if type(currentEnv) == "table" then
-			local envMeta = getmetatable(currentEnv) or {}
-			local originalIndex = envMeta.__index
-			local originalNewIndex = envMeta.__newindex
-			envMeta.__index = function(env, key)
-				local mappedState = stateBridgeMap[key]
-				if mappedState then
-					return mappedState[1][mappedState[2]]
-				end
-				if type(originalIndex) == "function" then
-					return originalIndex(env, key)
-				end
-				if type(originalIndex) == "table" then
-					return originalIndex[key]
-				end
-				return rawget(env, key)
-			end
-			envMeta.__newindex = function(env, key, value)
-				local mappedState = stateBridgeMap[key]
-				if mappedState then
-					mappedState[1][mappedState[2]] = value
-					return
-				end
-				if type(originalNewIndex) == "function" then
-					originalNewIndex(env, key, value)
-					return
-				end
-				if type(originalNewIndex) == "table" then
-					originalNewIndex[key] = value
-					return
-				end
-				rawset(env, key, value)
-			end
-			setmetatable(currentEnv, envMeta)
-		end
+		local trainingUiRemote = ReplicatedStorage
+			and ReplicatedStorage:FindFirstChild("Remotes")
+			and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi")
+		local activeTrainingPromptRemote = nil
+		local trainingPromptRemoteConnection = nil
+		local trainingUiRemoteConnection = nil
+		local trainingPromptQueue = {}
+		local trainingPromptSequence = 0
+		local lastTrainingPromptKey = nil
+		local lastTrainingPromptAt = 0
+		local rhythmChargeConnection
+		local staminaConnection
 		local autoEatFoodNames = {
 			"Pizza",
 			"Kebab",
@@ -526,11 +451,6 @@ function HyakuAsura.init(_context)
 			5.50765904e-08, 1, -2.18208629e-09,
 			0.998465657, -5.48712507e-08, 0.055374939
 		)
-		local pathfindingDeliveryAllowedTargets = {
-			CFrame.new(1786.80493, 21.8695087, -720.351196, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-			CFrame.new(1762.08618, 22.1983051, 367.691803, 1, 0, 0, 0, 0.999999702, -0.000776898232, 0, 0.000776898232, 0.999999702),
-			CFrame.new(1156.96301, 22.1883698, -663.800781, 1, 0, 0, 0, 1, 0, 0, 0, 1),
-		}
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -619,7 +539,7 @@ function HyakuAsura.init(_context)
 				return remote
 			end
 
-			return trainingPromptState.activeRemote
+			return activeTrainingPromptRemote
 		end
 
 		local function getSpeedBoostValue()
@@ -1633,76 +1553,6 @@ function HyakuAsura.init(_context)
 			return delivery and delivery:FindFirstChild("Spots")
 		end
 
-		local function getCancelJobRemote()
-			local remotes = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Remotes")
-			local cancelJob = remotes and remotes:FindFirstChild("CancelJob")
-			if cancelJob and cancelJob:IsA("RemoteEvent") then
-				return cancelJob
-			end
-
-			return nil
-		end
-
-		local function hasDeliverySpotTouchInterest(spotPart)
-			return spotPart and spotPart.Parent and spotPart:FindFirstChildOfClass("TouchInterest") ~= nil
-		end
-
-		local function getAllowedPathfindingDeliverySpots()
-			local spotsFolder = getDeliverySpotsFolder()
-			if not spotsFolder then
-				return {}
-			end
-
-			local foundSpots = {}
-			for _, targetCFrame in ipairs(pathfindingDeliveryAllowedTargets) do
-				local closestSpot = nil
-				local closestDistanceSquared = math.huge
-				for _, descendant in ipairs(spotsFolder:GetDescendants()) do
-					if descendant:IsA("BasePart") and descendant.Name == "DeliverySpot" then
-						local delta = descendant.Position - targetCFrame.Position
-						local distanceSquared = delta:Dot(delta)
-						if distanceSquared < closestDistanceSquared then
-							closestDistanceSquared = distanceSquared
-							closestSpot = descendant
-						end
-					end
-				end
-
-				if closestSpot and closestDistanceSquared <= (25 * 25) then
-					table.insert(foundSpots, closestSpot)
-				end
-			end
-
-			return foundSpots
-		end
-
-		local function getAllowedActivePathfindingDeliverySpot()
-			for _, spotPart in ipairs(getAllowedPathfindingDeliverySpots()) do
-				if hasDeliverySpotTouchInterest(spotPart) then
-					return spotPart
-				end
-			end
-
-			return nil
-		end
-
-		local function abandonCurrentDeliveryJob()
-			local cancelJobRemote = getCancelJobRemote()
-			if not cancelJobRemote then
-				return false
-			end
-
-			local ok = pcall(function()
-				cancelJobRemote:FireServer()
-			end)
-
-			if ok then
-				task.wait(0.35)
-			end
-
-			return ok
-		end
-
 		local function updateDeliveryRouteStatusLabel()
 			if deliveryRecorderState.statusLabel and type(deliveryRecorderState.statusLabel.SetText) == "function" then
 				local recordingEnabled = Toggles
@@ -2465,14 +2315,8 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startPathfindingDeliveryQuest(character, currentToken)
-			local allowedActiveSpot = getAllowedActivePathfindingDeliverySpot()
-			if allowedActiveSpot then
-				return true
-			end
-
 			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-				abandonCurrentDeliveryJob()
-				return false
+				return true
 			end
 
 			local boardPosition = deliveryQuestStartCFrame.Position
@@ -2482,20 +2326,13 @@ function HyakuAsura.init(_context)
 
 			task.wait(0.15)
 			holdInteractionKey(0.5)
-			local timeoutAt = os.clock() + 2.5
+			local timeoutAt = os.clock() + 3
 			while os.clock() < timeoutAt do
-				local currentAllowedSpot = getAllowedActivePathfindingDeliverySpot()
-				if currentAllowedSpot then
-					return true
-				end
-
 				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-					break
+					return true
 				end
 				task.wait(0.1)
 			end
-
-			abandonCurrentDeliveryJob()
 
 			return false
 		end
@@ -3442,22 +3279,19 @@ function HyakuAsura.init(_context)
 						continue
 					end
 
-					local activeSpot = getAllowedActivePathfindingDeliverySpot()
-					local deliveryActive = activeSpot ~= nil
+					local deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
+					local activeSpot = getActiveDeliverySpot()
 					if not deliveryActive then
 						startPathfindingDeliveryQuest(character, currentToken)
 						task.wait(0.4)
-						activeSpot = getAllowedActivePathfindingDeliverySpot()
-						deliveryActive = activeSpot ~= nil
+						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
+						activeSpot = getActiveDeliverySpot()
 					end
 
 					if deliveryActive and activeSpot then
 						runPathfindingDeliveryToSpot(character, activeSpot, currentToken)
 						task.wait(0.2)
 					else
-						if hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil then
-							abandonCurrentDeliveryJob()
-						end
 						task.wait(0.5)
 					end
 				end
@@ -4531,4 +4365,3 @@ function HyakuAsura.init(_context)
 end
 
 return HyakuAsura
-
