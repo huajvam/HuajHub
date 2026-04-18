@@ -1760,7 +1760,48 @@ function HyakuAsura.init(_context)
 			return true
 		end
 
-		local function runCharacterToPosition(character, targetPosition, stopDistance, currentToken)
+		local function walkCharacterToPosition(character, targetPosition, stopDistance, currentToken)
+			local humanoid = character and getCharacterHumanoid(character)
+			local root = character and getCharacterRoot(character)
+			if not humanoid or not root or not targetPosition then
+				return false
+			end
+
+			stopDistance = math.max(tonumber(stopDistance) or 6, 2)
+			local stopDistanceSquared = stopDistance * stopDistance
+			local initialOffset = root.Position - targetPosition
+			if initialOffset:Dot(initialOffset) <= stopDistanceSquared then
+				return true
+			end
+
+			local timeoutAt = os.clock() + 30
+
+			while os.clock() < timeoutAt do
+				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
+					return false
+				end
+
+				local currentRoot = getCharacterRoot(character)
+				if not currentRoot then
+					return false
+				end
+
+				local currentOffset = currentRoot.Position - targetPosition
+				if currentOffset:Dot(currentOffset) <= stopDistanceSquared then
+					return true
+				end
+
+				pcall(function()
+					humanoid:MoveTo(targetPosition)
+				end)
+
+				task.wait(0.1)
+			end
+
+			return false
+		end
+
+		local function steerCharacterToPosition(character, targetPosition, stopDistance, currentToken)
 			local humanoid = character and getCharacterHumanoid(character)
 			local root = character and getCharacterRoot(character)
 			if not humanoid or not root or not targetPosition then
@@ -1777,23 +1818,28 @@ function HyakuAsura.init(_context)
 			local staminaLowThreshold = 20
 			local staminaRecoveryThreshold = 95
 			local timeoutAt = os.clock() + 30
+			local originalAutoRotate = humanoid.AutoRotate
+			humanoid.AutoRotate = false
 			startDeliveryRunInput()
 
 			while os.clock() < timeoutAt do
 				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
 					stopDeliveryRunInput()
+					humanoid.AutoRotate = originalAutoRotate
 					return false
 				end
 
 				local currentRoot = getCharacterRoot(character)
 				if not currentRoot then
 					stopDeliveryRunInput()
+					humanoid.AutoRotate = originalAutoRotate
 					return false
 				end
 
 				local currentOffset = currentRoot.Position - targetPosition
 				if currentOffset:Dot(currentOffset) <= stopDistanceSquared then
 					stopDeliveryRunInput()
+					humanoid.AutoRotate = originalAutoRotate
 					return true
 				end
 
@@ -1804,6 +1850,7 @@ function HyakuAsura.init(_context)
 					local recoveryDeadline = os.clock() + 10
 					while os.clock() < recoveryDeadline do
 						if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
+							humanoid.AutoRotate = originalAutoRotate
 							return false
 						end
 
@@ -1817,14 +1864,19 @@ function HyakuAsura.init(_context)
 					startDeliveryRunInput()
 				end
 
-				pcall(function()
-					humanoid:MoveTo(targetPosition)
-				end)
+				local flatTarget = Vector3.new(targetPosition.X, currentRoot.Position.Y, targetPosition.Z)
+				local flatDelta = flatTarget - currentRoot.Position
+				if flatDelta:Dot(flatDelta) > 0.001 then
+					pcall(function()
+						currentRoot.CFrame = CFrame.lookAt(currentRoot.Position, flatTarget)
+					end)
+				end
 
-				task.wait(0.1)
+				task.wait(0.05)
 			end
 
 			stopDeliveryRunInput()
+			humanoid.AutoRotate = originalAutoRotate
 			return false
 		end
 
@@ -1844,7 +1896,7 @@ function HyakuAsura.init(_context)
 					return false
 				end
 
-				if not runCharacterToPosition(character, recordedDeliveryRoute[index], 6, currentToken) then
+				if not steerCharacterToPosition(character, recordedDeliveryRoute[index], 6, currentToken) then
 					return false
 				end
 
@@ -1852,7 +1904,7 @@ function HyakuAsura.init(_context)
 			end
 
 			if typeof(finalTargetPosition) == "Vector3" then
-				return runCharacterToPosition(character, finalTargetPosition, 7, currentToken)
+				return steerCharacterToPosition(character, finalTargetPosition, 7, currentToken)
 			end
 
 			return true
@@ -1864,7 +1916,7 @@ function HyakuAsura.init(_context)
 			end
 
 			local boardPosition = deliveryQuestStartCFrame.Position
-			if not runCharacterToPosition(character, boardPosition, 8, currentToken) then
+			if not walkCharacterToPosition(character, boardPosition, 8, currentToken) then
 				return false
 			end
 
@@ -1891,7 +1943,7 @@ function HyakuAsura.init(_context)
 					return false
 				end
 			else
-				if not runCharacterToPosition(character, spotPart.Position, 7, currentToken) then
+				if not walkCharacterToPosition(character, spotPart.Position, 7, currentToken) then
 					return false
 				end
 			end
