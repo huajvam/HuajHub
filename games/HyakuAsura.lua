@@ -285,6 +285,10 @@ function HyakuAsura.init(_context)
 			return false
 		end
 
+		if Toggles and Toggles.PathfindingDeliveryFarmEnabled and Toggles.PathfindingDeliveryFarmEnabled.Value then
+			return false
+		end
+
 		return payload.Action == "Run"
 	end
 
