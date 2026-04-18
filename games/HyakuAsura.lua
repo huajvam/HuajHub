@@ -454,10 +454,10 @@ function HyakuAsura.init(_context)
 				YawOffsetDegrees = 0,
 			},
 			deliveryQuestStartCFrame = CFrame.new(
-				1438.35718, 24.6887817, -374.204132,
-				0.055374939, -5.22860111e-09, -0.998465657,
-				5.50765904e-08, 1, -2.18208629e-09,
-				0.998465657, -5.48712507e-08, 0.055374939
+				1439.07104, 25.3973007, -374.693085,
+				-1.1920929e-07, 0, -1.00000012,
+				0, 1, 0,
+				1.00000012, 0, -1.1920929e-07
 			),
 			pathfindingDeliveryAllowedTargets = {
 				CFrame.new(1786.80493, 21.8695087, -720.351196, 1, 0, 0, 0, 1, 0, 0, 0, 1),
@@ -1512,11 +1512,7 @@ function HyakuAsura.init(_context)
 			return platform
 		end
 
-		local function getDeliveryTweenSpeed()
-			return math.max(tonumber(getOptionValue("DeliveryFarmTweenSpeed", 15)) or 15, 1)
-		end
-
-		local function getCurrentCamera()
+local function getCurrentCamera()
 			return workspace.CurrentCamera
 		end
 
@@ -2619,31 +2615,6 @@ function HyakuAsura.init(_context)
 			end
 		end
 
-		local function getDeliveryJobBoard()
-			local map = workspace:FindFirstChild("Map")
-			local folder = map and map:FindFirstChild("Folder")
-			if not folder then
-				return nil
-			end
-			return folder:GetChildren()[57]
-		end
-
-		local function getDeliveryJobBoardPosition(jobBoard)
-			if not jobBoard then
-				return nil
-			end
-			if jobBoard:IsA("BasePart") then
-				return jobBoard.Position
-			elseif jobBoard:IsA("Model") then
-				if jobBoard.PrimaryPart then
-					return jobBoard.PrimaryPart.Position
-				end
-				local part = jobBoard:FindFirstChildOfClass("BasePart")
-				return part and part.Position
-			end
-			return nil
-		end
-
 		local function startDeliveryQuest(character)
 			local root = character and getCharacterRoot(character)
 			if not root then
@@ -2654,17 +2625,7 @@ function HyakuAsura.init(_context)
 				return true
 			end
 
-			local jobBoard = getDeliveryJobBoard()
-			local boardPos = getDeliveryJobBoardPosition(jobBoard)
-			if not boardPos then
-				return false
-			end
-
-			local jobChild = jobBoard:FindFirstChild("Job")
-			local proximityPrompt = jobChild and jobChild:FindFirstChild("ProximityPrompt")
-			if not proximityPrompt then
-				return false
-			end
+			local boardPos = configState.deliveryQuestStartCFrame.Position
 
 			cancelDeliveryFarmTween()
 
@@ -2690,7 +2651,14 @@ function HyakuAsura.init(_context)
 			task.wait(0.1)
 
 			pcall(function()
-				fireproximityprompt(proximityPrompt)
+				local map = workspace:FindFirstChild("Map")
+				local folder = map and map:FindFirstChild("Folder")
+				local jobBoard = folder and folder:GetChildren()[57]
+				local jobChild = jobBoard and jobBoard:FindFirstChild("Job")
+				local proximityPrompt = jobChild and jobChild:FindFirstChild("ProximityPrompt")
+				if proximityPrompt then
+					fireproximityprompt(proximityPrompt)
+				end
 			end)
 
 			local gotQuest = false
@@ -2742,18 +2710,15 @@ function HyakuAsura.init(_context)
 
 			task.wait(8)
 
-			local jobBoard = getDeliveryJobBoard()
-			local boardPos = getDeliveryJobBoardPosition(jobBoard)
-			if boardPos then
-				pcall(function()
-					root.AssemblyLinearVelocity = Vector3.zero
-					root.AssemblyAngularVelocity = Vector3.zero
-					root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
-					if platform and platform.Parent then
-						platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
-					end
-				end)
-			end
+			local boardPos = configState.deliveryQuestStartCFrame.Position
+			pcall(function()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
+				if platform and platform.Parent then
+					platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
+				end
+			end)
 
 			restoreCharacterCollisionStates(collisionStates)
 			setCharacterDeliveryPhysics(character, false)
@@ -3710,22 +3675,6 @@ function HyakuAsura.init(_context)
 			Default = false,
 		})
 
-		do
-			local options = uiGroups.autoFarm:AddDependencyBox()
-			options:SetupDependencies({
-				{ Toggles.DeliveryFarmEnabled, true },
-			})
-
-			options:AddSlider("DeliveryFarmTweenSpeed", {
-				Text = "Tween Speed",
-				Default = 15,
-				Min = 1,
-				Max = 100,
-				Rounding = 0,
-			})
-
-			options:AddLabel("anything above 50 is bannable")
-		end
 
 		Toggles.DeliveryFarmEnabled:OnChanged(function(enabled)
 			if enabled then
