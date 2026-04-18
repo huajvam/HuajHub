@@ -319,32 +319,43 @@ function HyakuAsura.init(_context)
 	}
 
 	do
-		local localCheatsGroup = Tabs.Main:AddLeftGroupbox("Local Cheats")
-		local autoFarmGroup = Tabs.Main:AddLeftGroupbox("Auto Farm")
-		local autoTrainGroup = Tabs.Main:AddRightGroupbox("Auto Train")
-		local autoEatGroup = Tabs.Main:AddRightGroupbox("Auto Eat")
-		local infiniteRhythmLoopToken = 0
-		local deliveryFarmToken = 0
-		local pathfindingDeliveryFarmToken = 0
-		local deliveryRouteRecorderToken = 0
-		local autoBenchToken = 0
-		local autoPullUpToken = 0
-		local autoSquatMachineToken = 0
-		local autoTreadmillToken = 0
-		local autoBikeToken = 0
-		local autoBagsToken = 0
-		local autoSleepToken = 0
-		local autoEatToken = 0
-		local activeAutoBagModel = nil
-		local activeDeliveryFarmTween = nil
-		local activeDeliveryFarmPlatform = nil
-		local autoSleepInProgress = false
-		local autoEatInProgress = false
-		local antiAfkConnection = nil
-		local deliveryRunWHeld = false
-		local savedDeliveryRoute = {
+		local uiGroups = {
+			localCheats = Tabs.Main:AddLeftGroupbox("Local Cheats"),
+			autoFarm = Tabs.Main:AddLeftGroupbox("Auto Farm"),
+			autoTrain = Tabs.Main:AddRightGroupbox("Auto Train"),
+			autoEat = Tabs.Main:AddRightGroupbox("Auto Eat"),
 		}
-		local recordedDeliveryRoute = table.clone and table.clone(savedDeliveryRoute) or {}
+		local runtimeState = {
+			infiniteRhythmLoopToken = 0,
+			deliveryFarmToken = 0,
+			pathfindingDeliveryFarmToken = 0,
+			deliveryRouteRecorderToken = 0,
+			autoBenchToken = 0,
+			autoPullUpToken = 0,
+			autoSquatMachineToken = 0,
+			autoTreadmillToken = 0,
+			autoBikeToken = 0,
+			autoBagsToken = 0,
+			autoSleepToken = 0,
+			autoEatToken = 0,
+			activeAutoBagModel = nil,
+			activeDeliveryFarmTween = nil,
+			activeDeliveryFarmPlatform = nil,
+			autoSleepInProgress = false,
+			autoEatInProgress = false,
+			antiAfkConnection = nil,
+			deliveryRunWHeld = false,
+			cachedBenchPromptFrame = nil,
+			lastBenchVisibleKey = nil,
+			lastBenchPromptScanAt = 0,
+			moderatorDetectorConnection = nil,
+			rhythmChargeConnection = nil,
+			staminaConnection = nil,
+		}
+		local deliveryRouteState = {
+			savedRoute = {},
+		}
+		deliveryRouteState.recordedRoute = table.clone and table.clone(deliveryRouteState.savedRoute) or {}
 		local deliveryRecorderState = {
 			macroEvents = {},
 			statusLabel = nil,
@@ -369,88 +380,91 @@ function HyakuAsura.init(_context)
 				MouseButton2 = true,
 			},
 		}
-		local cachedBenchPromptFrame = nil
-		local lastBenchVisibleKey = nil
-		local lastBenchPromptScanAt = 0
-		local moderatorDetectorConnection = nil
-		local moderatorUserIds = {
-			[1915395703] = 999,
-			[4488906362] = 999,
-			[1464780145] = 999,
-			[1921021351] = 999,
-			[452637989] = 999,
-			[9869623665] = 999,
-			[8168050148] = 1,
-			[1042857413] = 1,
-			[5413881219] = 1,
-			[203443515] = 1,
-			[377144428] = 1,
-			[108493198] = 1,
-			[527936177] = 1,
-			[1149150663] = 1,
-			[992099552] = 1,
-			[892331036] = 1,
-			[4081878593] = 200,
-			[1015246692] = 200,
+		local trainingPromptState = {
+			uiRemote = ReplicatedStorage
+				and ReplicatedStorage:FindFirstChild("Remotes")
+				and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi"),
+			activeRemote = nil,
+			remoteConnection = nil,
+			uiConnection = nil,
+			queue = {},
+			sequence = 0,
+			lastKey = nil,
+			lastAt = 0,
 		}
-		local trainingUiRemote = ReplicatedStorage
-			and ReplicatedStorage:FindFirstChild("Remotes")
-			and ReplicatedStorage.Remotes:FindFirstChild("TrainingUi")
-		local activeTrainingPromptRemote = nil
-		local trainingPromptRemoteConnection = nil
-		local trainingUiRemoteConnection = nil
-		local trainingPromptQueue = {}
-		local trainingPromptSequence = 0
-		local lastTrainingPromptKey = nil
-		local lastTrainingPromptAt = 0
-		local rhythmChargeConnection
-		local staminaConnection
-		local autoEatFoodNames = {
-			"Pizza",
-			"Kebab",
-			"Hotdog",
-			"Taco",
-			"Ramen",
-			"Onigiri",
-			"Fries",
-			"Burger",
+		local configState = {
+			moderatorUserIds = {
+				[1915395703] = 999,
+				[4488906362] = 999,
+				[1464780145] = 999,
+				[1921021351] = 999,
+				[452637989] = 999,
+				[9869623665] = 999,
+				[8168050148] = 1,
+				[1042857413] = 1,
+				[5413881219] = 1,
+				[203443515] = 1,
+				[377144428] = 1,
+				[108493198] = 1,
+				[527936177] = 1,
+				[1149150663] = 1,
+				[992099552] = 1,
+				[892331036] = 1,
+				[4081878593] = 200,
+				[1015246692] = 200,
+			},
+			autoEatFoodNames = {
+				"Pizza",
+				"Kebab",
+				"Hotdog",
+				"Taco",
+				"Ramen",
+				"Onigiri",
+				"Fries",
+				"Burger",
+			},
+			autoEatPurchaseNameMap = {
+				["burger"] = "Burger",
+				["kebab"] = "Kebab",
+				["pizza"] = "Pizza",
+				["ramen"] = "Ramen",
+				["onigiri"] = "Onigiri",
+				["taco"] = "Taco",
+				["hotdog"] = "Hotdog",
+				["fries"] = "Fries",
+			},
+			autoBagModes = {
+				"Strength",
+				"Attack Speed",
+			},
+			deliveryPathModes = {
+				"Direct Target",
+				"Recorded Route",
+				"Recorded Macro",
+			},
+			deliveryRouteStorageFolder = "HuajHub",
+			autoBagPlacement = {
+				Axis = "LookVector",
+				DistanceOffset = 0.35,
+				VerticalOffset = 0.15,
+				SideOffset = 0,
+				BackOffset = 0,
+				UseBagAndPlayerDepth = true,
+				ManualDistance = 3.5,
+				YawOffsetDegrees = 0,
+			},
+			deliveryQuestStartCFrame = CFrame.new(
+				1438.35718, 24.6887817, -374.204132,
+				0.055374939, -5.22860111e-09, -0.998465657,
+				5.50765904e-08, 1, -2.18208629e-09,
+				0.998465657, -5.48712507e-08, 0.055374939
+			),
+			pathfindingDeliveryAllowedTargets = {
+				CFrame.new(1786.80493, 21.8695087, -720.351196, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+				CFrame.new(1762.08618, 22.1983051, 367.691803, 1, 0, 0, 0, 0.999999702, -0.000776898232, 0, 0.000776898232, 0.999999702),
+				CFrame.new(1156.96301, 22.1883698, -663.800781, 1, 0, 0, 0, 1, 0, 0, 0, 1),
+			},
 		}
-		local autoEatPurchaseNameMap = {
-			["burger"] = "Burger",
-			["kebab"] = "Kebab",
-			["pizza"] = "Pizza",
-			["ramen"] = "Ramen",
-			["onigiri"] = "Onigiri",
-			["taco"] = "Taco",
-			["hotdog"] = "Hotdog",
-			["fries"] = "Fries",
-		}
-		local autoBagModes = {
-			"Strength",
-			"Attack Speed",
-		}
-		local deliveryPathModes = {
-			"Direct Target",
-			"Recorded Route",
-			"Recorded Macro",
-		}
-		local deliveryRouteStorageFolder = "HuajHub"
-		local autoBagPlacementConfig = {
-			Axis = "LookVector",
-			DistanceOffset = 0.35,
-			VerticalOffset = 0.15,
-			SideOffset = 0,
-			BackOffset = 0,
-			UseBagAndPlayerDepth = true,
-			ManualDistance = 3.5,
-			YawOffsetDegrees = 0,
-		}
-		local deliveryQuestStartCFrame = CFrame.new(
-			1438.35718, 24.6887817, -374.204132,
-			0.055374939, -5.22860111e-09, -0.998465657,
-			5.50765904e-08, 1, -2.18208629e-09,
-			0.998465657, -5.48712507e-08, 0.055374939
-		)
 
 		local function getRhythmInputRemote()
 			local character = LocalPlayer and LocalPlayer.Character
@@ -539,7 +553,7 @@ function HyakuAsura.init(_context)
 				return remote
 			end
 
-			return activeTrainingPromptRemote
+			return trainingPromptState.activeRemote
 		end
 
 		local function getSpeedBoostValue()
@@ -565,11 +579,11 @@ function HyakuAsura.init(_context)
 		end
 
 		local function stopInfiniteRhythmChargeHook()
-			if rhythmChargeConnection then
+			if runtimeState.rhythmChargeConnection then
 				pcall(function()
-					rhythmChargeConnection:Disconnect()
+					runtimeState.rhythmChargeConnection:Disconnect()
 				end)
-				rhythmChargeConnection = nil
+				runtimeState.rhythmChargeConnection = nil
 			end
 		end
 
@@ -586,11 +600,11 @@ function HyakuAsura.init(_context)
 		end
 
 		local function stopInfiniteStaminaHook()
-			if staminaConnection then
+			if runtimeState.staminaConnection then
 				pcall(function()
-					staminaConnection:Disconnect()
+					runtimeState.staminaConnection:Disconnect()
 				end)
-				staminaConnection = nil
+				runtimeState.staminaConnection = nil
 			end
 		end
 
@@ -602,7 +616,7 @@ function HyakuAsura.init(_context)
 			end
 
 			applyInfiniteStamina()
-			staminaConnection = stamina:GetPropertyChangedSignal("Value"):Connect(function()
+			runtimeState.staminaConnection = stamina:GetPropertyChangedSignal("Value"):Connect(function()
 				if Toggles and Toggles.InfiniteStaminaEnabled and Toggles.InfiniteStaminaEnabled.Value then
 					applyInfiniteStamina()
 				end
@@ -622,11 +636,11 @@ function HyakuAsura.init(_context)
 		end
 
 		local function stopModeratorDetector()
-			if moderatorDetectorConnection then
+			if runtimeState.moderatorDetectorConnection then
 				pcall(function()
-					moderatorDetectorConnection:Disconnect()
+					runtimeState.moderatorDetectorConnection:Disconnect()
 				end)
-				moderatorDetectorConnection = nil
+				runtimeState.moderatorDetectorConnection = nil
 			end
 		end
 
@@ -644,7 +658,7 @@ function HyakuAsura.init(_context)
 			end
 
 			local userId = tonumber(player.UserId)
-			return userId ~= nil and moderatorUserIds[userId] ~= nil
+			return userId ~= nil and configState.moderatorUserIds[userId] ~= nil
 		end
 
 		local function checkPlayerForModerator(player)
@@ -665,7 +679,7 @@ function HyakuAsura.init(_context)
 				end
 			end
 
-			moderatorDetectorConnection = Players.PlayerAdded:Connect(function(player)
+			runtimeState.moderatorDetectorConnection = Players.PlayerAdded:Connect(function(player)
 				checkPlayerForModerator(player)
 			end)
 		end
@@ -678,7 +692,7 @@ function HyakuAsura.init(_context)
 			end
 
 			applyInfiniteRhythmCharge()
-			rhythmChargeConnection = rhythmCharge:GetPropertyChangedSignal("Value"):Connect(function()
+			runtimeState.rhythmChargeConnection = rhythmCharge:GetPropertyChangedSignal("Value"):Connect(function()
 				if Toggles and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value then
 					applyInfiniteRhythmCharge()
 				end
@@ -710,12 +724,12 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startInfiniteRhythmLoop()
-			infiniteRhythmLoopToken += 1
-			local currentToken = infiniteRhythmLoopToken
+			runtimeState.infiniteRhythmLoopToken += 1
+			local currentToken = runtimeState.infiniteRhythmLoopToken
 			startInfiniteRhythmChargeHook()
 			task.spawn(function()
 				fireInfiniteRhythmRemote(true)
-				while currentToken == infiniteRhythmLoopToken and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value do
+				while currentToken == runtimeState.infiniteRhythmLoopToken and Toggles.InfiniteRhythmEnabled and Toggles.InfiniteRhythmEnabled.Value do
 					fireInfiniteRhythmRemote(true)
 					applyInfiniteRhythmCharge()
 					task.wait(HYAKU_RHYTHM_REMOTE_INTERVAL)
@@ -724,7 +738,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function stopInfiniteRhythmLoop()
-			infiniteRhythmLoopToken += 1
+			runtimeState.infiniteRhythmLoopToken += 1
 			stopInfiniteRhythmChargeHook()
 			fireInfiniteRhythmRemote(false)
 		end
@@ -1087,21 +1101,21 @@ function HyakuAsura.init(_context)
 		end
 
 		local function getBenchPromptFrame()
-			if cachedBenchPromptFrame then
+			if runtimeState.cachedBenchPromptFrame then
 				local okClassName, className = pcall(function()
-					return cachedBenchPromptFrame.ClassName
+					return runtimeState.cachedBenchPromptFrame.ClassName
 				end)
 				if okClassName and (className == "Frame" or className == "CanvasGroup") then
-					return cachedBenchPromptFrame
+					return runtimeState.cachedBenchPromptFrame
 				end
-				cachedBenchPromptFrame = nil
+				runtimeState.cachedBenchPromptFrame = nil
 			end
 
 			local now = os.clock()
-			if (now - lastBenchPromptScanAt) < HYAKU_PROMPT_SCAN_INTERVAL then
+			if (now - runtimeState.lastBenchPromptScanAt) < HYAKU_PROMPT_SCAN_INTERVAL then
 				return nil
 			end
-			lastBenchPromptScanAt = now
+			runtimeState.lastBenchPromptScanAt = now
 
 			local playerGui = LocalPlayer and LocalPlayer:FindFirstChildOfClass("PlayerGui")
 			local trainingGui = playerGui and playerGui:FindFirstChild("Training")
@@ -1111,14 +1125,14 @@ function HyakuAsura.init(_context)
 					or trainingGui:FindFirstChild("KeyMiniGame", true)
 					or trainingGui:FindFirstChild("KeyMinigame", true)
 				if directFrame then
-					cachedBenchPromptFrame = directFrame
-					return cachedBenchPromptFrame
+					runtimeState.cachedBenchPromptFrame = directFrame
+					return runtimeState.cachedBenchPromptFrame
 				end
 			end
 
 			local scannedFrame, scannedLabel = scanBenchPromptObjects()
-			cachedBenchPromptFrame = scannedFrame
-			return cachedBenchPromptFrame
+			runtimeState.cachedBenchPromptFrame = scannedFrame
+			return runtimeState.cachedBenchPromptFrame
 		end
 
 		local function getPromptKeyFromPromptUi(promptUi)
@@ -1177,7 +1191,7 @@ function HyakuAsura.init(_context)
 
 			local scannedFrame, scannedLabel = scanBenchPromptObjects()
 			if scannedFrame then
-				cachedBenchPromptFrame = scannedFrame
+				runtimeState.cachedBenchPromptFrame = scannedFrame
 			end
 			if scannedLabel and getPromptLabelKey(scannedLabel) then
 				return getPromptLabelKey(scannedLabel)
@@ -1214,7 +1228,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function isRecoveryInProgress()
-			return autoSleepInProgress or autoEatInProgress
+			return runtimeState.autoSleepInProgress or runtimeState.autoEatInProgress
 		end
 
 		local function leaveCurrentTrainingMachine()
@@ -1330,7 +1344,7 @@ function HyakuAsura.init(_context)
 			end
 
 			for _, descendant in ipairs(commonFolder:GetDescendants()) do
-				local mappedName = autoEatPurchaseNameMap[string.lower(descendant.Name or "")]
+				local mappedName = configState.autoEatPurchaseNameMap[string.lower(descendant.Name or "")]
 				if mappedName == foodName then
 					return descendant
 				end
@@ -1461,18 +1475,18 @@ function HyakuAsura.init(_context)
 		end
 
 		local function cancelDeliveryFarmTween()
-			if activeDeliveryFarmTween then
-				pcall(activeDeliveryFarmTween)
-				activeDeliveryFarmTween = nil
+			if runtimeState.activeDeliveryFarmTween then
+				pcall(runtimeState.activeDeliveryFarmTween)
+				runtimeState.activeDeliveryFarmTween = nil
 			end
 		end
 
 		local function destroyDeliveryFarmPlatform()
-			if activeDeliveryFarmPlatform then
+			if runtimeState.activeDeliveryFarmPlatform then
 				pcall(function()
-					activeDeliveryFarmPlatform:Destroy()
+					runtimeState.activeDeliveryFarmPlatform:Destroy()
 				end)
-				activeDeliveryFarmPlatform = nil
+				runtimeState.activeDeliveryFarmPlatform = nil
 			end
 		end
 
@@ -1481,8 +1495,8 @@ function HyakuAsura.init(_context)
 				return nil
 			end
 
-			if activeDeliveryFarmPlatform and activeDeliveryFarmPlatform.Parent then
-				return activeDeliveryFarmPlatform
+			if runtimeState.activeDeliveryFarmPlatform and runtimeState.activeDeliveryFarmPlatform.Parent then
+				return runtimeState.activeDeliveryFarmPlatform
 			end
 
 			local platform = Instance.new("Part")
@@ -1494,7 +1508,7 @@ function HyakuAsura.init(_context)
 			platform.CastShadow = false
 			platform.CFrame = root.CFrame * CFrame.new(0, -3.5, 0)
 			platform.Parent = workspace
-			activeDeliveryFarmPlatform = platform
+			runtimeState.activeDeliveryFarmPlatform = platform
 			return platform
 		end
 
@@ -1553,6 +1567,76 @@ function HyakuAsura.init(_context)
 			return delivery and delivery:FindFirstChild("Spots")
 		end
 
+		local function getCancelJobRemote()
+			local remotes = ReplicatedStorage and ReplicatedStorage:FindFirstChild("Remotes")
+			local cancelJob = remotes and remotes:FindFirstChild("CancelJob")
+			if cancelJob and cancelJob:IsA("RemoteEvent") then
+				return cancelJob
+			end
+
+			return nil
+		end
+
+		local function hasDeliverySpotTouchInterest(spotPart)
+			return spotPart and spotPart.Parent and spotPart:FindFirstChildOfClass("TouchInterest") ~= nil
+		end
+
+		local function getAllowedPathfindingDeliverySpots()
+			local spotsFolder = getDeliverySpotsFolder()
+			if not spotsFolder then
+				return {}
+			end
+
+			local foundSpots = {}
+			for _, targetCFrame in ipairs(configState.pathfindingDeliveryAllowedTargets) do
+				local closestSpot = nil
+				local closestDistanceSquared = math.huge
+				for _, descendant in ipairs(spotsFolder:GetDescendants()) do
+					if descendant:IsA("BasePart") and descendant.Name == "DeliverySpot" then
+						local delta = descendant.Position - targetCFrame.Position
+						local distanceSquared = delta:Dot(delta)
+						if distanceSquared < closestDistanceSquared then
+							closestDistanceSquared = distanceSquared
+							closestSpot = descendant
+						end
+					end
+				end
+
+				if closestSpot and closestDistanceSquared <= (25 * 25) then
+					table.insert(foundSpots, closestSpot)
+				end
+			end
+
+			return foundSpots
+		end
+
+		local function getAllowedActivePathfindingDeliverySpot()
+			for _, spotPart in ipairs(getAllowedPathfindingDeliverySpots()) do
+				if hasDeliverySpotTouchInterest(spotPart) then
+					return spotPart
+				end
+			end
+
+			return nil
+		end
+
+		local function abandonCurrentDeliveryJob()
+			local cancelJobRemote = getCancelJobRemote()
+			if not cancelJobRemote then
+				return false
+			end
+
+			local ok = pcall(function()
+				cancelJobRemote:FireServer()
+			end)
+
+			if ok then
+				task.wait(0.35)
+			end
+
+			return ok
+		end
+
 		local function updateDeliveryRouteStatusLabel()
 			if deliveryRecorderState.statusLabel and type(deliveryRecorderState.statusLabel.SetText) == "function" then
 				local recordingEnabled = Toggles
@@ -1560,8 +1644,8 @@ function HyakuAsura.init(_context)
 					and Toggles.RecordDeliveryRouteEnabled.Value == true
 				deliveryRecorderState.statusLabel:SetText(string.format(
 					"Recorded Route: %d point%s | Macro: %d event%s%s",
-					#recordedDeliveryRoute,
-					#recordedDeliveryRoute == 1 and "" or "s",
+					#deliveryRouteState.recordedRoute,
+					#deliveryRouteState.recordedRoute == 1 and "" or "s",
 					#deliveryRecorderState.macroEvents,
 					#deliveryRecorderState.macroEvents == 1 and "" or "s",
 					recordingEnabled and " | Recording" or ""
@@ -1578,7 +1662,7 @@ function HyakuAsura.init(_context)
 				points = {},
 			}
 
-			for _, point in ipairs(recordedDeliveryRoute) do
+			for _, point in ipairs(deliveryRouteState.recordedRoute) do
 				local position = getRecordedDeliveryRoutePointPosition(point)
 				if position then
 					table.insert(payload.points, {
@@ -1592,8 +1676,8 @@ function HyakuAsura.init(_context)
 
 			local encoded = HttpService:JSONEncode(payload)
 			local ok = pcall(function()
-				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(deliveryRouteStorageFolder) then
-					makefolder(deliveryRouteStorageFolder)
+				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(configState.deliveryRouteStorageFolder) then
+					makefolder(configState.deliveryRouteStorageFolder)
 				end
 				writefile(deliveryRecorderState.routeStoragePath, encoded)
 			end)
@@ -1612,8 +1696,8 @@ function HyakuAsura.init(_context)
 
 			local encoded = HttpService:JSONEncode(payload)
 			local ok = pcall(function()
-				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(deliveryRouteStorageFolder) then
-					makefolder(deliveryRouteStorageFolder)
+				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(configState.deliveryRouteStorageFolder) then
+					makefolder(configState.deliveryRouteStorageFolder)
 				end
 				writefile(deliveryRecorderState.macroStoragePath, encoded)
 			end)
@@ -1647,7 +1731,7 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			table.clear(recordedDeliveryRoute)
+			table.clear(deliveryRouteState.recordedRoute)
 			for _, point in ipairs(decoded.points) do
 				if type(point) == "table" then
 					local x = tonumber(point.x)
@@ -1659,14 +1743,14 @@ function HyakuAsura.init(_context)
 							point.mode
 						)
 						if routePoint then
-							table.insert(recordedDeliveryRoute, routePoint)
+							table.insert(deliveryRouteState.recordedRoute, routePoint)
 						end
 					end
 				end
 			end
 
 			updateDeliveryRouteStatusLabel()
-			return #recordedDeliveryRoute > 0
+			return #deliveryRouteState.recordedRoute > 0
 		end
 
 		local function loadRecordedDeliveryMacro()
@@ -1707,7 +1791,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function clearRecordedDeliveryRoute()
-			table.clear(recordedDeliveryRoute)
+			table.clear(deliveryRouteState.recordedRoute)
 			saveRecordedDeliveryRoute()
 			table.clear(deliveryRecorderState.macroEvents)
 			saveRecordedDeliveryMacro()
@@ -1719,13 +1803,13 @@ function HyakuAsura.init(_context)
 		end
 
 		local function getClosestRecordedRouteIndex(position)
-			if typeof(position) ~= "Vector3" or #recordedDeliveryRoute == 0 then
+			if typeof(position) ~= "Vector3" or #deliveryRouteState.recordedRoute == 0 then
 				return nil
 			end
 
 			local closestIndex = 1
 			local closestDistanceSquared = math.huge
-			for index, point in ipairs(recordedDeliveryRoute) do
+			for index, point in ipairs(deliveryRouteState.recordedRoute) do
 				local routePosition = getRecordedDeliveryRoutePointPosition(point)
 				if routePosition then
 					local delta = routePosition - position
@@ -1745,7 +1829,7 @@ function HyakuAsura.init(_context)
 				"local recordedDeliveryRoute = {",
 			}
 
-			for _, point in ipairs(recordedDeliveryRoute) do
+			for _, point in ipairs(deliveryRouteState.recordedRoute) do
 				local position = getRecordedDeliveryRoutePointPosition(point)
 				if position then
 					table.insert(lines, string.format(
@@ -1828,8 +1912,8 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startDeliveryRouteRecorder()
-			deliveryRouteRecorderToken += 1
-			local currentToken = deliveryRouteRecorderToken
+			runtimeState.deliveryRouteRecorderToken += 1
+			local currentToken = runtimeState.deliveryRouteRecorderToken
 
 			task.spawn(function()
 				local lastRecordedPosition = nil
@@ -1838,7 +1922,7 @@ function HyakuAsura.init(_context)
 				local lastCameraLookVector = nil
 
 				local function shouldKeepRecording()
-					return currentToken == deliveryRouteRecorderToken
+					return currentToken == runtimeState.deliveryRouteRecorderToken
 						and Toggles
 						and Toggles.RecordDeliveryRouteEnabled
 						and Toggles.RecordDeliveryRouteEnabled.Value
@@ -1884,7 +1968,7 @@ function HyakuAsura.init(_context)
 					recordInputState(inputObject, false)
 				end)
 
-				while currentToken == deliveryRouteRecorderToken
+				while currentToken == runtimeState.deliveryRouteRecorderToken
 					and Toggles
 					and Toggles.RecordDeliveryRouteEnabled
 					and Toggles.RecordDeliveryRouteEnabled.Value
@@ -1899,7 +1983,7 @@ function HyakuAsura.init(_context)
 						if not lastRecordedPosition then
 							local routePoint = createRecordedDeliveryRoutePoint(position, moveMode)
 							if routePoint then
-								table.insert(recordedDeliveryRoute, routePoint)
+								table.insert(deliveryRouteState.recordedRoute, routePoint)
 							end
 							lastRecordedPosition = position
 							saveRecordedDeliveryRoute()
@@ -1909,7 +1993,7 @@ function HyakuAsura.init(_context)
 							if delta:Dot(delta) >= (sampleDistance * sampleDistance) then
 								local routePoint = createRecordedDeliveryRoutePoint(position, moveMode)
 								if routePoint then
-									table.insert(recordedDeliveryRoute, routePoint)
+									table.insert(deliveryRouteState.recordedRoute, routePoint)
 								end
 								lastRecordedPosition = position
 								saveRecordedDeliveryRoute()
@@ -1976,22 +2060,22 @@ function HyakuAsura.init(_context)
 		end
 
 		local function isPathfindingDeliveryFarmActive(currentToken)
-			return currentToken == pathfindingDeliveryFarmToken
+			return currentToken == runtimeState.pathfindingDeliveryFarmToken
 				and Toggles
 				and Toggles.PathfindingDeliveryFarmEnabled
 				and Toggles.PathfindingDeliveryFarmEnabled.Value == true
 		end
 
 		local function setDeliveryRunKeyHeld(held)
-			if deliveryRunWHeld == held or not VirtualInputManager then
-				deliveryRunWHeld = held
+			if runtimeState.deliveryRunWHeld == held or not VirtualInputManager then
+				runtimeState.deliveryRunWHeld = held
 				return held
 			end
 
 			pcall(function()
 				VirtualInputManager:SendKeyEvent(held, Enum.KeyCode.W, false, game)
 			end)
-			deliveryRunWHeld = held
+			runtimeState.deliveryRunWHeld = held
 			return held
 		end
 
@@ -2271,7 +2355,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function runCharacterAlongRecordedRoute(character, finalTargetPosition, currentToken)
-			if #recordedDeliveryRoute == 0 then
+			if #deliveryRouteState.recordedRoute == 0 then
 				return false
 			end
 
@@ -2281,12 +2365,12 @@ function HyakuAsura.init(_context)
 			end
 
 			local startIndex = getClosestRecordedRouteIndex(root.Position) or 1
-			for index = startIndex, #recordedDeliveryRoute do
+			for index = startIndex, #deliveryRouteState.recordedRoute do
 				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
 					return false
 				end
 
-				local routePoint = recordedDeliveryRoute[index]
+				local routePoint = deliveryRouteState.recordedRoute[index]
 				local routePosition = getRecordedDeliveryRoutePointPosition(routePoint)
 				if not routePosition then
 					continue
@@ -2301,7 +2385,7 @@ function HyakuAsura.init(_context)
 			end
 
 			if typeof(finalTargetPosition) == "Vector3" then
-				local finalRoutePoint = recordedDeliveryRoute[#recordedDeliveryRoute]
+				local finalRoutePoint = deliveryRouteState.recordedRoute[#deliveryRouteState.recordedRoute]
 				return nativeMoveCharacterToPosition(
 					character,
 					finalTargetPosition,
@@ -2315,24 +2399,37 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startPathfindingDeliveryQuest(character, currentToken)
-			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+			local allowedActiveSpot = getAllowedActivePathfindingDeliverySpot()
+			if allowedActiveSpot then
 				return true
 			end
 
-			local boardPosition = deliveryQuestStartCFrame.Position
+			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				abandonCurrentDeliveryJob()
+				return false
+			end
+
+			local boardPosition = configState.deliveryQuestStartCFrame.Position
 			if not walkCharacterToPosition(character, boardPosition, 8, currentToken) then
 				return false
 			end
 
 			task.wait(0.15)
 			holdInteractionKey(0.5)
-			local timeoutAt = os.clock() + 3
+			local timeoutAt = os.clock() + 2.5
 			while os.clock() < timeoutAt do
-				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				local currentAllowedSpot = getAllowedActivePathfindingDeliverySpot()
+				if currentAllowedSpot then
 					return true
+				end
+
+				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+					break
 				end
 				task.wait(0.1)
 			end
+
+			abandonCurrentDeliveryJob()
 
 			return false
 		end
@@ -2346,7 +2443,7 @@ function HyakuAsura.init(_context)
 				if not runRecordedDeliveryMacro(character, spotPart.Position, currentToken) then
 					return false
 				end
-			elseif getDeliveryPlaybackMode() == "Recorded Route" and #recordedDeliveryRoute > 0 then
+			elseif getDeliveryPlaybackMode() == "Recorded Route" and #deliveryRouteState.recordedRoute > 0 then
 				if not runCharacterAlongRecordedRoute(character, spotPart.Position, currentToken) then
 					return false
 				end
@@ -2387,7 +2484,7 @@ function HyakuAsura.init(_context)
 			end
 
 			local cancelled = false
-			activeDeliveryFarmTween = function()
+			runtimeState.activeDeliveryFarmTween = function()
 				cancelled = true
 			end
 
@@ -2423,7 +2520,7 @@ function HyakuAsura.init(_context)
 				root.AssemblyAngularVelocity = Vector3.zero
 			end)
 
-			activeDeliveryFarmTween = nil
+			runtimeState.activeDeliveryFarmTween = nil
 			return success and not cancelled
 		end
 
@@ -2488,7 +2585,7 @@ function HyakuAsura.init(_context)
 			local success = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = deliveryQuestStartCFrame
+				root.CFrame = configState.deliveryQuestStartCFrame
 			end)
 			if not success then
 				return false
@@ -2554,18 +2651,18 @@ function HyakuAsura.init(_context)
 		end
 
 		local function clearTrainingPromptQueue()
-			table.clear(trainingPromptQueue)
-			lastBenchVisibleKey = nil
+			table.clear(trainingPromptState.queue)
+			runtimeState.lastBenchVisibleKey = nil
 		end
 
 		local function pruneExpiredTrainingPrompts()
 			local now = os.clock()
-			while #trainingPromptQueue > 0 do
-				local prompt = trainingPromptQueue[1]
+			while #trainingPromptState.queue > 0 do
+				local prompt = trainingPromptState.queue[1]
 				if prompt and prompt.expiresAt and prompt.expiresAt > now then
 					break
 				end
-				table.remove(trainingPromptQueue, 1)
+				table.remove(trainingPromptState.queue, 1)
 			end
 		end
 
@@ -2580,15 +2677,15 @@ function HyakuAsura.init(_context)
 			end
 
 			local now = os.clock()
-			if lastTrainingPromptKey == key and (now - lastTrainingPromptAt) <= 0.03 then
+			if trainingPromptState.lastKey == key and (now - trainingPromptState.lastAt) <= 0.03 then
 				return
 			end
 
-			lastTrainingPromptKey = key
-			lastTrainingPromptAt = now
-			trainingPromptSequence += 1
-			table.insert(trainingPromptQueue, {
-				id = trainingPromptSequence,
+			trainingPromptState.lastKey = key
+			trainingPromptState.lastAt = now
+			trainingPromptState.sequence += 1
+			table.insert(trainingPromptState.queue, {
+				id = trainingPromptState.sequence,
 				key = key,
 				expiresAt = now + math.max(tonumber(payload.Duration) or 0.2, 0.05),
 			})
@@ -2606,38 +2703,38 @@ function HyakuAsura.init(_context)
 		end
 
 		local function disconnectTrainingPromptListeners()
-			if trainingPromptRemoteConnection then
+			if trainingPromptState.remoteConnection then
 				pcall(function()
-					trainingPromptRemoteConnection:Disconnect()
+					trainingPromptState.remoteConnection:Disconnect()
 				end)
-				trainingPromptRemoteConnection = nil
+				trainingPromptState.remoteConnection = nil
 			end
-			if trainingUiRemoteConnection then
+			if trainingPromptState.uiConnection then
 				pcall(function()
-					trainingUiRemoteConnection:Disconnect()
+					trainingPromptState.uiConnection:Disconnect()
 				end)
-				trainingUiRemoteConnection = nil
+				trainingPromptState.uiConnection = nil
 			end
-			activeTrainingPromptRemote = nil
+			trainingPromptState.activeRemote = nil
 			clearTrainingPromptQueue()
 		end
 
 		local function connectTrainingPromptListeners(spotRemote)
-			if activeTrainingPromptRemote == spotRemote and trainingPromptRemoteConnection then
+			if trainingPromptState.activeRemote == spotRemote and trainingPromptState.remoteConnection then
 				return
 			end
 
 			disconnectTrainingPromptListeners()
-			activeTrainingPromptRemote = spotRemote
+			trainingPromptState.activeRemote = spotRemote
 
 			if spotRemote and spotRemote.OnClientEvent then
-				trainingPromptRemoteConnection = spotRemote.OnClientEvent:Connect(function(eventName, payload)
+				trainingPromptState.remoteConnection = spotRemote.OnClientEvent:Connect(function(eventName, payload)
 					handleTrainingClientEvent(eventName, payload)
 				end)
 			end
 
-			if trainingUiRemote and trainingUiRemote.OnClientEvent then
-				trainingUiRemoteConnection = trainingUiRemote.OnClientEvent:Connect(function(eventName, payload)
+			if trainingPromptState.uiRemote and trainingPromptState.uiRemote.OnClientEvent then
+				trainingPromptState.uiConnection = trainingPromptState.uiRemote.OnClientEvent:Connect(function(eventName, payload)
 					handleTrainingClientEvent(eventName, payload)
 				end)
 			end
@@ -2645,7 +2742,7 @@ function HyakuAsura.init(_context)
 
 		local function getNextTrainingPrompt()
 			pruneExpiredTrainingPrompts()
-			local prompt = trainingPromptQueue[1]
+			local prompt = trainingPromptState.queue[1]
 			if not prompt then
 				return nil
 			end
@@ -2653,19 +2750,19 @@ function HyakuAsura.init(_context)
 		end
 
 		local function consumeTrainingPrompt(promptId)
-			if #trainingPromptQueue == 0 then
+			if #trainingPromptState.queue == 0 then
 				return
 			end
 
-			local prompt = trainingPromptQueue[1]
+			local prompt = trainingPromptState.queue[1]
 			if prompt and prompt.id == promptId then
-				table.remove(trainingPromptQueue, 1)
+				table.remove(trainingPromptState.queue, 1)
 				return
 			end
 
-			for index, entry in ipairs(trainingPromptQueue) do
+			for index, entry in ipairs(trainingPromptState.queue) do
 				if entry and entry.id == promptId then
-					table.remove(trainingPromptQueue, index)
+					table.remove(trainingPromptState.queue, index)
 					return
 				end
 			end
@@ -2673,31 +2770,31 @@ function HyakuAsura.init(_context)
 
 		local function getAutoTrainToken(toggleKey)
 			if toggleKey == "AutoBenchEnabled" then
-				return autoBenchToken
+				return runtimeState.autoBenchToken
 			end
 
 			if toggleKey == "AutoPullUpEnabled" then
-				return autoPullUpToken
+				return runtimeState.autoPullUpToken
 			end
 
 			if toggleKey == "AutoSquatMachineEnabled" then
-				return autoSquatMachineToken
+				return runtimeState.autoSquatMachineToken
 			end
 
 			if toggleKey == "AutoTreadmillEnabled" then
-				return autoTreadmillToken
+				return runtimeState.autoTreadmillToken
 			end
 
 			if toggleKey == "AutoBikeEnabled" then
-				return autoBikeToken
+				return runtimeState.autoBikeToken
 			end
 
 			if toggleKey == "AutoBagsEnabled" then
-				return autoBagsToken
+				return runtimeState.autoBagsToken
 			end
 
 			if toggleKey == "AutoSleepEnabled" then
-				return autoSleepToken
+				return runtimeState.autoSleepToken
 			end
 
 			return -1
@@ -2806,7 +2903,7 @@ function HyakuAsura.init(_context)
 							end
 							
 							-- Prompt-driven WASD loop
-							lastBenchVisibleKey = nil
+							runtimeState.lastBenchVisibleKey = nil
 							local trainingEndAt = os.clock() + (options.Duration or 60)
 							while isAutoTrainLoopActive(toggleKey, currentToken) and os.clock() < trainingEndAt do
 								if isRecoveryInProgress() then
@@ -2815,12 +2912,12 @@ function HyakuAsura.init(_context)
 
 								local prompt = getNextTrainingPrompt()
 								if prompt then
-									lastBenchVisibleKey = prompt.key
+									runtimeState.lastBenchVisibleKey = prompt.key
 									submitTrainingPromptKey(spotRemote, prompt.key)
 									consumeTrainingPrompt(prompt.id)
 									task.wait(0.005)
 								else
-									lastBenchVisibleKey = nil
+									runtimeState.lastBenchVisibleKey = nil
 									task.wait(0.01)
 								end
 							end
@@ -2836,7 +2933,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoBench()
-			autoBenchToken += 1
+			runtimeState.autoBenchToken += 1
 			startTrainingSpotAutomation("AutoBenchEnabled", "Bench", {
 				HoldEBeforeStart = true,
 				HoldEDuration = 0.3,
@@ -2845,7 +2942,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoPullUp()
-			autoPullUpToken += 1
+			runtimeState.autoPullUpToken += 1
 			startTrainingSpotAutomation("AutoPullUpEnabled", "PullUp", {
 				HoldEBeforeStart = true,
 				HoldEDuration = 0.3,
@@ -2854,7 +2951,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoSquatMachine()
-			autoSquatMachineToken += 1
+			runtimeState.autoSquatMachineToken += 1
 			startTrainingSpotAutomation("AutoSquatMachineEnabled", "Squat", {
 				HoldEBeforeStart = true,
 				HoldEDuration = 0.3,
@@ -2863,7 +2960,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoTreadmill()
-			autoTreadmillToken += 1
+			runtimeState.autoTreadmillToken += 1
 			startTrainingSpotAutomation("AutoTreadmillEnabled", "Treadmill", {
 				HoldEBeforeStart = true,
 				HoldEDuration = 0.3,
@@ -2872,7 +2969,7 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoBike()
-			autoBikeToken += 1
+			runtimeState.autoBikeToken += 1
 			startTrainingSpotAutomation("AutoBikeEnabled", "Bike", {
 				HoldEBeforeStart = true,
 				HoldEDuration = 0.3,
@@ -2996,7 +3093,7 @@ function HyakuAsura.init(_context)
 				return nil
 			end
 
-			local axisName = autoBagPlacementConfig.Axis or "LookVector"
+			local axisName = configState.autoBagPlacement.Axis or "LookVector"
 			local axisVector = bagPart.CFrame.LookVector
 			if axisName == "RightVector" then
 				axisVector = bagPart.CFrame.RightVector
@@ -3004,23 +3101,23 @@ function HyakuAsura.init(_context)
 				axisVector = bagPart.CFrame.UpVector
 			end
 
-			local standDistance = tonumber(autoBagPlacementConfig.ManualDistance) or 3.5
-			if autoBagPlacementConfig.UseBagAndPlayerDepth ~= false then
+			local standDistance = tonumber(configState.autoBagPlacement.ManualDistance) or 3.5
+			if configState.autoBagPlacement.UseBagAndPlayerDepth ~= false then
 				local bagDepth = axisName == "RightVector" and bagPart.Size.X or bagPart.Size.Z
 				local playerDepth = axisName == "RightVector" and root.Size.X or root.Size.Z
-				standDistance = math.max(bagDepth * 0.5, 0.5) + math.max(playerDepth * 0.5, 0.5) + (tonumber(autoBagPlacementConfig.DistanceOffset) or 0.35)
+				standDistance = math.max(bagDepth * 0.5, 0.5) + math.max(playerDepth * 0.5, 0.5) + (tonumber(configState.autoBagPlacement.DistanceOffset) or 0.35)
 			end
 
-			local sideOffset = tonumber(autoBagPlacementConfig.SideOffset) or 0
-			local backOffset = tonumber(autoBagPlacementConfig.BackOffset) or 0
-			local verticalOffset = tonumber(autoBagPlacementConfig.VerticalOffset) or 0.15
+			local sideOffset = tonumber(configState.autoBagPlacement.SideOffset) or 0
+			local backOffset = tonumber(configState.autoBagPlacement.BackOffset) or 0
+			local verticalOffset = tonumber(configState.autoBagPlacement.VerticalOffset) or 0.15
 			local targetPosition = bagPart.Position
 				+ (axisVector * (standDistance + backOffset))
 				+ (bagPart.CFrame.RightVector * sideOffset)
 				+ Vector3.new(0, verticalOffset, 0)
 			local delta = bagPart.Position - targetPosition
 			local baseYaw = math.atan2(-delta.X, -delta.Z)
-			local yawOffsetRadians = math.rad(tonumber(autoBagPlacementConfig.YawOffsetDegrees) or 0)
+			local yawOffsetRadians = math.rad(tonumber(configState.autoBagPlacement.YawOffsetDegrees) or 0)
 			return CFrame.new(targetPosition) * CFrame.Angles(0, baseYaw + yawOffsetRadians, 0)
 		end
 
@@ -3090,16 +3187,16 @@ function HyakuAsura.init(_context)
 		end
 
 		local function getAutoBagsTargetBag()
-			if activeAutoBagModel
-				and activeAutoBagModel.Parent
-				and not isPunchingBagTrainingFinished(activeAutoBagModel)
-				and isPunchingBagReservedByLocalPlayer(activeAutoBagModel)
+			if runtimeState.activeAutoBagModel
+				and runtimeState.activeAutoBagModel.Parent
+				and not isPunchingBagTrainingFinished(runtimeState.activeAutoBagModel)
+				and isPunchingBagReservedByLocalPlayer(runtimeState.activeAutoBagModel)
 			then
-				return activeAutoBagModel
+				return runtimeState.activeAutoBagModel
 			end
 
-			activeAutoBagModel = getClosestAvailablePunchingBag()
-			return activeAutoBagModel
+			runtimeState.activeAutoBagModel = getClosestAvailablePunchingBag()
+			return runtimeState.activeAutoBagModel
 		end
 
 		local function getAutoBagRemoteMode()
@@ -3112,8 +3209,8 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoBags()
-			autoBagsToken += 1
-			local currentToken = autoBagsToken
+			runtimeState.autoBagsToken += 1
+			local currentToken = runtimeState.autoBagsToken
 
 			task.spawn(function()
 				while isAutoTrainLoopActive("AutoBagsEnabled", currentToken) do
@@ -3153,8 +3250,8 @@ function HyakuAsura.init(_context)
 
 							while isAutoTrainLoopActive("AutoBagsEnabled", currentToken) do
 								if isPunchingBagTrainingFinished(bagModel) then
-									if activeAutoBagModel == bagModel then
-										activeAutoBagModel = nil
+									if runtimeState.activeAutoBagModel == bagModel then
+										runtimeState.activeAutoBagModel = nil
 									end
 									break
 								end
@@ -3173,7 +3270,7 @@ function HyakuAsura.init(_context)
 					task.wait(0.6)
 				end
 
-				activeAutoBagModel = nil
+				runtimeState.activeAutoBagModel = nil
 			end)
 		end
 
@@ -3209,11 +3306,11 @@ function HyakuAsura.init(_context)
 		end
 
 		local function stopAntiAfk()
-			if antiAfkConnection then
+			if runtimeState.antiAfkConnection then
 				pcall(function()
-					antiAfkConnection:Disconnect()
+					runtimeState.antiAfkConnection:Disconnect()
 				end)
-				antiAfkConnection = nil
+				runtimeState.antiAfkConnection = nil
 			end
 		end
 
@@ -3223,7 +3320,7 @@ function HyakuAsura.init(_context)
 				return
 			end
 
-			antiAfkConnection = LocalPlayer.Idled:Connect(function()
+			runtimeState.antiAfkConnection = LocalPlayer.Idled:Connect(function()
 				pcall(function()
 					VirtualUser:CaptureController()
 					VirtualUser:ClickButton2(Vector2.new(0, 0))
@@ -3232,11 +3329,11 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startDeliveryFarm()
-			deliveryFarmToken += 1
-			local currentToken = deliveryFarmToken
+			runtimeState.deliveryFarmToken += 1
+			local currentToken = runtimeState.deliveryFarmToken
 
 			task.spawn(function()
-				while currentToken == deliveryFarmToken and Toggles.DeliveryFarmEnabled and Toggles.DeliveryFarmEnabled.Value do
+				while currentToken == runtimeState.deliveryFarmToken and Toggles.DeliveryFarmEnabled and Toggles.DeliveryFarmEnabled.Value do
 					local character = LocalPlayer and LocalPlayer.Character
 					local root = character and getCharacterRoot(character)
 					if not character or not root then
@@ -3267,8 +3364,8 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startPathfindingDeliveryFarm()
-			pathfindingDeliveryFarmToken += 1
-			local currentToken = pathfindingDeliveryFarmToken
+			runtimeState.pathfindingDeliveryFarmToken += 1
+			local currentToken = runtimeState.pathfindingDeliveryFarmToken
 
 			task.spawn(function()
 				while isPathfindingDeliveryFarmActive(currentToken) do
@@ -3279,19 +3376,22 @@ function HyakuAsura.init(_context)
 						continue
 					end
 
-					local deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-					local activeSpot = getActiveDeliverySpot()
+					local activeSpot = getAllowedActivePathfindingDeliverySpot()
+					local deliveryActive = activeSpot ~= nil
 					if not deliveryActive then
 						startPathfindingDeliveryQuest(character, currentToken)
 						task.wait(0.4)
-						deliveryActive = hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil
-						activeSpot = getActiveDeliverySpot()
+						activeSpot = getAllowedActivePathfindingDeliverySpot()
+						deliveryActive = activeSpot ~= nil
 					end
 
 					if deliveryActive and activeSpot then
 						runPathfindingDeliveryToSpot(character, activeSpot, currentToken)
 						task.wait(0.2)
 					else
+						if hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil then
+							abandonCurrentDeliveryJob()
+						end
 						task.wait(0.5)
 					end
 				end
@@ -3299,12 +3399,12 @@ function HyakuAsura.init(_context)
 		end
 
 		local function startAutoSleep()
-			autoSleepToken += 1
-			local currentToken = autoSleepToken
+			runtimeState.autoSleepToken += 1
+			local currentToken = runtimeState.autoSleepToken
 
 			task.spawn(function()
-				while currentToken == autoSleepToken and Toggles.AutoSleepEnabled and Toggles.AutoSleepEnabled.Value do
-					if not autoSleepInProgress and not autoEatInProgress then
+				while currentToken == runtimeState.autoSleepToken and Toggles.AutoSleepEnabled and Toggles.AutoSleepEnabled.Value do
+					if not runtimeState.autoSleepInProgress and not runtimeState.autoEatInProgress then
 						local bodyFatique = getBodyFatiqueValue()
 						local threshold = getOptionValue("AutoSleepThreshold", 80)
 						local currentFatique = bodyFatique and tonumber(bodyFatique.Value)
@@ -3317,7 +3417,7 @@ function HyakuAsura.init(_context)
 							local bedRemote = bedFolder and getTrainingSpotRemote(bedFolder)
 
 							if character and bedModel and bedRemote then
-								autoSleepInProgress = true
+								runtimeState.autoSleepInProgress = true
 								if leaveCurrentTrainingMachine() then
 									task.wait(0.2)
 								end
@@ -3329,7 +3429,7 @@ function HyakuAsura.init(_context)
 								teleportCharacterToTrainingSpot(character, bedModel)
 								task.wait(0.15)
 
-								while currentToken == autoSleepToken and Toggles.AutoSleepEnabled.Value do
+								while currentToken == runtimeState.autoSleepToken and Toggles.AutoSleepEnabled.Value do
 									local fatigueValue = getBodyFatiqueValue()
 									local fatigueNumber = fatigueValue and tonumber(fatigueValue.Value)
 									if fatigueNumber ~= nil and fatigueNumber <= 0 then
@@ -3349,7 +3449,7 @@ function HyakuAsura.init(_context)
 									task.wait(0.2)
 								end
 
-								autoSleepInProgress = false
+								runtimeState.autoSleepInProgress = false
 							end
 						end
 					end
@@ -3357,29 +3457,29 @@ function HyakuAsura.init(_context)
 					task.wait(0.2)
 				end
 
-				autoSleepInProgress = false
+				runtimeState.autoSleepInProgress = false
 			end)
 		end
 
 		local function startAutoEat()
-			autoEatToken += 1
-			local currentToken = autoEatToken
+			runtimeState.autoEatToken += 1
+			local currentToken = runtimeState.autoEatToken
 
 			task.spawn(function()
-				while currentToken == autoEatToken and Toggles.AutoEatEnabled and Toggles.AutoEatEnabled.Value do
-					if not autoEatInProgress and not autoSleepInProgress then
+				while currentToken == runtimeState.autoEatToken and Toggles.AutoEatEnabled and Toggles.AutoEatEnabled.Value do
+					if not runtimeState.autoEatInProgress and not runtimeState.autoSleepInProgress then
 						local hungerValue = getHungerValue()
 						local threshold = getOptionValue("AutoEatThreshold", 60)
 						local currentHunger = hungerValue and tonumber(hungerValue.Value)
 
 						if currentHunger and currentHunger <= threshold then
-							autoEatInProgress = true
+							runtimeState.autoEatInProgress = true
 							if leaveCurrentTrainingMachine() then
 								task.wait(0.2)
 							end
 							disconnectTrainingPromptListeners()
 
-							while currentToken == autoEatToken and Toggles.AutoEatEnabled.Value do
+							while currentToken == runtimeState.autoEatToken and Toggles.AutoEatEnabled.Value do
 								local liveHungerValue = getHungerValue()
 								local liveHunger = liveHungerValue and tonumber(liveHungerValue.Value)
 								if liveHunger and liveHunger >= 100 then
@@ -3431,18 +3531,18 @@ function HyakuAsura.init(_context)
 								end
 							end
 
-							autoEatInProgress = false
+							runtimeState.autoEatInProgress = false
 						end
 					end
 
 					task.wait(0.2)
 				end
 
-				autoEatInProgress = false
+				runtimeState.autoEatInProgress = false
 			end)
 		end
 
-		localCheatsGroup:AddToggle("InfiniteRhythmEnabled", {
+		uiGroups.localCheats:AddToggle("InfiniteRhythmEnabled", {
 			Text = "Infinite Rhythm",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3453,7 +3553,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		localCheatsGroup:AddToggle("InfiniteStaminaEnabled", {
+		uiGroups.localCheats:AddToggle("InfiniteStaminaEnabled", {
 			Text = "Infinite Stamina",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3465,14 +3565,14 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		localCheatsGroup:AddToggle("SpeedBoostEnabled", {
+		uiGroups.localCheats:AddToggle("SpeedBoostEnabled", {
 			Text = "Speed Boost",
 			Default = false,
 		}):OnChanged(function(enabled)
 			setSpeedBoostEnabled(enabled)
 		end)
 
-		localCheatsGroup:AddToggle("ModeratorDetectorEnabled", {
+		uiGroups.localCheats:AddToggle("ModeratorDetectorEnabled", {
 			Text = "Mod Detector",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3483,7 +3583,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		localCheatsGroup:AddToggle("AntiAfkEnabled", {
+		uiGroups.localCheats:AddToggle("AntiAfkEnabled", {
 			Text = "Anti-AFK",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3494,71 +3594,77 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoFarmGroup:AddToggle("DeliveryFarmEnabled", {
+		uiGroups.autoFarm:AddToggle("DeliveryFarmEnabled", {
 			Text = "Delivery Farm",
 			Default = false,
 		})
 
-		autoFarmGroup:AddToggle("PathfindingDeliveryFarmEnabled", {
+		uiGroups.autoFarm:AddToggle("PathfindingDeliveryFarmEnabled", {
 			Text = "Pathfinding Delivery Farm",
 			Default = false,
 		})
 
-		autoFarmGroup:AddToggle("RecordDeliveryRouteEnabled", {
+		uiGroups.autoFarm:AddToggle("RecordDeliveryRouteEnabled", {
 			Text = "Record Delivery Route",
 			Default = false,
 		})
 
-		local deliveryFarmOptions = autoFarmGroup:AddDependencyBox()
-		deliveryFarmOptions:SetupDependencies({
-			{ Toggles.DeliveryFarmEnabled, true },
-		})
+		do
+			local options = uiGroups.autoFarm:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.DeliveryFarmEnabled, true },
+			})
 
-		deliveryFarmOptions:AddSlider("DeliveryFarmTweenSpeed", {
-			Text = "Tween Speed",
-			Default = 15,
-			Min = 1,
-			Max = 100,
-			Rounding = 0,
-		})
+			options:AddSlider("DeliveryFarmTweenSpeed", {
+				Text = "Tween Speed",
+				Default = 15,
+				Min = 1,
+				Max = 100,
+				Rounding = 0,
+			})
 
-		deliveryFarmOptions:AddLabel("⚠ anything above 50 is bannable")
+			options:AddLabel("anything above 50 is bannable")
+		end
 
-		local deliveryRouteRecorderOptions = autoFarmGroup:AddDependencyBox()
-		deliveryRouteRecorderOptions:SetupDependencies({
-			{ Toggles.RecordDeliveryRouteEnabled, true },
-		})
+		do
+			local options = uiGroups.autoFarm:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.RecordDeliveryRouteEnabled, true },
+			})
 
-		deliveryRouteRecorderOptions:AddSlider("DeliveryRouteSampleDistance", {
-			Text = "Sample Distance",
-			Default = 8,
-			Min = 1,
-			Max = 25,
-			Rounding = 0,
-		})
+			options:AddSlider("DeliveryRouteSampleDistance", {
+				Text = "Sample Distance",
+				Default = 8,
+				Min = 1,
+				Max = 25,
+				Rounding = 0,
+			})
 
-		deliveryRecorderState.statusLabel = deliveryRouteRecorderOptions:AddLabel("Recorded Route: 0 points")
-		deliveryRouteRecorderOptions:AddButton("Copy Recorded Route", function()
-			copyRecordedDeliveryRoute()
-		end)
-		deliveryRouteRecorderOptions:AddButton("Clear Recorded Route", function()
-			clearRecordedDeliveryRoute()
-		end)
+			deliveryRecorderState.statusLabel = options:AddLabel("Recorded Route: 0 points")
+			options:AddButton("Copy Recorded Route", function()
+				copyRecordedDeliveryRoute()
+			end)
+			options:AddButton("Clear Recorded Route", function()
+				clearRecordedDeliveryRoute()
+			end)
+		end
 		loadRecordedDeliveryRoute()
 		loadRecordedDeliveryMacro()
 		updateDeliveryRouteStatusLabel()
 
-		local pathfindingDeliveryFarmOptions = autoFarmGroup:AddDependencyBox()
-		pathfindingDeliveryFarmOptions:SetupDependencies({
-			{ Toggles.PathfindingDeliveryFarmEnabled, true },
-		})
+		do
+			local options = uiGroups.autoFarm:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.PathfindingDeliveryFarmEnabled, true },
+			})
 
-		pathfindingDeliveryFarmOptions:AddDropdown("PathfindingDeliveryRouteMode", {
-			Text = "Route Mode",
-			Values = deliveryPathModes,
-			Default = "Direct Target",
-			Multi = false,
-		})
+			options:AddDropdown("PathfindingDeliveryRouteMode", {
+				Text = "Route Mode",
+				Values = configState.deliveryPathModes,
+				Default = "Direct Target",
+				Multi = false,
+			})
+		end
 
 		Toggles.DeliveryFarmEnabled:OnChanged(function(enabled)
 			if enabled then
@@ -3567,7 +3673,7 @@ function HyakuAsura.init(_context)
 				end
 				startDeliveryFarm()
 			else
-				deliveryFarmToken += 1
+				runtimeState.deliveryFarmToken += 1
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmPlatform()
 			end
@@ -3580,7 +3686,7 @@ function HyakuAsura.init(_context)
 				end
 				startPathfindingDeliveryFarm()
 			else
-				pathfindingDeliveryFarmToken += 1
+				runtimeState.pathfindingDeliveryFarmToken += 1
 				stopDeliveryRunInput()
 				resetDeliveryMacroPlaybackInputs()
 			end
@@ -3590,12 +3696,12 @@ function HyakuAsura.init(_context)
 			if enabled then
 				startDeliveryRouteRecorder()
 			else
-				deliveryRouteRecorderToken += 1
+				runtimeState.deliveryRouteRecorderToken += 1
 				updateDeliveryRouteStatusLabel()
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoBenchEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoBenchEnabled", {
 			Text = "Auto Bench",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3603,7 +3709,7 @@ function HyakuAsura.init(_context)
 				disableOtherAutoTrainToggles("AutoBenchEnabled")
 				startAutoBench()
 			else
-				autoBenchToken += 1
+				runtimeState.autoBenchToken += 1
 				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoBenchEnabled") then
 					disconnectTrainingPromptListeners()
@@ -3611,7 +3717,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoPullUpEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoPullUpEnabled", {
 			Text = "Auto PullUp",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3619,7 +3725,7 @@ function HyakuAsura.init(_context)
 				disableOtherAutoTrainToggles("AutoPullUpEnabled")
 				startAutoPullUp()
 			else
-				autoPullUpToken += 1
+				runtimeState.autoPullUpToken += 1
 				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoPullUpEnabled") then
 					disconnectTrainingPromptListeners()
@@ -3627,7 +3733,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoSquatMachineEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoSquatMachineEnabled", {
 			Text = "Auto Squat Machine",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3635,7 +3741,7 @@ function HyakuAsura.init(_context)
 				disableOtherAutoTrainToggles("AutoSquatMachineEnabled")
 				startAutoSquatMachine()
 			else
-				autoSquatMachineToken += 1
+				runtimeState.autoSquatMachineToken += 1
 				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoSquatMachineEnabled") then
 					disconnectTrainingPromptListeners()
@@ -3643,7 +3749,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoTreadmillEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoTreadmillEnabled", {
 			Text = "Auto Treadmill",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3651,7 +3757,7 @@ function HyakuAsura.init(_context)
 				disableOtherAutoTrainToggles("AutoTreadmillEnabled")
 				startAutoTreadmill()
 			else
-				autoTreadmillToken += 1
+				runtimeState.autoTreadmillToken += 1
 				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoTreadmillEnabled") then
 					disconnectTrainingPromptListeners()
@@ -3659,7 +3765,7 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoBikeEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoBikeEnabled", {
 			Text = "Auto Bike",
 			Default = false,
 		}):OnChanged(function(enabled)
@@ -3667,7 +3773,7 @@ function HyakuAsura.init(_context)
 				disableOtherAutoTrainToggles("AutoBikeEnabled")
 				startAutoBike()
 			else
-				autoBikeToken += 1
+				runtimeState.autoBikeToken += 1
 				pcall(leaveCurrentTrainingMachine)
 				if not isAnyOtherAutoTrainEnabled("AutoBikeEnabled") then
 					disconnectTrainingPromptListeners()
@@ -3675,97 +3781,103 @@ function HyakuAsura.init(_context)
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoBagsEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoBagsEnabled", {
 			Text = "Auto Bags",
 			Default = false,
 		})
 
-		local autoBagsOptions = autoTrainGroup:AddDependencyBox()
-		autoBagsOptions:SetupDependencies({
-			{ Toggles.AutoBagsEnabled, true },
-		})
+		do
+			local options = uiGroups.autoTrain:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.AutoBagsEnabled, true },
+			})
 
-		autoBagsOptions:AddDropdown("AutoBagsMode", {
-			Text = "Bag Mode",
-			Values = autoBagModes,
-			Default = "Strength",
-			Multi = false,
-		})
+			options:AddDropdown("AutoBagsMode", {
+				Text = "Bag Mode",
+				Values = configState.autoBagModes,
+				Default = "Strength",
+				Multi = false,
+			})
+		end
 
 		Toggles.AutoBagsEnabled:OnChanged(function(enabled)
 			if enabled then
 				disableOtherAutoTrainToggles("AutoBagsEnabled")
 				startAutoBags()
 			else
-				autoBagsToken += 1
-				activeAutoBagModel = nil
+				runtimeState.autoBagsToken += 1
+				runtimeState.activeAutoBagModel = nil
 				if not isAnyOtherAutoTrainEnabled("AutoBagsEnabled") then
 					disconnectTrainingPromptListeners()
 				end
 			end
 		end)
 
-		autoTrainGroup:AddToggle("AutoSleepEnabled", {
+		uiGroups.autoTrain:AddToggle("AutoSleepEnabled", {
 			Text = "Auto Sleep",
 			Default = false,
 		}):OnChanged(function(enabled)
 			if enabled then
 				startAutoSleep()
 			else
-				autoSleepToken += 1
-				autoSleepInProgress = false
+				runtimeState.autoSleepToken += 1
+				runtimeState.autoSleepInProgress = false
 			end
 		end)
 
-		local autoSleepOptions = autoTrainGroup:AddDependencyBox()
-		autoSleepOptions:SetupDependencies({
-			{ Toggles.AutoSleepEnabled, true },
-		})
+		do
+			local options = uiGroups.autoTrain:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.AutoSleepEnabled, true },
+			})
 
-		autoSleepOptions:AddSlider("AutoSleepThreshold", {
-			Text = "Sleep Fatigue",
-			Default = 80,
-			Min = 0,
-			Max = 100,
-			Rounding = 0,
-		})
+			options:AddSlider("AutoSleepThreshold", {
+				Text = "Sleep Fatigue",
+				Default = 80,
+				Min = 0,
+				Max = 100,
+				Rounding = 0,
+			})
+		end
 
-		autoEatGroup:AddToggle("AutoEatEnabled", {
+		uiGroups.autoEat:AddToggle("AutoEatEnabled", {
 			Text = "Auto Eat",
 			Default = false,
 		})
 
-		local autoEatOptions = autoEatGroup:AddDependencyBox()
-		autoEatOptions:SetupDependencies({
-			{ Toggles.AutoEatEnabled, true },
-		})
+		do
+			local options = uiGroups.autoEat:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.AutoEatEnabled, true },
+			})
 
-		autoEatOptions:AddSlider("AutoEatThreshold", {
-			Text = "Eat Hunger",
-			Default = 60,
-			Min = 0,
-			Max = 100,
-			Rounding = 0,
-		})
+			options:AddSlider("AutoEatThreshold", {
+				Text = "Eat Hunger",
+				Default = 60,
+				Min = 0,
+				Max = 100,
+				Rounding = 0,
+			})
 
-		autoEatOptions:AddDropdown("AutoEatFoods", {
-			Text = "Foods",
-			Values = autoEatFoodNames,
-			Default = autoEatFoodNames,
-			Multi = true,
-		})
+			options:AddDropdown("AutoEatFoods", {
+				Text = "Foods",
+				Values = configState.autoEatFoodNames,
+				Default = configState.autoEatFoodNames,
+				Multi = true,
+			})
 
-		autoEatOptions:AddToggle("AutoBuyFoodEnabled", {
-			Text = "Auto Buy Food",
-			Default = false,
-		})
+			options:AddToggle("AutoBuyFoodEnabled", {
+				Text = "Auto Buy Food",
+				Default = false,
+			})
+		end
 
 		Toggles.AutoEatEnabled:OnChanged(function(enabled)
 			if enabled then
 				startAutoEat()
 			else
-				autoEatToken += 1
-				autoEatInProgress = false
+				runtimeState.autoEatToken += 1
+				runtimeState.autoEatInProgress = false
 			end
 		end)
 
@@ -3777,22 +3889,22 @@ function HyakuAsura.init(_context)
 			stopAntiAfk()
 			stopDeliveryRunInput()
 			resetDeliveryMacroPlaybackInputs()
-			deliveryRouteRecorderToken += 1
+			runtimeState.deliveryRouteRecorderToken += 1
 			cancelDeliveryFarmTween()
 			destroyDeliveryFarmPlatform()
 			setSpeedBoostEnabled(false)
-			deliveryFarmToken += 1
-			autoBenchToken += 1
-			autoPullUpToken += 1
-			autoSquatMachineToken += 1
-			autoTreadmillToken += 1
-			autoBikeToken += 1
-			autoBagsToken += 1
-			autoSleepToken += 1
-			autoEatToken += 1
-			activeAutoBagModel = nil
-			autoSleepInProgress = false
-			autoEatInProgress = false
+			runtimeState.deliveryFarmToken += 1
+			runtimeState.autoBenchToken += 1
+			runtimeState.autoPullUpToken += 1
+			runtimeState.autoSquatMachineToken += 1
+			runtimeState.autoTreadmillToken += 1
+			runtimeState.autoBikeToken += 1
+			runtimeState.autoBagsToken += 1
+			runtimeState.autoSleepToken += 1
+			runtimeState.autoEatToken += 1
+			runtimeState.activeAutoBagModel = nil
+			runtimeState.autoSleepInProgress = false
+			runtimeState.autoEatInProgress = false
 			if Toggles and Toggles.InfiniteRhythmEnabled then
 				pcall(function() Toggles.InfiniteRhythmEnabled:SetValue(false) end)
 			end
@@ -4365,3 +4477,7 @@ function HyakuAsura.init(_context)
 end
 
 return HyakuAsura
+
+
+
+
