@@ -345,6 +345,7 @@ function HyakuAsura.init(_context)
 		local savedDeliveryRoute = {
 		}
 		local recordedDeliveryRoute = table.clone and table.clone(savedDeliveryRoute) or {}
+		local recordedDeliveryMacroEvents = {}
 		local deliveryRouteStatusLabel = nil
 		local cachedBenchPromptFrame = nil
 		local lastBenchVisibleKey = nil
@@ -409,10 +410,29 @@ function HyakuAsura.init(_context)
 		local deliveryPathModes = {
 			"Direct Target",
 			"Recorded Route",
+			"Recorded Macro",
 		}
 		local deliveryRouteStorageFolder = "HuajHub"
 		local deliveryRouteStoragePath = deliveryRouteStorageFolder .. "\\hyaku_delivery_route.json"
+		local deliveryMacroStoragePath = deliveryRouteStorageFolder .. "\\hyaku_delivery_macro.json"
 		local deliveryRouteRunSpeedThreshold = 18
+		local deliveryMacroCameraSampleInterval = 0.05
+		local deliveryMacroCameraDotThreshold = 0.9995
+		local deliveryMacroSupportedKeyNames = {
+			W = true,
+			A = true,
+			S = true,
+			D = true,
+			Space = true,
+			LeftShift = true,
+			LeftControl = true,
+			Q = true,
+			E = true,
+		}
+		local deliveryMacroSupportedMouseTypes = {
+			MouseButton1 = true,
+			MouseButton2 = true,
+		}
 		local autoBagPlacementConfig = {
 			Axis = "LookVector",
 			DistanceOffset = 0.35,
@@ -1480,6 +1500,10 @@ function HyakuAsura.init(_context)
 			return math.max(tonumber(getOptionValue("DeliveryFarmTweenSpeed", 15)) or 15, 1)
 		end
 
+		local function getCurrentCamera()
+			return workspace.CurrentCamera
+		end
+
 		local function getRecordedDeliveryRoutePointPosition(point)
 			if typeof(point) == "Vector3" then
 				return point
@@ -1533,9 +1557,11 @@ function HyakuAsura.init(_context)
 					and Toggles.RecordDeliveryRouteEnabled
 					and Toggles.RecordDeliveryRouteEnabled.Value == true
 				deliveryRouteStatusLabel:SetText(string.format(
-					"Recorded Route: %d point%s%s",
+					"Recorded Route: %d point%s | Macro: %d event%s%s",
 					#recordedDeliveryRoute,
 					#recordedDeliveryRoute == 1 and "" or "s",
+					#recordedDeliveryMacroEvents,
+					#recordedDeliveryMacroEvents == 1 and "" or "s",
 					recordingEnabled and " | Recording" or ""
 				))
 			end
@@ -1568,6 +1594,26 @@ function HyakuAsura.init(_context)
 					makefolder(deliveryRouteStorageFolder)
 				end
 				writefile(deliveryRouteStoragePath, encoded)
+			end)
+
+			return ok
+		end
+
+		local function saveRecordedDeliveryMacro()
+			if type(writefile) ~= "function" then
+				return false
+			end
+
+			local payload = {
+				events = recordedDeliveryMacroEvents,
+			}
+
+			local encoded = HttpService:JSONEncode(payload)
+			local ok = pcall(function()
+				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(deliveryRouteStorageFolder) then
+					makefolder(deliveryRouteStorageFolder)
+				end
+				writefile(deliveryMacroStoragePath, encoded)
 			end)
 
 			return ok
@@ -1621,9 +1667,48 @@ function HyakuAsura.init(_context)
 			return #recordedDeliveryRoute > 0
 		end
 
+		local function loadRecordedDeliveryMacro()
+			if type(readfile) ~= "function" or type(isfile) ~= "function" then
+				return false
+			end
+
+			local ok, exists = pcall(function()
+				return isfile(deliveryMacroStoragePath)
+			end)
+			if not ok or not exists then
+				return false
+			end
+
+			local readOk, content = pcall(function()
+				return readfile(deliveryMacroStoragePath)
+			end)
+			if not readOk or type(content) ~= "string" or content == "" then
+				return false
+			end
+
+			local decodeOk, decoded = pcall(function()
+				return HttpService:JSONDecode(content)
+			end)
+			if not decodeOk or type(decoded) ~= "table" or type(decoded.events) ~= "table" then
+				return false
+			end
+
+			table.clear(recordedDeliveryMacroEvents)
+			for _, event in ipairs(decoded.events) do
+				if type(event) == "table" and type(event.kind) == "string" and tonumber(event.t) then
+					table.insert(recordedDeliveryMacroEvents, event)
+				end
+			end
+
+			updateDeliveryRouteStatusLabel()
+			return #recordedDeliveryMacroEvents > 0
+		end
+
 		local function clearRecordedDeliveryRoute()
 			table.clear(recordedDeliveryRoute)
 			saveRecordedDeliveryRoute()
+			table.clear(recordedDeliveryMacroEvents)
+			saveRecordedDeliveryMacro()
 			updateDeliveryRouteStatusLabel()
 		end
 
@@ -1694,12 +1779,109 @@ function HyakuAsura.init(_context)
 			return false
 		end
 
+		local function getDeliveryMacroInputEventKind(inputObject)
+			if not inputObject then
+				return nil, nil
+			end
+
+			if inputObject.UserInputType == Enum.UserInputType.Keyboard then
+				local keyName = inputObject.KeyCode and inputObject.KeyCode.Name
+				if keyName and deliveryMacroSupportedKeyNames[keyName] then
+					return "key", keyName
+				end
+			end
+
+			local inputTypeName = inputObject.UserInputType and inputObject.UserInputType.Name
+			if inputTypeName and deliveryMacroSupportedMouseTypes[inputTypeName] then
+				return "mouse", inputTypeName
+			end
+
+			return nil, nil
+		end
+
+		local function appendRecordedDeliveryMacroEvent(event)
+			if type(event) ~= "table" or type(event.kind) ~= "string" or type(event.t) ~= "number" then
+				return
+			end
+
+			table.insert(recordedDeliveryMacroEvents, event)
+			saveRecordedDeliveryMacro()
+			updateDeliveryRouteStatusLabel()
+		end
+
+		local function captureDeliveryMacroCameraSample(recordingStartedAt)
+			local camera = getCurrentCamera()
+			if not camera then
+				return
+			end
+
+			local lookVector = camera.CFrame.LookVector
+			appendRecordedDeliveryMacroEvent({
+				kind = "camera",
+				t = os.clock() - recordingStartedAt,
+				lx = lookVector.X,
+				ly = lookVector.Y,
+				lz = lookVector.Z,
+			})
+		end
+
 		local function startDeliveryRouteRecorder()
 			deliveryRouteRecorderToken += 1
 			local currentToken = deliveryRouteRecorderToken
 
 			task.spawn(function()
 				local lastRecordedPosition = nil
+				local recordingStartedAt = os.clock()
+				local lastCameraSampleAt = 0
+				local lastCameraLookVector = nil
+
+				local function shouldKeepRecording()
+					return currentToken == deliveryRouteRecorderToken
+						and Toggles
+						and Toggles.RecordDeliveryRouteEnabled
+						and Toggles.RecordDeliveryRouteEnabled.Value
+				end
+
+				local function recordInputState(inputObject, state)
+					local inputKind, inputName = getDeliveryMacroInputEventKind(inputObject)
+					if not inputKind or not inputName then
+						return
+					end
+
+					local event = {
+						kind = inputKind,
+						name = inputName,
+						state = state == true,
+						t = os.clock() - recordingStartedAt,
+					}
+
+					if inputKind == "mouse" and UserInputService then
+						local mouseLocation = UserInputService:GetMouseLocation()
+						if mouseLocation then
+							event.x = mouseLocation.X
+							event.y = mouseLocation.Y
+						end
+					end
+
+					appendRecordedDeliveryMacroEvent(event)
+				end
+
+				local inputBeganConnection = UserInputService.InputBegan:Connect(function(inputObject, gameProcessed)
+					if gameProcessed or not shouldKeepRecording() then
+						return
+					end
+
+					recordInputState(inputObject, true)
+				end)
+
+				local inputEndedConnection = UserInputService.InputEnded:Connect(function(inputObject)
+					if not shouldKeepRecording() then
+						return
+					end
+
+					recordInputState(inputObject, false)
+				end)
+
 				while currentToken == deliveryRouteRecorderToken
 					and Toggles
 					and Toggles.RecordDeliveryRouteEnabled
@@ -1732,10 +1914,26 @@ function HyakuAsura.init(_context)
 								updateDeliveryRouteStatusLabel()
 							end
 						end
+
+						local now = os.clock()
+						if now - lastCameraSampleAt >= deliveryMacroCameraSampleInterval then
+							local camera = getCurrentCamera()
+							local lookVector = camera and camera.CFrame.LookVector
+							if lookVector then
+								if not lastCameraLookVector or lastCameraLookVector:Dot(lookVector) <= deliveryMacroCameraDotThreshold then
+									captureDeliveryMacroCameraSample(recordingStartedAt)
+									lastCameraLookVector = lookVector
+								end
+							end
+							lastCameraSampleAt = now
+						end
 					end
 
 					task.wait(0.1)
 				end
+
+				inputBeganConnection:Disconnect()
+				inputEndedConnection:Disconnect()
 
 				updateDeliveryRouteStatusLabel()
 			end)
@@ -1823,6 +2021,111 @@ function HyakuAsura.init(_context)
 				task.wait(0.03)
 			end)
 			setDeliveryRunKeyHeld(true)
+			return true
+		end
+
+		local function setMacroPlaybackInputState(event, state)
+			if not event or type(event.kind) ~= "string" or type(event.name) ~= "string" then
+				return
+			end
+
+			if event.kind == "key" then
+				local keyCode = Enum.KeyCode[event.name]
+				if keyCode then
+					pcall(function()
+						VirtualInputManager:SendKeyEvent(state, keyCode, false, game)
+					end)
+				end
+				return
+			end
+
+			if event.kind == "mouse" then
+				local mouseButton = event.name == "MouseButton2" and Enum.UserInputType.MouseButton2 or Enum.UserInputType.MouseButton1
+				local mouseX = tonumber(event.x) or 0
+				local mouseY = tonumber(event.y) or 0
+				pcall(function()
+					VirtualInputManager:SendMouseButtonEvent(mouseX, mouseY, mouseButton, state, game, 0)
+				end)
+			end
+		end
+
+		local function resetDeliveryMacroPlaybackInputs()
+			for keyName in pairs(deliveryMacroSupportedKeyNames) do
+				setMacroPlaybackInputState({
+					kind = "key",
+					name = keyName,
+				}, false)
+			end
+
+			for mouseName in pairs(deliveryMacroSupportedMouseTypes) do
+				setMacroPlaybackInputState({
+					kind = "mouse",
+					name = mouseName,
+					x = 0,
+					y = 0,
+				}, false)
+			end
+		end
+
+		local function orientCameraToLookVector(lookVector)
+			local camera = getCurrentCamera()
+			if not camera or typeof(lookVector) ~= "Vector3" or lookVector.Magnitude <= 0.001 then
+				return
+			end
+
+			local cameraPosition = camera.CFrame.Position
+			pcall(function()
+				camera.CFrame = CFrame.lookAt(cameraPosition, cameraPosition + lookVector)
+			end)
+		end
+
+		local function runRecordedDeliveryMacro(character, finalTargetPosition, currentToken)
+			if #recordedDeliveryMacroEvents == 0 then
+				return false
+			end
+
+			stopDeliveryRunInput()
+			resetDeliveryMacroPlaybackInputs()
+			local previousEventTime = 0
+			for _, event in ipairs(recordedDeliveryMacroEvents) do
+				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
+					stopDeliveryRunInput()
+					resetDeliveryMacroPlaybackInputs()
+					return false
+				end
+
+				local eventTime = tonumber(event.t) or previousEventTime
+				local waitDuration = math.max(eventTime - previousEventTime, 0)
+				if waitDuration > 0 then
+					task.wait(waitDuration)
+				end
+				previousEventTime = eventTime
+
+				if event.kind == "camera" then
+					local lookVector = Vector3.new(
+						tonumber(event.lx) or 0,
+						tonumber(event.ly) or 0,
+						tonumber(event.lz) or -1
+					)
+					orientCameraToLookVector(lookVector)
+				elseif event.kind == "key" or event.kind == "mouse" then
+					setMacroPlaybackInputState(event, event.state == true)
+				end
+			end
+
+			for _, event in ipairs(recordedDeliveryMacroEvents) do
+				if event.kind == "key" or event.kind == "mouse" then
+					setMacroPlaybackInputState(event, false)
+				end
+			end
+
+			stopDeliveryRunInput()
+			resetDeliveryMacroPlaybackInputs()
+
+			if typeof(finalTargetPosition) == "Vector3" then
+				return walkCharacterToPosition(character, finalTargetPosition, 7, currentToken)
+			end
+
 			return true
 		end
 
@@ -2037,7 +2340,11 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			if getDeliveryPlaybackMode() == "Recorded Route" and #recordedDeliveryRoute > 0 then
+			if getDeliveryPlaybackMode() == "Recorded Macro" and #recordedDeliveryMacroEvents > 0 then
+				if not runRecordedDeliveryMacro(character, spotPart.Position, currentToken) then
+					return false
+				end
+			elseif getDeliveryPlaybackMode() == "Recorded Route" and #recordedDeliveryRoute > 0 then
 				if not runCharacterAlongRecordedRoute(character, spotPart.Position, currentToken) then
 					return false
 				end
@@ -3236,6 +3543,7 @@ function HyakuAsura.init(_context)
 			clearRecordedDeliveryRoute()
 		end)
 		loadRecordedDeliveryRoute()
+		loadRecordedDeliveryMacro()
 		updateDeliveryRouteStatusLabel()
 
 		local pathfindingDeliveryFarmOptions = autoFarmGroup:AddDependencyBox()
@@ -3272,6 +3580,7 @@ function HyakuAsura.init(_context)
 			else
 				pathfindingDeliveryFarmToken += 1
 				stopDeliveryRunInput()
+				resetDeliveryMacroPlaybackInputs()
 			end
 		end)
 
@@ -3465,6 +3774,7 @@ function HyakuAsura.init(_context)
 			stopModeratorDetector()
 			stopAntiAfk()
 			stopDeliveryRunInput()
+			resetDeliveryMacroPlaybackInputs()
 			deliveryRouteRecorderToken += 1
 			cancelDeliveryFarmTween()
 			destroyDeliveryFarmPlatform()
