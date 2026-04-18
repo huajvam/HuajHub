@@ -1610,6 +1610,20 @@ function HyakuAsura.init(_context)
 			return foundSpots
 		end
 
+		local function isAllowedPathfindingDeliverySpot(spotPart)
+			if not spotPart or not spotPart:IsA("BasePart") then
+				return false
+			end
+
+			for _, allowedSpot in ipairs(getAllowedPathfindingDeliverySpots()) do
+				if allowedSpot == spotPart then
+					return true
+				end
+			end
+
+			return false
+		end
+
 		local function getAllowedActivePathfindingDeliverySpot()
 			for _, spotPart in ipairs(getAllowedPathfindingDeliverySpots()) do
 				if hasDeliverySpotTouchInterest(spotPart) then
@@ -2404,9 +2418,36 @@ function HyakuAsura.init(_context)
 				return true
 			end
 
-			if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+			local existingSpot = getActiveDeliverySpot()
+			if existingSpot then
+				if isAllowedPathfindingDeliverySpot(existingSpot) then
+					return true
+				end
+
 				abandonCurrentDeliveryJob()
 				return false
+			end
+
+			if hasActiveDeliveryEffect() then
+				local effectTimeoutAt = os.clock() + 1.5
+				while os.clock() < effectTimeoutAt do
+					local currentAllowedSpot = getAllowedActivePathfindingDeliverySpot()
+					if currentAllowedSpot then
+						return true
+					end
+
+					local currentSpot = getActiveDeliverySpot()
+					if currentSpot then
+						if isAllowedPathfindingDeliverySpot(currentSpot) then
+							return true
+						end
+
+						abandonCurrentDeliveryJob()
+						return false
+					end
+
+					task.wait(0.1)
+				end
 			end
 
 			local boardPosition = configState.deliveryQuestStartCFrame.Position
@@ -2423,13 +2464,21 @@ function HyakuAsura.init(_context)
 					return true
 				end
 
-				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
+				local currentSpot = getActiveDeliverySpot()
+				if currentSpot then
+					if isAllowedPathfindingDeliverySpot(currentSpot) then
+						return true
+					end
+
 					break
 				end
 				task.wait(0.1)
 			end
 
-			abandonCurrentDeliveryJob()
+			local unresolvedSpot = getActiveDeliverySpot()
+			if unresolvedSpot and not isAllowedPathfindingDeliverySpot(unresolvedSpot) then
+				abandonCurrentDeliveryJob()
+			end
 
 			return false
 		end
@@ -3389,7 +3438,8 @@ function HyakuAsura.init(_context)
 						runPathfindingDeliveryToSpot(character, activeSpot, currentToken)
 						task.wait(0.2)
 					else
-						if hasActiveDeliveryEffect() or getActiveDeliverySpot() ~= nil then
+						local currentSpot = getActiveDeliverySpot()
+						if currentSpot and not isAllowedPathfindingDeliverySpot(currentSpot) then
 							abandonCurrentDeliveryJob()
 						end
 						task.wait(0.5)
