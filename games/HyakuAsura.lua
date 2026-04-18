@@ -345,8 +345,30 @@ function HyakuAsura.init(_context)
 		local savedDeliveryRoute = {
 		}
 		local recordedDeliveryRoute = table.clone and table.clone(savedDeliveryRoute) or {}
-		local recordedDeliveryMacroEvents = {}
-		local deliveryRouteStatusLabel = nil
+		local deliveryRecorderState = {
+			macroEvents = {},
+			statusLabel = nil,
+			routeStoragePath = "HuajHub\\hyaku_delivery_route.json",
+			macroStoragePath = "HuajHub\\hyaku_delivery_macro.json",
+			runSpeedThreshold = 18,
+			cameraSampleInterval = 0.05,
+			cameraDotThreshold = 0.9995,
+			supportedKeys = {
+				W = true,
+				A = true,
+				S = true,
+				D = true,
+				Space = true,
+				LeftShift = true,
+				LeftControl = true,
+				Q = true,
+				E = true,
+			},
+			supportedMouse = {
+				MouseButton1 = true,
+				MouseButton2 = true,
+			},
+		}
 		local cachedBenchPromptFrame = nil
 		local lastBenchVisibleKey = nil
 		local lastBenchPromptScanAt = 0
@@ -413,26 +435,6 @@ function HyakuAsura.init(_context)
 			"Recorded Macro",
 		}
 		local deliveryRouteStorageFolder = "HuajHub"
-		local deliveryRouteStoragePath = deliveryRouteStorageFolder .. "\\hyaku_delivery_route.json"
-		local deliveryMacroStoragePath = deliveryRouteStorageFolder .. "\\hyaku_delivery_macro.json"
-		local deliveryRouteRunSpeedThreshold = 18
-		local deliveryMacroCameraSampleInterval = 0.05
-		local deliveryMacroCameraDotThreshold = 0.9995
-		local deliveryMacroSupportedKeyNames = {
-			W = true,
-			A = true,
-			S = true,
-			D = true,
-			Space = true,
-			LeftShift = true,
-			LeftControl = true,
-			Q = true,
-			E = true,
-		}
-		local deliveryMacroSupportedMouseTypes = {
-			MouseButton1 = true,
-			MouseButton2 = true,
-		}
 		local autoBagPlacementConfig = {
 			Axis = "LookVector",
 			DistanceOffset = 0.35,
@@ -1552,16 +1554,16 @@ function HyakuAsura.init(_context)
 		end
 
 		local function updateDeliveryRouteStatusLabel()
-			if deliveryRouteStatusLabel and type(deliveryRouteStatusLabel.SetText) == "function" then
+			if deliveryRecorderState.statusLabel and type(deliveryRecorderState.statusLabel.SetText) == "function" then
 				local recordingEnabled = Toggles
 					and Toggles.RecordDeliveryRouteEnabled
 					and Toggles.RecordDeliveryRouteEnabled.Value == true
-				deliveryRouteStatusLabel:SetText(string.format(
+				deliveryRecorderState.statusLabel:SetText(string.format(
 					"Recorded Route: %d point%s | Macro: %d event%s%s",
 					#recordedDeliveryRoute,
 					#recordedDeliveryRoute == 1 and "" or "s",
-					#recordedDeliveryMacroEvents,
-					#recordedDeliveryMacroEvents == 1 and "" or "s",
+					#deliveryRecorderState.macroEvents,
+					#deliveryRecorderState.macroEvents == 1 and "" or "s",
 					recordingEnabled and " | Recording" or ""
 				))
 			end
@@ -1593,7 +1595,7 @@ function HyakuAsura.init(_context)
 				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(deliveryRouteStorageFolder) then
 					makefolder(deliveryRouteStorageFolder)
 				end
-				writefile(deliveryRouteStoragePath, encoded)
+				writefile(deliveryRecorderState.routeStoragePath, encoded)
 			end)
 
 			return ok
@@ -1605,7 +1607,7 @@ function HyakuAsura.init(_context)
 			end
 
 			local payload = {
-				events = recordedDeliveryMacroEvents,
+				events = deliveryRecorderState.macroEvents,
 			}
 
 			local encoded = HttpService:JSONEncode(payload)
@@ -1613,7 +1615,7 @@ function HyakuAsura.init(_context)
 				if type(makefolder) == "function" and type(isfolder) == "function" and not isfolder(deliveryRouteStorageFolder) then
 					makefolder(deliveryRouteStorageFolder)
 				end
-				writefile(deliveryMacroStoragePath, encoded)
+				writefile(deliveryRecorderState.macroStoragePath, encoded)
 			end)
 
 			return ok
@@ -1625,14 +1627,14 @@ function HyakuAsura.init(_context)
 			end
 
 			local ok, exists = pcall(function()
-				return isfile(deliveryRouteStoragePath)
+				return isfile(deliveryRecorderState.routeStoragePath)
 			end)
 			if not ok or not exists then
 				return false
 			end
 
 			local readOk, content = pcall(function()
-				return readfile(deliveryRouteStoragePath)
+				return readfile(deliveryRecorderState.routeStoragePath)
 			end)
 			if not readOk or type(content) ~= "string" or content == "" then
 				return false
@@ -1673,14 +1675,14 @@ function HyakuAsura.init(_context)
 			end
 
 			local ok, exists = pcall(function()
-				return isfile(deliveryMacroStoragePath)
+				return isfile(deliveryRecorderState.macroStoragePath)
 			end)
 			if not ok or not exists then
 				return false
 			end
 
 			local readOk, content = pcall(function()
-				return readfile(deliveryMacroStoragePath)
+				return readfile(deliveryRecorderState.macroStoragePath)
 			end)
 			if not readOk or type(content) ~= "string" or content == "" then
 				return false
@@ -1693,21 +1695,21 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			table.clear(recordedDeliveryMacroEvents)
+			table.clear(deliveryRecorderState.macroEvents)
 			for _, event in ipairs(decoded.events) do
 				if type(event) == "table" and type(event.kind) == "string" and tonumber(event.t) then
-					table.insert(recordedDeliveryMacroEvents, event)
+					table.insert(deliveryRecorderState.macroEvents, event)
 				end
 			end
 
 			updateDeliveryRouteStatusLabel()
-			return #recordedDeliveryMacroEvents > 0
+			return #deliveryRecorderState.macroEvents > 0
 		end
 
 		local function clearRecordedDeliveryRoute()
 			table.clear(recordedDeliveryRoute)
 			saveRecordedDeliveryRoute()
-			table.clear(recordedDeliveryMacroEvents)
+			table.clear(deliveryRecorderState.macroEvents)
 			saveRecordedDeliveryMacro()
 			updateDeliveryRouteStatusLabel()
 		end
@@ -1786,13 +1788,13 @@ function HyakuAsura.init(_context)
 
 			if inputObject.UserInputType == Enum.UserInputType.Keyboard then
 				local keyName = inputObject.KeyCode and inputObject.KeyCode.Name
-				if keyName and deliveryMacroSupportedKeyNames[keyName] then
+				if keyName and deliveryRecorderState.supportedKeys[keyName] then
 					return "key", keyName
 				end
 			end
 
 			local inputTypeName = inputObject.UserInputType and inputObject.UserInputType.Name
-			if inputTypeName and deliveryMacroSupportedMouseTypes[inputTypeName] then
+			if inputTypeName and deliveryRecorderState.supportedMouse[inputTypeName] then
 				return "mouse", inputTypeName
 			end
 
@@ -1804,7 +1806,7 @@ function HyakuAsura.init(_context)
 				return
 			end
 
-			table.insert(recordedDeliveryMacroEvents, event)
+			table.insert(deliveryRecorderState.macroEvents, event)
 			saveRecordedDeliveryMacro()
 			updateDeliveryRouteStatusLabel()
 		end
@@ -1892,7 +1894,7 @@ function HyakuAsura.init(_context)
 					if root then
 						local sampleDistance = math.max(tonumber(getOptionValue("DeliveryRouteSampleDistance", 8)) or 8, 1)
 						local position = root.Position
-						local moveMode = getHorizontalSpeed(character) >= deliveryRouteRunSpeedThreshold and "run" or "walk"
+						local moveMode = getHorizontalSpeed(character) >= deliveryRecorderState.runSpeedThreshold and "run" or "walk"
 
 						if not lastRecordedPosition then
 							local routePoint = createRecordedDeliveryRoutePoint(position, moveMode)
@@ -1916,11 +1918,11 @@ function HyakuAsura.init(_context)
 						end
 
 						local now = os.clock()
-						if now - lastCameraSampleAt >= deliveryMacroCameraSampleInterval then
+						if now - lastCameraSampleAt >= deliveryRecorderState.cameraSampleInterval then
 							local camera = getCurrentCamera()
 							local lookVector = camera and camera.CFrame.LookVector
 							if lookVector then
-								if not lastCameraLookVector or lastCameraLookVector:Dot(lookVector) <= deliveryMacroCameraDotThreshold then
+								if not lastCameraLookVector or lastCameraLookVector:Dot(lookVector) <= deliveryRecorderState.cameraDotThreshold then
 									captureDeliveryMacroCameraSample(recordingStartedAt)
 									lastCameraLookVector = lookVector
 								end
@@ -2050,14 +2052,14 @@ function HyakuAsura.init(_context)
 		end
 
 		local function resetDeliveryMacroPlaybackInputs()
-			for keyName in pairs(deliveryMacroSupportedKeyNames) do
+			for keyName in pairs(deliveryRecorderState.supportedKeys) do
 				setMacroPlaybackInputState({
 					kind = "key",
 					name = keyName,
 				}, false)
 			end
 
-			for mouseName in pairs(deliveryMacroSupportedMouseTypes) do
+			for mouseName in pairs(deliveryRecorderState.supportedMouse) do
 				setMacroPlaybackInputState({
 					kind = "mouse",
 					name = mouseName,
@@ -2080,14 +2082,14 @@ function HyakuAsura.init(_context)
 		end
 
 		local function runRecordedDeliveryMacro(character, finalTargetPosition, currentToken)
-			if #recordedDeliveryMacroEvents == 0 then
+			if #deliveryRecorderState.macroEvents == 0 then
 				return false
 			end
 
 			stopDeliveryRunInput()
 			resetDeliveryMacroPlaybackInputs()
 			local previousEventTime = 0
-			for _, event in ipairs(recordedDeliveryMacroEvents) do
+			for _, event in ipairs(deliveryRecorderState.macroEvents) do
 				if currentToken and not isPathfindingDeliveryFarmActive(currentToken) then
 					stopDeliveryRunInput()
 					resetDeliveryMacroPlaybackInputs()
@@ -2113,7 +2115,7 @@ function HyakuAsura.init(_context)
 				end
 			end
 
-			for _, event in ipairs(recordedDeliveryMacroEvents) do
+			for _, event in ipairs(deliveryRecorderState.macroEvents) do
 				if event.kind == "key" or event.kind == "mouse" then
 					setMacroPlaybackInputState(event, false)
 				end
@@ -2340,7 +2342,7 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			if getDeliveryPlaybackMode() == "Recorded Macro" and #recordedDeliveryMacroEvents > 0 then
+			if getDeliveryPlaybackMode() == "Recorded Macro" and #deliveryRecorderState.macroEvents > 0 then
 				if not runRecordedDeliveryMacro(character, spotPart.Position, currentToken) then
 					return false
 				end
@@ -3535,7 +3537,7 @@ function HyakuAsura.init(_context)
 			Rounding = 0,
 		})
 
-		deliveryRouteStatusLabel = deliveryRouteRecorderOptions:AddLabel("Recorded Route: 0 points")
+		deliveryRecorderState.statusLabel = deliveryRouteRecorderOptions:AddLabel("Recorded Route: 0 points")
 		deliveryRouteRecorderOptions:AddButton("Copy Recorded Route", function()
 			copyRecordedDeliveryRoute()
 		end)
