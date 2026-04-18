@@ -3332,11 +3332,13 @@ local function getCurrentCamera()
 					end
 
 					pcall(function()
+						root.Anchored = false
 						root.AssemblyLinearVelocity = Vector3.zero
 						root.AssemblyAngularVelocity = Vector3.zero
-						root.CFrame = CFrame.new(pos.X, pos.Y - 15, pos.Z)
+						root.CFrame = CFrame.new(pos.X, pos.Y - 10, pos.Z)
+						root.Anchored = true
 						if platform and platform.Parent then
-							platform.CFrame = CFrame.new(pos.X, pos.Y - 18.5, pos.Z)
+							platform.CFrame = CFrame.new(pos.X, pos.Y - 13.5, pos.Z)
 						end
 					end)
 
@@ -3415,6 +3417,9 @@ local function getCurrentCamera()
 					task.wait(0.3)
 				end
 
+				pcall(function()
+					root.Anchored = false
+				end)
 				if humanoid then
 					pcall(function()
 						humanoid.PlatformStand = false
