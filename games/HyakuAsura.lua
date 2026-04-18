@@ -1756,7 +1756,7 @@ function HyakuAsura.init(_context)
 				VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.W, false, game)
 				task.wait(0.03)
 			end)
-			deliveryRunWHeld = false
+			setDeliveryRunKeyHeld(true)
 			return true
 		end
 
