@@ -2420,7 +2420,7 @@ function HyakuAsura.init(_context)
 
 			local existingSpot = getActiveDeliverySpot()
 			if existingSpot then
-				if isAllowedPathfindingDeliverySpot(existingSpot) then
+				if isAllowedPathfindingDeliverySpot(existingSpot) and hasDeliverySpotTouchInterest(existingSpot) then
 					return true
 				end
 
@@ -2438,15 +2438,19 @@ function HyakuAsura.init(_context)
 
 					local currentSpot = getActiveDeliverySpot()
 					if currentSpot then
-						if isAllowedPathfindingDeliverySpot(currentSpot) then
-							return true
+						if not isAllowedPathfindingDeliverySpot(currentSpot) then
+							abandonCurrentDeliveryJob()
+							return false
 						end
-
-						abandonCurrentDeliveryJob()
-						return false
 					end
 
 					task.wait(0.1)
+				end
+
+				local effectSpot = getActiveDeliverySpot()
+				if effectSpot then
+					abandonCurrentDeliveryJob()
+					return false
 				end
 			end
 
@@ -2466,17 +2470,15 @@ function HyakuAsura.init(_context)
 
 				local currentSpot = getActiveDeliverySpot()
 				if currentSpot then
-					if isAllowedPathfindingDeliverySpot(currentSpot) then
-						return true
+					if not isAllowedPathfindingDeliverySpot(currentSpot) then
+						break
 					end
-
-					break
 				end
 				task.wait(0.1)
 			end
 
 			local unresolvedSpot = getActiveDeliverySpot()
-			if unresolvedSpot and not isAllowedPathfindingDeliverySpot(unresolvedSpot) then
+			if unresolvedSpot then
 				abandonCurrentDeliveryJob()
 			end
 
@@ -2619,6 +2621,31 @@ function HyakuAsura.init(_context)
 			end
 		end
 
+		local function getDeliveryJobBoard()
+			local map = workspace:FindFirstChild("Map")
+			local folder = map and map:FindFirstChild("Folder")
+			if not folder then
+				return nil
+			end
+			return folder:GetChildren()[57]
+		end
+
+		local function getDeliveryJobBoardPosition(jobBoard)
+			if not jobBoard then
+				return nil
+			end
+			if jobBoard:IsA("BasePart") then
+				return jobBoard.Position
+			elseif jobBoard:IsA("Model") then
+				if jobBoard.PrimaryPart then
+					return jobBoard.PrimaryPart.Position
+				end
+				local part = jobBoard:FindFirstChildOfClass("BasePart")
+				return part and part.Position
+			end
+			return nil
+		end
+
 		local function startDeliveryQuest(character)
 			local root = character and getCharacterRoot(character)
 			if not root then
@@ -2629,28 +2656,58 @@ function HyakuAsura.init(_context)
 				return true
 			end
 
-			cancelDeliveryFarmTween()
-			destroyDeliveryFarmPlatform()
-			local success = pcall(function()
-				root.AssemblyLinearVelocity = Vector3.zero
-				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = configState.deliveryQuestStartCFrame
-			end)
-			if not success then
+			local jobBoard = getDeliveryJobBoard()
+			local boardPos = getDeliveryJobBoardPosition(jobBoard)
+			if not boardPos then
 				return false
 			end
 
-			task.wait(0.2)
-			holdInteractionKey(0.5)
+			local jobChild = jobBoard:FindFirstChild("Job")
+			local proximityPrompt = jobChild and jobChild:FindFirstChild("ProximityPrompt")
+			if not proximityPrompt then
+				return false
+			end
+
+			cancelDeliveryFarmTween()
+
+			local collisionStates = setCharacterDeliveryPhysics(character, true)
+			local platform = ensureDeliveryFarmPlatform(root)
+
+			local ok = pcall(function()
+				root.AssemblyLinearVelocity = Vector3.zero
+				root.AssemblyAngularVelocity = Vector3.zero
+				root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
+				if platform and platform.Parent then
+					platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
+				end
+			end)
+
+			if not ok then
+				restoreCharacterCollisionStates(collisionStates)
+				setCharacterDeliveryPhysics(character, false)
+				destroyDeliveryFarmPlatform()
+				return false
+			end
+
+			task.wait(0.1)
+
+			pcall(function()
+				fireproximityprompt(proximityPrompt)
+			end)
+
+			local gotQuest = false
 			local timeoutAt = os.clock() + 3
 			while os.clock() < timeoutAt do
 				if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-					return true
+					gotQuest = true
+					break
 				end
 				task.wait(0.1)
 			end
 
-			return false
+			restoreCharacterCollisionStates(collisionStates)
+			setCharacterDeliveryPhysics(character, false)
+			return gotQuest
 		end
 
 		local function runDeliveryToSpot(character, spotPart)
@@ -2659,44 +2716,50 @@ function HyakuAsura.init(_context)
 				return false
 			end
 
-			local basePosition = spotPart.Position
-			local currentPosition = root.Position
-			local startUndergroundCFrame = CFrame.new(currentPosition.X, basePosition.Y - 12, currentPosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
-			local undergroundCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
-			local surfaceCFrame = CFrame.new(basePosition.X, basePosition.Y + 2, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
-			local retreatCFrame = CFrame.new(basePosition.X, basePosition.Y - 12, basePosition.Z) * CFrame.Angles(0, root.Orientation.Y * math.pi / 180, 0)
+			local spotPos = spotPart.Position
 			local collisionStates = setCharacterDeliveryPhysics(character, true)
+			local platform = ensureDeliveryFarmPlatform(root)
 
-			local descendSuccess = pcall(function()
+			local ok = pcall(function()
 				root.AssemblyLinearVelocity = Vector3.zero
 				root.AssemblyAngularVelocity = Vector3.zero
-				root.CFrame = startUndergroundCFrame
+				root.CFrame = CFrame.new(spotPos.X, spotPos.Y - 15, spotPos.Z)
+				if platform and platform.Parent then
+					platform.CFrame = CFrame.new(spotPos.X, spotPos.Y - 18.5, spotPos.Z)
+				end
 			end)
-			if not descendSuccess then
+
+			if not ok then
 				restoreCharacterCollisionStates(collisionStates)
 				setCharacterDeliveryPhysics(character, false)
+				destroyDeliveryFarmPlatform()
 				return false
 			end
 
-			task.wait(0.05)
+			task.wait(8)
 
-			if not tweenCharacterRootTo(root, undergroundCFrame) then
-				restoreCharacterCollisionStates(collisionStates)
-				setCharacterDeliveryPhysics(character, false)
-				return false
+			pcall(function()
+				firetouchinterest(spotPart, root, 0)
+			end)
+
+			task.wait(8)
+
+			local jobBoard = getDeliveryJobBoard()
+			local boardPos = getDeliveryJobBoardPosition(jobBoard)
+			if boardPos then
+				pcall(function()
+					root.AssemblyLinearVelocity = Vector3.zero
+					root.AssemblyAngularVelocity = Vector3.zero
+					root.CFrame = CFrame.new(boardPos.X, boardPos.Y - 15, boardPos.Z)
+					if platform and platform.Parent then
+						platform.CFrame = CFrame.new(boardPos.X, boardPos.Y - 18.5, boardPos.Z)
+					end
+				end)
 			end
 
-			if not tweenCharacterRootTo(root, surfaceCFrame, 2) then
-				restoreCharacterCollisionStates(collisionStates)
-				setCharacterDeliveryPhysics(character, false)
-				return false
-			end
-
-			task.wait(0.2)
-			local success = tweenCharacterRootTo(root, retreatCFrame, 0.4)
 			restoreCharacterCollisionStates(collisionStates)
 			setCharacterDeliveryPhysics(character, false)
-			return success
+			return true
 		end
 
 		local function clearTrainingPromptQueue()
@@ -3649,6 +3712,16 @@ function HyakuAsura.init(_context)
 			Default = false,
 		})
 
+		uiGroups.autoFarm:AddToggle("PathfindingDeliveryFarmEnabled", {
+			Text = "Pathfinding Delivery Farm",
+			Default = false,
+		})
+
+		uiGroups.autoFarm:AddToggle("RecordDeliveryRouteEnabled", {
+			Text = "Record Delivery Route",
+			Default = false,
+		})
+
 		do
 			local options = uiGroups.autoFarm:AddDependencyBox()
 			options:SetupDependencies({
@@ -3666,13 +3739,78 @@ function HyakuAsura.init(_context)
 			options:AddLabel("anything above 50 is bannable")
 		end
 
+		do
+			local options = uiGroups.autoFarm:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.RecordDeliveryRouteEnabled, true },
+			})
+
+			options:AddSlider("DeliveryRouteSampleDistance", {
+				Text = "Sample Distance",
+				Default = 8,
+				Min = 1,
+				Max = 25,
+				Rounding = 0,
+			})
+
+			deliveryRecorderState.statusLabel = options:AddLabel("Recorded Route: 0 points")
+			options:AddButton("Copy Recorded Route", function()
+				copyRecordedDeliveryRoute()
+			end)
+			options:AddButton("Clear Recorded Route", function()
+				clearRecordedDeliveryRoute()
+			end)
+		end
+		loadRecordedDeliveryRoute()
+		loadRecordedDeliveryMacro()
+		updateDeliveryRouteStatusLabel()
+
+		do
+			local options = uiGroups.autoFarm:AddDependencyBox()
+			options:SetupDependencies({
+				{ Toggles.PathfindingDeliveryFarmEnabled, true },
+			})
+
+			options:AddDropdown("PathfindingDeliveryRouteMode", {
+				Text = "Route Mode",
+				Values = configState.deliveryPathModes,
+				Default = "Direct Target",
+				Multi = false,
+			})
+		end
+
 		Toggles.DeliveryFarmEnabled:OnChanged(function(enabled)
 			if enabled then
+				if Toggles.PathfindingDeliveryFarmEnabled and Toggles.PathfindingDeliveryFarmEnabled.Value then
+					Toggles.PathfindingDeliveryFarmEnabled:SetValue(false)
+				end
 				startDeliveryFarm()
 			else
 				runtimeState.deliveryFarmToken += 1
 				cancelDeliveryFarmTween()
 				destroyDeliveryFarmPlatform()
+			end
+		end)
+
+		Toggles.PathfindingDeliveryFarmEnabled:OnChanged(function(enabled)
+			if enabled then
+				if Toggles.DeliveryFarmEnabled and Toggles.DeliveryFarmEnabled.Value then
+					Toggles.DeliveryFarmEnabled:SetValue(false)
+				end
+				startPathfindingDeliveryFarm()
+			else
+				runtimeState.pathfindingDeliveryFarmToken += 1
+				stopDeliveryRunInput()
+				resetDeliveryMacroPlaybackInputs()
+			end
+		end)
+
+		Toggles.RecordDeliveryRouteEnabled:OnChanged(function(enabled)
+			if enabled then
+				startDeliveryRouteRecorder()
+			else
+				runtimeState.deliveryRouteRecorderToken += 1
+				updateDeliveryRouteStatusLabel()
 			end
 		end)
 
