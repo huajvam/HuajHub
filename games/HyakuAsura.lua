@@ -3395,7 +3395,7 @@ local function getCurrentCamera()
 							firetouchinterest(activeSpot, root, 0)
 						end)
 
-						task.wait(7)
+						task.wait(10)
 						if not isActive() then break end
 					end
 
