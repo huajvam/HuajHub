@@ -3312,10 +3312,10 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundYOffset = -12
-				local deliveryUndergroundYOffset = -12
-				local boardPlatformYOffset = -11.5
-				local deliveryPlatformYOffset = 17.5
+				local boardUndergroundYOffset = 8
+				local deliveryUndergroundYOffset = 12
+				local boardPlatformYOffset = 11.5
+				local deliveryPlatformYOffset = 15.5
 				local currentUndergroundYOffset = boardUndergroundYOffset
 				local currentPlatformYOffset = boardPlatformYOffset
 				local platform = ensureDeliveryFarmPlatform(root)
@@ -4503,7 +4503,6 @@ local function getCurrentCamera()
 end
 
 return HyakuAsura
-
 
 
 
