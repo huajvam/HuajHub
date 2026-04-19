@@ -3312,8 +3312,12 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local undergroundYOffset = 24
-				local platformYOffset = 27.5
+				local boardUndergroundYOffset = 8
+				local deliveryUndergroundYOffset = 14
+				local boardPlatformYOffset = 11.5
+				local deliveryPlatformYOffset = 17.5
+				local currentUndergroundYOffset = boardUndergroundYOffset
+				local currentPlatformYOffset = boardPlatformYOffset
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
 				local targetPos = boardPos
@@ -3351,10 +3355,10 @@ local function getCurrentCamera()
 				local stabilityConnection = RunService.Heartbeat:Connect(function()
 					if not root or not root.Parent then return end
 					pcall(function()
-						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - undergroundYOffset, targetPos.Z)
+						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - currentUndergroundYOffset, targetPos.Z)
 						root.CanCollide = false
 						if platform and platform.Parent then
-							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - platformYOffset, targetPos.Z)
+							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - currentPlatformYOffset, targetPos.Z)
 						end
 						if humanoid then
 							humanoid.PlatformStand = true
@@ -3362,11 +3366,13 @@ local function getCurrentCamera()
 					end)
 				end)
 
-				local function teleportUnderground(pos)
+				local function teleportUnderground(pos, undergroundYOffset, platformYOffset)
 					targetPos = pos
+					currentUndergroundYOffset = undergroundYOffset or deliveryUndergroundYOffset
+					currentPlatformYOffset = platformYOffset or deliveryPlatformYOffset
 				end
 
-				teleportUnderground(boardPos)
+				teleportUnderground(boardPos, boardUndergroundYOffset, boardPlatformYOffset)
 
 				while isActive() do
 					character = LocalPlayer and LocalPlayer.Character
@@ -3410,7 +3416,7 @@ local function getCurrentCamera()
 							continue
 						end
 
-						teleportUnderground(activeSpot.Position)
+						teleportUnderground(activeSpot.Position, deliveryUndergroundYOffset, deliveryPlatformYOffset)
 
 						-- Wait the full 7 seconds at the spot before firing.
 						-- We track the deadline and verify time actually elapsed
@@ -3437,7 +3443,7 @@ local function getCurrentCamera()
 
 					if not isActive() then break end
 
-					teleportUnderground(boardPos)
+					teleportUnderground(boardPos, boardUndergroundYOffset, boardPlatformYOffset)
 					task.wait(0.3)
 				end
 
