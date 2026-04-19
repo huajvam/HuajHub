@@ -3334,11 +3334,23 @@ local function getCurrentCamera()
 					end)
 				end
 
+				-- Save and disable CanCollide on ALL character parts to prevent
+				-- any automatic Touched events when the character is underground near delivery spots
+				local savedCanCollide = {}
+				pcall(function()
+					for _, part in ipairs(character:GetDescendants()) do
+						if part:IsA("BasePart") then
+							savedCanCollide[part] = part.CanCollide
+							part.CanCollide = false
+						end
+					end
+				end)
+
 				local stabilityConnection = RunService.Heartbeat:Connect(function()
 					if not root or not root.Parent then return end
 					pcall(function()
 						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - 10, targetPos.Z)
-						root.CanCollide = false  -- prevent auto-touch from physical overlap with delivery spot parts
+						root.CanCollide = false
 						if platform and platform.Parent then
 							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - 13.5, targetPos.Z)
 						end
@@ -3434,9 +3446,17 @@ local function getCurrentCamera()
 					end)
 				end
 
+				-- Restore CanCollide on all character parts
+				pcall(function()
+					for part, state in pairs(savedCanCollide) do
+						if part and part.Parent then
+							part.CanCollide = state
+						end
+					end
+				end)
+
 				if root and root.Parent then
 					pcall(function()
-						root.CanCollide = true
 						root.CFrame = CFrame.new(targetPos.X, targetPos.Y + 5, targetPos.Z)
 					end)
 				end
