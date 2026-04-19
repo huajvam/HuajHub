@@ -3312,7 +3312,7 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundYOffset = 8    -- studs below boardPos.Y while at the questboard
+				local boardUndergroundYOffset = 12    -- studs below boardPos.Y while at the questboard
 				local deliveryUndergroundYOffset = 12 -- studs below spot.Y while at a delivery spot
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
