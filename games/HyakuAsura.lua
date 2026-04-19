@@ -3312,12 +3312,12 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundY = 20   -- absolute Y the character sits at near the questboard
-				local deliveryUndergroundY = 10 -- absolute Y the character sits at near delivery spots
+				local boardUndergroundY = 12   -- absolute Y while at the questboard (higher = closer to surface)
+				local deliveryUndergroundY = 10 -- absolute Y while at delivery spots (higher = closer to surface)
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
 				local targetPos = boardPos
-				local atBoard = true  -- switches which Y the Heartbeat uses
+				local targetY = boardUndergroundY  -- Heartbeat reads this directly; set by teleportToBoard/Spot
 
 				local disabledStates = {
 					Enum.HumanoidStateType.Freefall,
@@ -3352,11 +3352,10 @@ local function getCurrentCamera()
 				local stabilityConnection = RunService.Heartbeat:Connect(function()
 					if not root or not root.Parent then return end
 					pcall(function()
-						local y = atBoard and boardUndergroundY or deliveryUndergroundY
-						root.CFrame = CFrame.new(targetPos.X, y, targetPos.Z)
+						root.CFrame = CFrame.new(targetPos.X, targetY, targetPos.Z)
 						root.CanCollide = false
 						if platform and platform.Parent then
-							platform.CFrame = CFrame.new(targetPos.X, y - 3.5, targetPos.Z)
+							platform.CFrame = CFrame.new(targetPos.X, targetY - 3.5, targetPos.Z)
 						end
 						if humanoid then
 							humanoid.PlatformStand = true
@@ -3366,12 +3365,12 @@ local function getCurrentCamera()
 
 				local function teleportToBoard()
 					targetPos = boardPos
-					atBoard = true
+					targetY = boardUndergroundY
 				end
 
 				local function teleportToSpot(pos)
 					targetPos = pos
-					atBoard = false
+					targetY = deliveryUndergroundY
 				end
 
 				teleportToBoard()
