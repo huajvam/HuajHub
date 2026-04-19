@@ -3312,7 +3312,7 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundY = 8    -- absolute Y the character sits at near the questboard
+				local boardUndergroundY = 12    -- absolute Y the character sits at near the questboard
 				local deliveryUndergroundY = 10 -- absolute Y the character sits at near delivery spots
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
