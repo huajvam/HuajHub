@@ -3338,6 +3338,7 @@ local function getCurrentCamera()
 					if not root or not root.Parent then return end
 					pcall(function()
 						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - 10, targetPos.Z)
+						root.CanCollide = false  -- prevent auto-touch from physical overlap with delivery spot parts
 						if platform and platform.Parent then
 							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - 13.5, targetPos.Z)
 						end
@@ -3435,6 +3436,7 @@ local function getCurrentCamera()
 
 				if root and root.Parent then
 					pcall(function()
+						root.CanCollide = true
 						root.CFrame = CFrame.new(targetPos.X, targetPos.Y + 5, targetPos.Z)
 					end)
 				end
