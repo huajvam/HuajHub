@@ -3312,6 +3312,8 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
+				local undergroundYOffset = 24
+				local platformYOffset = 27.5
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
 				local targetPos = boardPos
@@ -3349,10 +3351,10 @@ local function getCurrentCamera()
 				local stabilityConnection = RunService.Heartbeat:Connect(function()
 					if not root or not root.Parent then return end
 					pcall(function()
-						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - 10, targetPos.Z)
+						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - undergroundYOffset, targetPos.Z)
 						root.CanCollide = false
 						if platform and platform.Parent then
-							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - 13.5, targetPos.Z)
+							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - platformYOffset, targetPos.Z)
 						end
 						if humanoid then
 							humanoid.PlatformStand = true
