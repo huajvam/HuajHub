@@ -3410,22 +3410,27 @@ local function getCurrentCamera()
 
 						teleportUnderground(activeSpot.Position)
 
-						-- Always wait the full 7 seconds after teleporting to the spot before firing
-						local preFireWaitEnd = os.clock() + 7
-						while os.clock() < preFireWaitEnd and isActive() do
+						-- Wait the full 7 seconds at the spot before firing.
+						-- We track the deadline and verify time actually elapsed
+						-- so a brief isActive() flicker can't cut the wait short.
+						local preFireDeadline = os.clock() + 7
+						while os.clock() < preFireDeadline do
+							if not isActive() then break end
 							task.wait(0.05)
 						end
-						if not isActive() then break end
+						-- Only continue if the full wait completed AND the farm is still active
+						if os.clock() < preFireDeadline or not isActive() then break end
 
 						pcall(function()
 							firetouchinterest(activeSpot, root, 0)
 						end)
 
-						local postFireWaitEnd = os.clock() + 10
-						while os.clock() < postFireWaitEnd and isActive() do
+						local postFireDeadline = os.clock() + 10
+						while os.clock() < postFireDeadline do
+							if not isActive() then break end
 							task.wait(0.05)
 						end
-						if not isActive() then break end
+						if os.clock() < postFireDeadline or not isActive() then break end
 					end
 
 					if not isActive() then break end
