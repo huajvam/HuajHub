@@ -3375,13 +3375,7 @@ local function getCurrentCamera()
 							end
 						end)
 
-						local timeoutAt = os.clock() + 3
-						while os.clock() < timeoutAt and isActive() do
-							if hasActiveDeliveryEffect() or getActiveDeliverySpot() then
-								break
-							end
-							task.wait(0.1)
-						end
+						task.wait(7)
 
 						if not isActive() then break end
 					end
