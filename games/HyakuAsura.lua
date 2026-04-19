@@ -3321,8 +3321,6 @@ local function getCurrentCamera()
 					Enum.HumanoidStateType.FallingDown,
 					Enum.HumanoidStateType.GettingUp,
 					Enum.HumanoidStateType.Jumping,
-					Enum.HumanoidStateType.Running,
-					Enum.HumanoidStateType.RunningNoPhysics,
 					Enum.HumanoidStateType.Climbing,
 				}
 
@@ -3364,6 +3362,13 @@ local function getCurrentCamera()
 					end
 
 					if not hasActiveDeliveryEffect() and not getActiveDeliverySpot() then
+						-- Wait 2 seconds after teleporting to the board before firing the prompt
+						local preBoardWaitEnd = os.clock() + 2
+						while os.clock() < preBoardWaitEnd and isActive() do
+							task.wait(0.05)
+						end
+						if not isActive() then break end
+
 						pcall(function()
 							local map = workspace:FindFirstChild("Map")
 							local folder = map and map:FindFirstChild("Folder")
@@ -3375,7 +3380,10 @@ local function getCurrentCamera()
 							end
 						end)
 
-						task.wait(7)
+						local promptWaitEnd = os.clock() + 7
+						while os.clock() < promptWaitEnd and isActive() do
+							task.wait(0.05)
+						end
 
 						if not isActive() then break end
 					end
@@ -3383,19 +3391,27 @@ local function getCurrentCamera()
 					while isActive() and (hasActiveDeliveryEffect() or getActiveDeliverySpot()) do
 						local activeSpot = getActiveDeliverySpot()
 						if not activeSpot then
-							task.wait(0.1)
+							task.wait(0.05)
 							continue
 						end
 
 						teleportUnderground(activeSpot.Position)
-						task.wait(7)
+
+						-- Always wait the full 7 seconds after teleporting to the spot before firing
+						local preFireWaitEnd = os.clock() + 7
+						while os.clock() < preFireWaitEnd and isActive() do
+							task.wait(0.05)
+						end
 						if not isActive() then break end
 
 						pcall(function()
 							firetouchinterest(activeSpot, root, 0)
 						end)
 
-						task.wait(10)
+						local postFireWaitEnd = os.clock() + 10
+						while os.clock() < postFireWaitEnd and isActive() do
+							task.wait(0.05)
+						end
 						if not isActive() then break end
 					end
 
