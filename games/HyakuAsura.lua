@@ -3312,15 +3312,12 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundYOffset = 1
-				local deliveryUndergroundYOffset = 12
-				local boardPlatformYOffset = 11.5
-				local deliveryPlatformYOffset = 15.5
-				local currentUndergroundYOffset = boardUndergroundYOffset
-				local currentPlatformYOffset = boardPlatformYOffset
+				local boardUndergroundYOffset = 8    -- studs below boardPos.Y while at the questboard
+				local deliveryUndergroundYOffset = 12 -- studs below spot.Y while at a delivery spot
 				local platform = ensureDeliveryFarmPlatform(root)
 				local boardPos = configState.deliveryQuestStartCFrame.Position
 				local targetPos = boardPos
+				local atBoard = true  -- switches which offset the Heartbeat uses
 
 				local disabledStates = {
 					Enum.HumanoidStateType.Freefall,
@@ -3355,10 +3352,11 @@ local function getCurrentCamera()
 				local stabilityConnection = RunService.Heartbeat:Connect(function()
 					if not root or not root.Parent then return end
 					pcall(function()
-						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - currentUndergroundYOffset, targetPos.Z)
+						local yOffset = atBoard and boardUndergroundYOffset or deliveryUndergroundYOffset
+						root.CFrame = CFrame.new(targetPos.X, targetPos.Y - yOffset, targetPos.Z)
 						root.CanCollide = false
 						if platform and platform.Parent then
-							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - currentPlatformYOffset, targetPos.Z)
+							platform.CFrame = CFrame.new(targetPos.X, targetPos.Y - yOffset - 3.5, targetPos.Z)
 						end
 						if humanoid then
 							humanoid.PlatformStand = true
@@ -3366,13 +3364,17 @@ local function getCurrentCamera()
 					end)
 				end)
 
-				local function teleportUnderground(pos, undergroundYOffset, platformYOffset)
-					targetPos = pos
-					currentUndergroundYOffset = undergroundYOffset or deliveryUndergroundYOffset
-					currentPlatformYOffset = platformYOffset or deliveryPlatformYOffset
+				local function teleportToBoard()
+					targetPos = boardPos
+					atBoard = true
 				end
 
-				teleportUnderground(boardPos, boardUndergroundYOffset, boardPlatformYOffset)
+				local function teleportToSpot(pos)
+					targetPos = pos
+					atBoard = false
+				end
+
+				teleportToBoard()
 
 				while isActive() do
 					character = LocalPlayer and LocalPlayer.Character
@@ -3416,7 +3418,7 @@ local function getCurrentCamera()
 							continue
 						end
 
-						teleportUnderground(activeSpot.Position, deliveryUndergroundYOffset, deliveryPlatformYOffset)
+						teleportToSpot(activeSpot.Position)
 
 						-- Wait the full 7 seconds at the spot before firing.
 						-- We track the deadline and verify time actually elapsed
@@ -3443,7 +3445,7 @@ local function getCurrentCamera()
 
 					if not isActive() then break end
 
-					teleportUnderground(boardPos, boardUndergroundYOffset, boardPlatformYOffset)
+					teleportToBoard()
 					task.wait(0.3)
 				end
 
