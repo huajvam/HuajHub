@@ -3312,9 +3312,9 @@ local function getCurrentCamera()
 				end
 
 				local humanoid = getCharacterHumanoid(character)
-				local boardUndergroundYOffset = 11
+				local boardUndergroundYOffset = 13
 				local deliveryUndergroundYOffset = 12
-				local boardPlatformYOffset = 11.5
+				local boardPlatformYOffset = 13
 				local deliveryPlatformYOffset = 15.5
 				local currentUndergroundYOffset = boardUndergroundYOffset
 				local currentPlatformYOffset = boardPlatformYOffset
