@@ -2851,42 +2851,28 @@ local function getCurrentCamera()
 							connectTrainingPromptListeners(spotRemote)
 							clearTrainingPromptQueue()
 
-							-- Stealth Teleport with micro-wait to settle physics
-							teleportCharacterToTrainingSpot(character, spotModel)
-							task.wait(0.35)
-							if not isAutoTrainLoopActive(toggleKey, currentToken) then
-								break
-							end
-
-							-- Pin character 8 studs underground below the seat for the whole session
+							-- Move seat 8 studs underground, teleport character there, then restore seat after
 							local trainingSeat = getTrainingSpotSeat(spotFolder)
-							local trainingRoot = getCharacterRoot(character)
-							local trainingHumanoid = getCharacterHumanoid(character)
-							local undergroundConn = nil
-							if trainingSeat and trainingRoot then
-								local seatPos = trainingSeat.Position
-								local undergroundY = seatPos.Y - 8
-								undergroundConn = RunService.Heartbeat:Connect(function()
-									if not trainingRoot or not trainingRoot.Parent then return end
-									pcall(function()
-										trainingRoot.CFrame = CFrame.new(seatPos.X, undergroundY, seatPos.Z)
-										if trainingHumanoid then
-											trainingHumanoid.PlatformStand = true
-										end
-									end)
+							local originalSeatCFrame = trainingSeat and trainingSeat.CFrame
+							if trainingSeat and originalSeatCFrame then
+								pcall(function()
+									trainingSeat.CFrame = originalSeatCFrame * CFrame.new(0, -8, 0)
 								end)
 							end
 
-							local function stopTrainingUndergroundLock()
-								if undergroundConn then
-									undergroundConn:Disconnect()
-									undergroundConn = nil
-								end
-								if trainingHumanoid then
+							local function restoreTrainingSeat()
+								if trainingSeat and originalSeatCFrame then
 									pcall(function()
-										trainingHumanoid.PlatformStand = false
+										trainingSeat.CFrame = originalSeatCFrame
 									end)
 								end
+							end
+
+							teleportCharacterToTrainingSpot(character, spotModel)
+							task.wait(0.35)
+							if not isAutoTrainLoopActive(toggleKey, currentToken) then
+								restoreTrainingSeat()
+								break
 							end
 
 							if options.HoldEBeforeStart then
@@ -2900,7 +2886,7 @@ local function getCurrentCamera()
 								end
 								task.wait(0.1)
 								if not isAutoTrainLoopActive(toggleKey, currentToken) then
-									stopTrainingUndergroundLock()
+									restoreTrainingSeat()
 									break
 								end
 							end
@@ -2918,7 +2904,7 @@ local function getCurrentCamera()
 							end)
 							task.wait(0.6)
 							if not isAutoTrainLoopActive(toggleKey, currentToken) then
-								stopTrainingUndergroundLock()
+								restoreTrainingSeat()
 								break
 							end
 
@@ -2942,7 +2928,7 @@ local function getCurrentCamera()
 								end
 							end
 
-							stopTrainingUndergroundLock()
+							restoreTrainingSeat()
 						end
 					end
 					task.wait(1)
@@ -3597,39 +3583,26 @@ local function getCurrentCamera()
 									task.wait(0.2)
 								end
 								disconnectTrainingPromptListeners()
-								teleportCharacterToTrainingSpot(character, bedModel)
-								task.wait(0.35)
 
-								-- Pin character 8 studs underground below the bed seat
+								-- Move bed seat 8 studs underground, teleport character there, restore after
 								local bedSeat = getTrainingSpotSeat(bedFolder)
-								local sleepRoot = getCharacterRoot(character)
-								local sleepHumanoid = getCharacterHumanoid(character)
-								local sleepUndergroundConn = nil
-								if bedSeat and sleepRoot then
-									local bedSeatPos = bedSeat.Position
-									local bedUndergroundY = bedSeatPos.Y - 8
-									sleepUndergroundConn = RunService.Heartbeat:Connect(function()
-										if not sleepRoot or not sleepRoot.Parent then return end
-										pcall(function()
-											sleepRoot.CFrame = CFrame.new(bedSeatPos.X, bedUndergroundY, bedSeatPos.Z)
-											if sleepHumanoid then
-												sleepHumanoid.PlatformStand = true
-											end
-										end)
+								local originalBedSeatCFrame = bedSeat and bedSeat.CFrame
+								if bedSeat and originalBedSeatCFrame then
+									pcall(function()
+										bedSeat.CFrame = originalBedSeatCFrame * CFrame.new(0, -8, 0)
 									end)
 								end
 
-								local function stopSleepUndergroundLock()
-									if sleepUndergroundConn then
-										sleepUndergroundConn:Disconnect()
-										sleepUndergroundConn = nil
-									end
-									if sleepHumanoid then
+								local function restoreBedSeat()
+									if bedSeat and originalBedSeatCFrame then
 										pcall(function()
-											sleepHumanoid.PlatformStand = false
+											bedSeat.CFrame = originalBedSeatCFrame
 										end)
 									end
 								end
+
+								teleportCharacterToTrainingSpot(character, bedModel)
+								task.wait(0.35)
 
 								local bedSeatPrompt = getTrainingSpotSeatPrompt(bedFolder)
 								if bedSeatPrompt then
@@ -3647,7 +3620,7 @@ local function getCurrentCamera()
 									local fatigueValue = getBodyFatiqueValue()
 									local fatigueNumber = fatigueValue and tonumber(fatigueValue.Value)
 									if fatigueNumber ~= nil and fatigueNumber <= 0 then
-										stopSleepUndergroundLock()
+										restoreBedSeat()
 										pcall(function()
 											bedRemote:FireServer("Leave")
 										end)
@@ -3664,7 +3637,7 @@ local function getCurrentCamera()
 									task.wait(0.2)
 								end
 
-								stopSleepUndergroundLock()
+								restoreBedSeat()
 								runtimeState.autoSleepInProgress = false
 							end
 						end
