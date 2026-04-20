@@ -2851,28 +2851,18 @@ local function getCurrentCamera()
 							connectTrainingPromptListeners(spotRemote)
 							clearTrainingPromptQueue()
 
-							-- Move seat 8 studs underground, teleport character there, then restore seat after
-							local trainingSeat = getTrainingSpotSeat(spotFolder)
-							local originalSeatCFrame = trainingSeat and trainingSeat.CFrame
-							if trainingSeat and originalSeatCFrame then
-								pcall(function()
-									trainingSeat.CFrame = originalSeatCFrame * CFrame.new(0, -8, 0)
-								end)
-							end
-
-							local function restoreTrainingSeat()
-								if trainingSeat and originalSeatCFrame then
-									pcall(function()
-										trainingSeat.CFrame = originalSeatCFrame
-									end)
-								end
-							end
-
+							-- Teleport to spot then sink player 8 studs underground
 							teleportCharacterToTrainingSpot(character, spotModel)
 							task.wait(0.35)
 							if not isAutoTrainLoopActive(toggleKey, currentToken) then
-								restoreTrainingSeat()
 								break
+							end
+
+							local trainingRoot = getCharacterRoot(character)
+							if trainingRoot then
+								pcall(function()
+									trainingRoot.CFrame = trainingRoot.CFrame * CFrame.new(0, -8, 0)
+								end)
 							end
 
 							if options.HoldEBeforeStart then
@@ -2886,7 +2876,6 @@ local function getCurrentCamera()
 								end
 								task.wait(0.1)
 								if not isAutoTrainLoopActive(toggleKey, currentToken) then
-									restoreTrainingSeat()
 									break
 								end
 							end
@@ -2904,7 +2893,6 @@ local function getCurrentCamera()
 							end)
 							task.wait(0.6)
 							if not isAutoTrainLoopActive(toggleKey, currentToken) then
-								restoreTrainingSeat()
 								break
 							end
 
@@ -2927,8 +2915,6 @@ local function getCurrentCamera()
 									task.wait(0.01)
 								end
 							end
-
-							restoreTrainingSeat()
 						end
 					end
 					task.wait(1)
@@ -3584,25 +3570,16 @@ local function getCurrentCamera()
 								end
 								disconnectTrainingPromptListeners()
 
-								-- Move bed seat 8 studs underground, teleport character there, restore after
-								local bedSeat = getTrainingSpotSeat(bedFolder)
-								local originalBedSeatCFrame = bedSeat and bedSeat.CFrame
-								if bedSeat and originalBedSeatCFrame then
-									pcall(function()
-										bedSeat.CFrame = originalBedSeatCFrame * CFrame.new(0, -8, 0)
-									end)
-								end
-
-								local function restoreBedSeat()
-									if bedSeat and originalBedSeatCFrame then
-										pcall(function()
-											bedSeat.CFrame = originalBedSeatCFrame
-										end)
-									end
-								end
-
+								-- Teleport to bed then sink player 8 studs underground
 								teleportCharacterToTrainingSpot(character, bedModel)
 								task.wait(0.35)
+
+								local sleepRoot = getCharacterRoot(character)
+								if sleepRoot then
+									pcall(function()
+										sleepRoot.CFrame = sleepRoot.CFrame * CFrame.new(0, -8, 0)
+									end)
+								end
 
 								local bedSeatPrompt = getTrainingSpotSeatPrompt(bedFolder)
 								if bedSeatPrompt then
@@ -3620,7 +3597,6 @@ local function getCurrentCamera()
 									local fatigueValue = getBodyFatiqueValue()
 									local fatigueNumber = fatigueValue and tonumber(fatigueValue.Value)
 									if fatigueNumber ~= nil and fatigueNumber <= 0 then
-										restoreBedSeat()
 										pcall(function()
 											bedRemote:FireServer("Leave")
 										end)
@@ -3637,7 +3613,6 @@ local function getCurrentCamera()
 									task.wait(0.2)
 								end
 
-								restoreBedSeat()
 								runtimeState.autoSleepInProgress = false
 							end
 						end
