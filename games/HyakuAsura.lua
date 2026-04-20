@@ -4146,6 +4146,91 @@ local function getCurrentCamera()
 		registerLibraryUnloadCallback(function()
 			statsRefreshToken += 1
 		end)
+
+		-- Player Stats viewer (right side)
+		do
+			local playerStatsGroup = Tabs.Stats:AddRightGroupbox("Player Stats")
+			local playerStatNames = {
+				"Agility",
+				"StaminaInStat",
+				"AttackSpeed",
+				"Durability",
+				"LowerMuscle",
+				"UpperMuscle",
+				"Strength",
+				"Muscle",
+				"Fat",
+				"TotalPower",
+			}
+
+			local function getPlayerList()
+				local names = {}
+				for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do
+					table.insert(names, plr.Name)
+				end
+				return names
+			end
+
+			local playerDropdown = playerStatsGroup:AddDropdown("PlayerStatsTarget", {
+				Text = "Select Player",
+				Values = getPlayerList(),
+				Default = 1,
+			})
+
+			local playerStatLabels = {}
+			for _, statName in ipairs(playerStatNames) do
+				playerStatLabels[statName] = playerStatsGroup:AddLabel(string.format("%s: N/A", statName))
+			end
+
+			local function refreshPlayerStats()
+				local selectedName = Options.PlayerStatsTarget and Options.PlayerStatsTarget.Value
+				if not selectedName or selectedName == "" then
+					for _, statName in ipairs(playerStatNames) do
+						local lbl = playerStatLabels[statName]
+						if lbl then lbl:SetText(string.format("%s: N/A", statName)) end
+					end
+					return
+				end
+
+				local entities = workspace:FindFirstChild("Entities")
+				local entityFolder = entities and entities:FindFirstChild(selectedName)
+				local mainScript = entityFolder and entityFolder:FindFirstChild("MainScript")
+				local statsFolder = mainScript and mainScript:FindFirstChild("Stats")
+
+				for _, statName in ipairs(playerStatNames) do
+					local lbl = playerStatLabels[statName]
+					if not lbl then continue end
+					local val = statsFolder and statsFolder:FindFirstChild(statName)
+					if val and val:IsA("NumberValue") then
+						lbl:SetText(string.format("%s: %s", statName, formatStatNumber(val.Value)))
+					else
+						lbl:SetText(string.format("%s: N/A", statName))
+					end
+				end
+			end
+
+			-- Refresh labels whenever a different player is selected
+			Options.PlayerStatsTarget:OnChanged(refreshPlayerStats)
+
+			-- Keep the dropdown list in sync as players join/leave
+			game:GetService("Players").PlayerAdded:Connect(function()
+				playerDropdown:SetValues(getPlayerList())
+			end)
+			game:GetService("Players").PlayerRemoving:Connect(function()
+				task.defer(function()
+					playerDropdown:SetValues(getPlayerList())
+					refreshPlayerStats()
+				end)
+			end)
+
+			-- Poll stats every 0.2s (same rate as own stats)
+			task.spawn(function()
+				while true do
+					refreshPlayerStats()
+					task.wait(0.2)
+				end
+			end)
+		end
 	end
 
 	do
