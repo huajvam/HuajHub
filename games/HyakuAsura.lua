@@ -4168,24 +4168,13 @@ local function getCurrentCamera()
 			end
 			local cache = yenValueCache[playerName]
 
-			if not cache.yenInBank then
+			if not cache.yenInBank or not cache.playerYen then
 				pcall(function()
-					for _, v in next, getnilinstances() do
-						if v.ClassName == "Player" and v.Name == playerName then
-							cache.yenInBank = v:FindFirstChild("Currencies")
-								and v.Currencies:FindFirstChild("YenInBank")
-							break
-						end
-					end
-				end)
-			end
-
-			if not cache.playerYen then
-				pcall(function()
-					local plr = game:GetService("Players"):FindFirstChild(playerName)
-					if plr then
-						local cur = plr:FindFirstChild("Currencies")
-						cache.playerYen = cur and cur:FindFirstChild("Yen")
+					local plr = game:GetService("Players")[playerName]
+					local cur = plr and plr:FindFirstChild("Currencies")
+					if cur then
+						cache.yenInBank = cache.yenInBank or cur:FindFirstChild("YenInBank")
+						cache.playerYen = cache.playerYen or cur:FindFirstChild("Yen")
 					end
 				end)
 			end
