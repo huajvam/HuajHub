@@ -2858,6 +2858,37 @@ local function getCurrentCamera()
 								break
 							end
 
+							-- Pin character 8 studs underground below the seat for the whole session
+							local trainingSeat = getTrainingSpotSeat(spotFolder)
+							local trainingRoot = getCharacterRoot(character)
+							local trainingHumanoid = getCharacterHumanoid(character)
+							local undergroundConn = nil
+							if trainingSeat and trainingRoot then
+								local seatPos = trainingSeat.Position
+								local undergroundY = seatPos.Y - 8
+								undergroundConn = RunService.Heartbeat:Connect(function()
+									if not trainingRoot or not trainingRoot.Parent then return end
+									pcall(function()
+										trainingRoot.CFrame = CFrame.new(seatPos.X, undergroundY, seatPos.Z)
+										if trainingHumanoid then
+											trainingHumanoid.PlatformStand = true
+										end
+									end)
+								end)
+							end
+
+							local function stopTrainingUndergroundLock()
+								if undergroundConn then
+									undergroundConn:Disconnect()
+									undergroundConn = nil
+								end
+								if trainingHumanoid then
+									pcall(function()
+										trainingHumanoid.PlatformStand = false
+									end)
+								end
+							end
+
 							if options.HoldEBeforeStart then
 								local seatPrompt = getTrainingSpotSeatPrompt(spotFolder)
 								if seatPrompt then
@@ -2869,10 +2900,11 @@ local function getCurrentCamera()
 								end
 								task.wait(0.1)
 								if not isAutoTrainLoopActive(toggleKey, currentToken) then
+									stopTrainingUndergroundLock()
 									break
 								end
 							end
-							
+
 							-- Start Training Remote
 							local startArgs = {
 								"Start",
@@ -2886,9 +2918,10 @@ local function getCurrentCamera()
 							end)
 							task.wait(0.6)
 							if not isAutoTrainLoopActive(toggleKey, currentToken) then
+								stopTrainingUndergroundLock()
 								break
 							end
-							
+
 							-- Prompt-driven WASD loop
 							runtimeState.lastBenchVisibleKey = nil
 							local trainingEndAt = os.clock() + (options.Duration or 60)
@@ -2908,6 +2941,8 @@ local function getCurrentCamera()
 									task.wait(0.01)
 								end
 							end
+
+							stopTrainingUndergroundLock()
 						end
 					end
 					task.wait(1)
@@ -3564,6 +3599,38 @@ local function getCurrentCamera()
 								disconnectTrainingPromptListeners()
 								teleportCharacterToTrainingSpot(character, bedModel)
 								task.wait(0.35)
+
+								-- Pin character 8 studs underground below the bed seat
+								local bedSeat = getTrainingSpotSeat(bedFolder)
+								local sleepRoot = getCharacterRoot(character)
+								local sleepHumanoid = getCharacterHumanoid(character)
+								local sleepUndergroundConn = nil
+								if bedSeat and sleepRoot then
+									local bedSeatPos = bedSeat.Position
+									local bedUndergroundY = bedSeatPos.Y - 8
+									sleepUndergroundConn = RunService.Heartbeat:Connect(function()
+										if not sleepRoot or not sleepRoot.Parent then return end
+										pcall(function()
+											sleepRoot.CFrame = CFrame.new(bedSeatPos.X, bedUndergroundY, bedSeatPos.Z)
+											if sleepHumanoid then
+												sleepHumanoid.PlatformStand = true
+											end
+										end)
+									end)
+								end
+
+								local function stopSleepUndergroundLock()
+									if sleepUndergroundConn then
+										sleepUndergroundConn:Disconnect()
+										sleepUndergroundConn = nil
+									end
+									if sleepHumanoid then
+										pcall(function()
+											sleepHumanoid.PlatformStand = false
+										end)
+									end
+								end
+
 								local bedSeatPrompt = getTrainingSpotSeatPrompt(bedFolder)
 								if bedSeatPrompt then
 									pcall(function()
@@ -3580,6 +3647,7 @@ local function getCurrentCamera()
 									local fatigueValue = getBodyFatiqueValue()
 									local fatigueNumber = fatigueValue and tonumber(fatigueValue.Value)
 									if fatigueNumber ~= nil and fatigueNumber <= 0 then
+										stopSleepUndergroundLock()
 										pcall(function()
 											bedRemote:FireServer("Leave")
 										end)
@@ -3596,6 +3664,7 @@ local function getCurrentCamera()
 									task.wait(0.2)
 								end
 
+								stopSleepUndergroundLock()
 								runtimeState.autoSleepInProgress = false
 							end
 						end
