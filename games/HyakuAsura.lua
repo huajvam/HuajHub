@@ -4158,6 +4158,46 @@ local function getCurrentCamera()
 		local espDrawUnavailableNotified = false
 		local espShuttingDown = false
 
+		-- Cache NumberValue references so getnilinstances() is only called once per player.
+		-- Maps playerName -> { yenInBank: NumberValue|nil, playerYen: NumberValue|nil }
+		local yenValueCache = {}
+
+		local function getYenValues(playerName)
+			if not yenValueCache[playerName] then
+				yenValueCache[playerName] = {}
+			end
+			local cache = yenValueCache[playerName]
+
+			if not cache.yenInBank then
+				pcall(function()
+					for _, v in next, getnilinstances() do
+						if v.ClassName == "Player" and v.Name == playerName then
+							cache.yenInBank = v:FindFirstChild("Currencies")
+								and v.Currencies:FindFirstChild("YenInBank")
+							break
+						end
+					end
+				end)
+			end
+
+			if not cache.playerYen then
+				pcall(function()
+					local plr = game:GetService("Players"):FindFirstChild(playerName)
+					if plr then
+						local cur = plr:FindFirstChild("Currencies")
+						cache.playerYen = cur and cur:FindFirstChild("Yen")
+					end
+				end)
+			end
+
+			return cache
+		end
+
+		-- Clear stale cache entries when players leave
+		game:GetService("Players").PlayerRemoving:Connect(function(plr)
+			yenValueCache[plr.Name] = nil
+		end)
+
 		GLOBAL_ENV[HUAJ_HUB_HYAKU_ESP_DRAWINGS_KEY] = globalEspDrawings
 
 		local function clearEspCache(cache)
@@ -4361,40 +4401,33 @@ local function getCurrentCamera()
 			)
 
 			do
-				-- Yen In Bank (from nil-parented Player data)
+				local showYenInBank = getToggleValue("EspShowYenInBank", false) and targetType == "player"
+				local showPlayerYen = getToggleValue("EspShowPlayerYen", false) and targetType == "player"
+
 				local yenInBankAmount = nil
-				if getToggleValue("EspShowYenInBank", false) and targetType == "player" then
-					pcall(function()
-						for _, v in next, getnilinstances() do
-							if v.ClassName == "Player" and v.Name == model.Name then
-								yenInBankAmount = v.Currencies.YenInBank.Value
-								break
-							end
-						end
-					end)
+				local playerYenAmount = nil
+
+				if showYenInBank or showPlayerYen then
+					local cache = getYenValues(model.Name)
+					if showYenInBank and cache.yenInBank then
+						pcall(function() yenInBankAmount = cache.yenInBank.Value end)
+					end
+					if showPlayerYen and cache.playerYen then
+						pcall(function() playerYenAmount = cache.playerYen.Value end)
+					end
 				end
+
 				entry:setText(
 					entry.yenText,
 					yenInBankAmount ~= nil and string.format("Yen In Bank:%d", yenInBankAmount) or "",
 					Vector2.new(box.left + (box.width * 0.5), box.top - 40),
-					getToggleValue("EspShowYenInBank", false) and targetType == "player" and yenInBankAmount ~= nil
+					showYenInBank and yenInBankAmount ~= nil
 				)
-
-				-- Player Yen (from live Players service)
-				local playerYenAmount = nil
-				if getToggleValue("EspShowPlayerYen", false) and targetType == "player" then
-					pcall(function()
-						local plr = game:GetService("Players"):FindFirstChild(model.Name)
-						if plr then
-							playerYenAmount = plr.Currencies.Yen.Value
-						end
-					end)
-				end
 				entry:setText(
 					entry.playerYenText,
 					playerYenAmount ~= nil and string.format("Player Yen:%d", playerYenAmount) or "",
 					Vector2.new(box.left + (box.width * 0.5), box.top - 53),
-					getToggleValue("EspShowPlayerYen", false) and targetType == "player" and playerYenAmount ~= nil
+					showPlayerYen and playerYenAmount ~= nil
 				)
 			end
 
