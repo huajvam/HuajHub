@@ -4073,26 +4073,39 @@ local function getCurrentCamera()
 
 		local function getHiderTargets()
 			local pg = LocalPlayer.PlayerGui
-			return {
-				pg:FindFirstChild("Main")
-					and pg.Main:FindFirstChild("GlobalFrame")
-					and pg.Main.GlobalFrame:FindFirstChild("Main")
-					and pg.Main.GlobalFrame.Main:FindFirstChild("CharacterName"),
+			local targets = {}
 
-				pg:FindFirstChild("PlayerList")
-					and pg.PlayerList:FindFirstChild("Playlist")
-					and pg.PlayerList.Playlist:FindFirstChild("ScrollingFrame")
-					and pg.PlayerList.Playlist.ScrollingFrame:FindFirstChild(LocalPlayer.Name)
-					and pg.PlayerList.Playlist.ScrollingFrame[LocalPlayer.Name]:FindFirstChild("NAME"),
+			-- CharacterName label
+			local charName = pg:FindFirstChild("Main")
+				and pg.Main:FindFirstChild("GlobalFrame")
+				and pg.Main.GlobalFrame:FindFirstChild("Main")
+				and pg.Main.GlobalFrame.Main:FindFirstChild("CharacterName")
+			if charName then table.insert(targets, charName) end
 
-				pg:FindFirstChild("serverthingy")
-					and pg.serverthingy:FindFirstChild("Frame")
-					and pg.serverthingy.Frame:FindFirstChild("servername"),
+			-- NAME label for every player entry in the PlayerList ScrollingFrame
+			local scrollFrame = pg:FindFirstChild("PlayerList")
+				and pg.PlayerList:FindFirstChild("Playlist")
+				and pg.PlayerList.Playlist:FindFirstChild("ScrollingFrame")
+			if scrollFrame then
+				for _, entry in ipairs(scrollFrame:GetChildren()) do
+					local nameLabel = entry:FindFirstChild("NAME")
+					if nameLabel then
+						table.insert(targets, nameLabel)
+					end
+				end
+			end
 
-				pg:FindFirstChild("serverthingy")
-					and pg.serverthingy:FindFirstChild("Frame")
-					and pg.serverthingy.Frame:FindFirstChild("region"),
-			}
+			-- Server info labels
+			local serverFrame = pg:FindFirstChild("serverthingy")
+				and pg.serverthingy:FindFirstChild("Frame")
+			if serverFrame then
+				local servername = serverFrame:FindFirstChild("servername")
+				local region     = serverFrame:FindFirstChild("region")
+				if servername then table.insert(targets, servername) end
+				if region     then table.insert(targets, region)     end
+			end
+
+			return targets
 		end
 
 		local function applyServerHider(enabled)
