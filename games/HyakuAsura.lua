@@ -788,6 +788,20 @@ function HyakuAsura.init(_context)
 			return nil
 		end
 
+		local function getTrainingSpotSeatPrompt(spotFolder)
+			local seat = getTrainingSpotSeat(spotFolder)
+			if not seat then
+				return nil
+			end
+
+			local prompt = seat:FindFirstChild("Prompt")
+			if prompt and prompt:IsA("ProximityPrompt") then
+				return prompt
+			end
+
+			return seat:FindFirstChildWhichIsA("ProximityPrompt")
+		end
+
 		local function isTrainingSpotOccupied(spotFolder)
 			local seat = getTrainingSpotSeat(spotFolder)
 			if not seat then
@@ -2845,7 +2859,14 @@ local function getCurrentCamera()
 							end
 
 							if options.HoldEBeforeStart then
-								holdInteractionKey(options.HoldEDuration or 0.3)
+								local seatPrompt = getTrainingSpotSeatPrompt(spotFolder)
+								if seatPrompt then
+									pcall(function()
+										fireproximityprompt(seatPrompt)
+									end)
+								else
+									holdInteractionKey(options.HoldEDuration or 0.3)
+								end
 								task.wait(0.1)
 								if not isAutoTrainLoopActive(toggleKey, currentToken) then
 									break
@@ -3543,9 +3564,16 @@ local function getCurrentCamera()
 								disconnectTrainingPromptListeners()
 								teleportCharacterToTrainingSpot(character, bedModel)
 								task.wait(0.35)
-								holdInteractionKey(3)
-								task.wait(0.2)
-								teleportCharacterToTrainingSpot(character, bedModel)
+								local bedSeatPrompt = getTrainingSpotSeatPrompt(bedFolder)
+								if bedSeatPrompt then
+									pcall(function()
+										fireproximityprompt(bedSeatPrompt)
+									end)
+								else
+									holdInteractionKey(3)
+									task.wait(0.2)
+									teleportCharacterToTrainingSpot(character, bedModel)
+								end
 								task.wait(0.15)
 
 								while currentToken == runtimeState.autoSleepToken and Toggles.AutoSleepEnabled.Value do
