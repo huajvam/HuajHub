@@ -601,6 +601,57 @@ function HyakuAsura.init(_context)
 			end
 		end
 
+		local function performServerHop()
+			task.spawn(function()
+				local bestServerId = nil
+				local bestPlayerCount = math.huge
+				local cursor = nil
+				local pagesChecked = 0
+
+				while pagesChecked < 5 do
+					local url = ("https://games.roblox.com/v1/games/%s/servers/Public?sortOrder=Asc&limit=100"):format(game.PlaceId)
+					if type(cursor) == "string" and cursor ~= "" then
+						url ..= "&cursor=" .. HttpService:UrlEncode(cursor)
+					end
+
+					local ok, body = pcall(function()
+						return game:HttpGet(url)
+					end)
+					if not ok then break end
+
+					local decoded
+					ok, decoded = pcall(function()
+						return HttpService:JSONDecode(body)
+					end)
+					if not ok or type(decoded) ~= "table" or type(decoded.data) ~= "table" then break end
+
+					for _, server in ipairs(decoded.data) do
+						local serverId = server.id
+						local playing = tonumber(server.playing) or math.huge
+						local maxPlayers = tonumber(server.maxPlayers) or 0
+						if serverId
+							and serverId ~= game.JobId
+							and playing < maxPlayers
+							and playing < bestPlayerCount
+						then
+							bestPlayerCount = playing
+							bestServerId = serverId
+						end
+					end
+
+					cursor = decoded.nextPageCursor
+					pagesChecked += 1
+					if type(cursor) ~= "string" or cursor == "" then break end
+				end
+
+				if bestServerId then
+					pcall(function()
+						TeleportService:TeleportToPlaceInstance(game.PlaceId, bestServerId, LocalPlayer)
+					end)
+				end
+			end)
+		end
+
 		local function isModeratorPlayer(player)
 			if not player or player == LocalPlayer then
 				return false
@@ -612,7 +663,11 @@ function HyakuAsura.init(_context)
 
 		local function checkPlayerForModerator(player)
 			if isModeratorPlayer(player) then
-				kickForModerator()
+				if Toggles and Toggles.ModHopEnabled and Toggles.ModHopEnabled.Value then
+					performServerHop()
+				else
+					kickForModerator()
+				end
 				return true
 			end
 
@@ -3612,6 +3667,11 @@ local function getCurrentCamera()
 			end
 		end)
 
+		uiGroups.localCheats:AddToggle("ModHopEnabled", {
+			Text = "Server hop if mod detected",
+			Default = false,
+		})
+
 		uiGroups.localCheats:AddToggle("AntiAfkEnabled", {
 			Text = "Anti-AFK",
 			Default = false,
@@ -3850,6 +3910,9 @@ local function getCurrentCamera()
 			end
 			if Toggles and Toggles.ModeratorDetectorEnabled then
 				pcall(function() Toggles.ModeratorDetectorEnabled:SetValue(false) end)
+			end
+			if Toggles and Toggles.ModHopEnabled then
+				pcall(function() Toggles.ModHopEnabled:SetValue(false) end)
 			end
 			if Toggles and Toggles.AntiAfkEnabled then
 				pcall(function() Toggles.AntiAfkEnabled:SetValue(false) end)
